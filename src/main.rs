@@ -1,10 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod state;
+use cpal::traits::{DeviceTrait, HostTrait};
+use slint::ModelRc;
+use slint::StandardListViewItem;
+use slint::VecModel;
 use slint::Weak;
 use state::AppState;
 use state::Status;
 use std::error::Error;
+use std::rc::Rc;
 use std::sync::Arc;
 
 slint::include_modules!();
@@ -12,8 +17,32 @@ slint::include_modules!();
 fn main() -> Result<(), Box<dyn Error>> {
     let ui = MainWindow::new()?;
     let state = Arc::new(AppState::new());
-
     let ui_weak = ui.as_weak();
+    let host = cpal::default_host();
+    let input_devices_iter = host.input_devices()?;
+
+    let mut input_devices_vec: Vec<StandardListViewItem> = vec![];
+    for device in input_devices_iter {
+        if let Ok(name) = device.name() {
+            if let Ok(configs) = device.supported_input_configs() {
+                if configs.count() > 0 {
+                    let mut item = StandardListViewItem::default();
+                    item.text = name.into();
+                    input_devices_vec.push(item);
+                }
+            }
+        }
+    }
+
+    if input_devices_vec.is_empty() {
+        let mut item = StandardListViewItem::default();
+        item.text = "No input devices detected".into();
+        input_devices_vec.push(item);
+    }
+
+    let vec_model = VecModel::from(input_devices_vec);
+    let model: ModelRc<StandardListViewItem> = ModelRc::new(Rc::new(vec_model));
+    ui.set_input_devices(model);
 
     fn update_ui_status(ui_weak: &Weak<MainWindow>, state: &Arc<AppState>) {
         if let Some(ui) = ui_weak.upgrade() {
@@ -46,11 +75,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.on_selected_input_index_change({
         let ui_weak = ui_weak.clone();
         let state = state.clone();
-        move |idx| {
+        move |idx: i32| {
             let mut selected_idx = state.selected_input.lock().unwrap();
-            if *selected_idx != Some(idx as usize) {
-                *selected_idx = Some(idx as usize);
-                state.update_status(Status::Pending);
+            let new_selection = if idx < 0 { None } else { Some(idx as usize) };
+            if *selected_idx != new_selection {
+                *selected_idx = new_selection;
+                let current_status = state.status.lock().unwrap().clone();
+                if let Status::Active = current_status {
+                    state.update_status(Status::Pending);
+                }
                 update_ui_status(&ui_weak, &state);
             }
         }

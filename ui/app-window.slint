@@ -1,7 +1,12 @@
-import { Slider, Button, LineEdit } from "std-widgets.slint";
+import {
+    Slider,
+    Button,
+    LineEdit,
+    ListView,
+    StandardListView,
+} from "std-widgets.slint";
 import { SectionHeader } from "section-headers.slint";
 import { ClickableLink } from "links.slint";
-import { SelectableInputItem } from "inputs.slint";
 
 export component MainWindow inherits Window {
     title: "Spectral";
@@ -12,6 +17,7 @@ export component MainWindow inherits Window {
 
     property <string> default_mic_name: "Spectral Mic";
     property <int> selected_input_index: -1;
+    in-out property <[StandardListViewItem]> input_devices;
     in-out property <int> slider_value: 80;
     in-out property <bool> is_recording: false;
     in-out property <bool> has_recording: false;
@@ -162,56 +168,17 @@ export component MainWindow inherits Window {
                     border-radius: 2px;
 
                     VerticalLayout {
-                        padding-top: 25px;
+                        padding-top: 15px;
+                        padding-bottom: 25px;
+                        padding-left: 5px;
+                        padding-right: 5px;
                         spacing: 40px;
-                        vertical-stretch: 0;
-                        alignment: start;
 
-                        SelectableInputItem {
-                            index: 0;
-                            label: "Microphone - Blue Microphone";
-                            selected_input_index: root.selected_input_index;
-                            select(idx) => {
-                                root.selected_input_index = idx;
-                                if (root.status_color == #3FB950) {
-                                    root.selected_input_index_change(idx);
-                                }
-                            }
-                        }
-
-                        SelectableInputItem {
-                            index: 1;
-                            label: "Digital Input (S/PDIF) - Blue Mic ...";
-                            selected_input_index: root.selected_input_index;
-                            select(idx) => {
-                                root.selected_input_index = idx;
-                                if (root.status_color == #3FB950) {
-                                    root.selected_input_index_change(idx);
-                                }
-                            }
-                        }
-
-                        SelectableInputItem {
-                            index: 2;
-                            label: "Analog Input - EVO4";
-                            selected_input_index: root.selected_input_index;
-                            select(idx) => {
-                                root.selected_input_index = idx;
-                                if (root.status_color == #3FB950) {
-                                    root.selected_input_index_change(idx);
-                                }
-                            }
-                        }
-
-                        SelectableInputItem {
-                            index: 3;
-                            label: "Logitech Webcam Microphone";
-                            selected_input_index: root.selected_input_index;
-                            select(idx) => {
-                                root.selected_input_index = idx;
-                                if (root.status_color == #3FB950) {
-                                    root.selected_input_index_change(idx);
-                                }
+                        inputs_list := StandardListView {
+                            model: root.input_devices;
+                            current_item <=> root.selected_input_index;
+                            current_item_changed => {
+                                root.selected_input_index_change(self.current_item);
                             }
                         }
                     }
@@ -273,7 +240,7 @@ export component MainWindow inherits Window {
                         x: 15px;
                         y: 0px;
                         height: 30px;
-                        text: "Spectral Mic";
+                        text: default_mic_name;
                         font-size: 14px;
                         color: white;
                         vertical-alignment: center;
@@ -296,6 +263,7 @@ export component MainWindow inherits Window {
                             clicked => {
                                 mic_name.clear-focus();
                                 if (root.status_color == #3FB950) {
+                                    mic_name.text = mic_name.text;
                                     root.rename_clicked(mic_name.text);
                                 }
                             }
@@ -406,19 +374,23 @@ export component MainWindow inherits Window {
                 text: "Disable";
                 clicked => {
                     if (root.status_color != #FF0000) {
+                        apply.text = "Enable";
                         root.disable_clicked();
                     }
                 }
             }
 
             // Apply button
-            Button {
+            apply := Button {
                 x: 530px;
                 y: 700px;
                 width: 140px;
                 height: 40px;
-                text: "Apply";
+                text: "Enable";
                 clicked => {
+                    if (root.status_color == #FF0000) {
+                        self.text = "Apply"
+                    }
                     if (root.status_color != #3FB950) {
                         root.enable_clicked();
                     }
