@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 slint = "1.12.1"
-cpal = "0.16.0"
+pipewire = "0.9"
 
 [build-dependencies]
 slint-build = "1.12.1"

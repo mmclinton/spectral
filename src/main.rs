@@ -1,7 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod state;
-use cpal::traits::{DeviceTrait, HostTrait};
+use pipewire as pw;
+use pw::core::PW_ID_CORE;
+use pw::spa::utils::result::AsyncSeq;
+use pw::{context::ContextRc, main_loop::MainLoopRc, types::ObjectType};
 use slint::ModelRc;
 use slint::StandardListViewItem;
 use slint::VecModel;
@@ -18,21 +21,72 @@ fn main() -> Result<(), Box<dyn Error>> {
     let ui = MainWindow::new()?;
     let state = Arc::new(AppState::new());
     let ui_weak = ui.as_weak();
-    let host = cpal::default_host();
-    let input_devices_iter = host.input_devices()?;
 
-    let mut input_devices_vec: Vec<StandardListViewItem> = vec![];
-    for device in input_devices_iter {
-        if let Ok(name) = device.name() {
-            if let Ok(configs) = device.supported_input_configs() {
-                if configs.count() > 0 {
-                    let mut item = StandardListViewItem::default();
-                    item.text = name.into();
-                    input_devices_vec.push(item);
+    let mainloop = MainLoopRc::new(None)?;
+    let context = ContextRc::new(&mainloop, None)?;
+    let core = context.connect(None)?;
+    let registry = core.get_registry()?;
+
+    let devices = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let devices_clone = devices.clone();
+
+    let _reg_listener = registry
+        .add_listener_local()
+        .global(move |global| {
+            if global.type_ == ObjectType::Node {
+                if let Some(props) = &global.props {
+                    if props.get("media.class") == Some("Audio/Source") {
+                        let nick = props
+                            .get("node.nick")
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| {
+                                props
+                                    .get("node.description")
+                                    .map(|s| s.to_string())
+                                    .unwrap_or("Unknown".to_string())
+                            });
+                        if !nick.to_lowercase().contains("monitor") {
+                            devices_clone.lock().unwrap().push(nick);
+                        }
+                    }
                 }
             }
-        }
-    }
+        })
+        .register();
+
+    let pending = Arc::new(std::sync::Mutex::new(None::<AsyncSeq>));
+    let loop_clone = mainloop.clone();
+    let pending_clone = pending.clone();
+
+    let _core_listener = core
+        .add_listener_local()
+        .done(move |id, seq| {
+            if id == PW_ID_CORE {
+                let mut p = pending_clone.lock().unwrap();
+                if let Some(val) = *p {
+                    if val == seq {
+                        *p = None;
+                        loop_clone.quit();
+                    }
+                }
+            }
+        })
+        .register();
+
+    let seq = core.sync(0)?;
+    *pending.lock().unwrap() = Some(seq);
+
+    mainloop.run();
+
+    let input_names = devices.lock().unwrap();
+    let mut input_devices_vec: Vec<StandardListViewItem> = input_names
+        .iter()
+        .map(|name| {
+            let mut item = StandardListViewItem::default();
+            item.text = name.clone().into();
+            item
+        })
+        .collect();
 
     if input_devices_vec.is_empty() {
         let mut item = StandardListViewItem::default();
