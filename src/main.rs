@@ -1,16 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod state;
-use pipewire as pw;
-use pw::core::PW_ID_CORE;
-use pw::spa::utils::result::AsyncSeq;
-use pw::{context::ContextRc, main_loop::MainLoopRc, types::ObjectType};
+
+#[cfg(all(target_os = "linux", feature = "pipewire"))]
+mod audio_devices_linux;
+
 use slint::ModelRc;
 use slint::StandardListViewItem;
 use slint::VecModel;
 use slint::Weak;
-use state::AppState;
-use state::Status;
+use state::{AppState, Status};
 use std::error::Error;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -22,63 +21,35 @@ fn main() -> Result<(), Box<dyn Error>> {
     let state = Arc::new(AppState::new());
     let ui_weak = ui.as_weak();
 
-    let mainloop = MainLoopRc::new(None)?;
-    let context = ContextRc::new(&mainloop, None)?;
-    let core = context.connect(None)?;
-    let registry = core.get_registry()?;
-
-    let devices = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
-    let devices_clone = devices.clone();
-
-    let _reg_listener = registry
-        .add_listener_local()
-        .global(move |global| {
-            if global.type_ == ObjectType::Node {
-                if let Some(props) = &global.props {
-                    if props.get("media.class") == Some("Audio/Source") {
-                        let nick = props
-                            .get("node.nick")
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| {
-                                props
-                                    .get("node.description")
-                                    .map(|s| s.to_string())
-                                    .unwrap_or("Unknown".to_string())
-                            });
-                        if !nick.to_lowercase().contains("monitor") {
-                            devices_clone.lock().unwrap().push(nick);
-                        }
-                    }
-                }
+    let input_names: Vec<String> = {
+        #[cfg(target_os = "linux")]
+        {
+            #[cfg(feature = "pipewire")]
+            {
+                audio_devices_linux::get_input_devices()?
             }
-        })
-        .register();
-
-    let pending = Arc::new(std::sync::Mutex::new(None::<AsyncSeq>));
-    let loop_clone = mainloop.clone();
-    let pending_clone = pending.clone();
-
-    let _core_listener = core
-        .add_listener_local()
-        .done(move |id, seq| {
-            if id == PW_ID_CORE {
-                let mut p = pending_clone.lock().unwrap();
-                if let Some(val) = *p {
-                    if val == seq {
-                        *p = None;
-                        loop_clone.quit();
-                    }
-                }
+            #[cfg(not(feature = "pipewire"))]
+            {
+                vec!["PipeWire feature not enabled".to_string()]
             }
-        })
-        .register();
+        }
 
-    let seq = core.sync(0)?;
-    *pending.lock().unwrap() = Some(seq);
+        #[cfg(target_os = "macos")]
+        {
+            // TODO: Implement macOS device discovery (e.g., via coreaudio-rs or cpal)
+            vec!["MacOS support coming soon".to_string()]
+        }
 
-    mainloop.run();
+        #[cfg(target_os = "windows")]
+        {
+            // TODO: Implement Windows device discovery (e.g., via wasapi or cpal)
+            vec!["Windows support coming soon".to_string()]
+        }
 
-    let input_names = devices.lock().unwrap();
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+        compile_error!("Unsupported platform");
+    };
+
     let mut input_devices_vec: Vec<StandardListViewItem> = input_names
         .iter()
         .map(|name| {
@@ -95,8 +66,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let vec_model = VecModel::from(input_devices_vec);
-    let model: ModelRc<StandardListViewItem> = ModelRc::new(Rc::new(vec_model));
-    ui.set_input_devices(model);
+    let model_rc: ModelRc<StandardListViewItem> = ModelRc::new(Rc::new(vec_model));
+    ui.set_input_devices(model_rc);
 
     fn update_ui_status(ui_weak: &Weak<MainWindow>, state: &Arc<AppState>) {
         if let Some(ui) = ui_weak.upgrade() {

@@ -5,7 +5,13 @@ edition = "2021"
 
 [dependencies]
 slint = "1.12.1"
-pipewire = "0.9"
+pipewire = { version = "0.9", optional = true }
+
+[features]
+default = []
+linux = ["pipewire"]
+macos = []
+windows = []
 
 [build-dependencies]
 slint-build = "1.12.1"
