@@ -3,13 +3,13 @@ use pw::{context::ContextRc, main_loop::MainLoopRc, types::ObjectType};
 use std::error::Error;
 use std::sync::{Arc, Mutex};
 
-pub fn get_input_devices() -> Result<Vec<String>, Box<dyn Error>> {
+pub fn get_input_devices() -> Result<Vec<(u32, String)>, Box<dyn Error>> {
     let mainloop = MainLoopRc::new(None)?;
     let context = ContextRc::new(&mainloop, None)?;
     let core = context.connect(None)?;
     let registry = core.get_registry()?;
 
-    let devices = Arc::new(Mutex::new(Vec::<String>::new()));
+    let devices = Arc::new(Mutex::new(Vec::<(u32, String)>::new()));
     let devices_clone = devices.clone();
 
     let _reg_listener = registry
@@ -26,7 +26,7 @@ pub fn get_input_devices() -> Result<Vec<String>, Box<dyn Error>> {
                             .to_string();
 
                         if !name.to_lowercase().contains("monitor") {
-                            devices_clone.lock().unwrap().push(name);
+                            devices_clone.lock().unwrap().push((global.id, name));
                         }
                     }
                 }
@@ -45,16 +45,10 @@ pub fn get_input_devices() -> Result<Vec<String>, Box<dyn Error>> {
         .register();
 
     core.sync(0)?;
-
     mainloop.run();
 
-    let mut names = devices.lock().unwrap().clone();
+    let mut devices_list = devices.lock().unwrap().clone();
+    devices_list.sort_by(|a, b| a.1.cmp(&b.1));
 
-    names.sort_unstable();
-
-    if names.is_empty() {
-        names = vec!["No input devices detected".to_string()];
-    }
-
-    Ok(names)
+    Ok(devices_list)
 }

@@ -21,53 +21,41 @@ fn main() -> Result<(), Box<dyn Error>> {
     let state = Arc::new(AppState::new());
     let ui_weak = ui.as_weak();
 
-    let input_names: Vec<String> = {
-        #[cfg(target_os = "linux")]
+    let mut input_devices: Vec<(u32, String)> = {
+        #[cfg(all(target_os = "linux", feature = "pipewire"))]
         {
-            #[cfg(feature = "pipewire")]
-            {
-                audio_devices_linux::get_input_devices()?
-            }
-            #[cfg(not(feature = "pipewire"))]
-            {
-                vec!["PipeWire feature not enabled".to_string()]
-            }
+            audio_devices_linux::get_input_devices()?
         }
-
-        #[cfg(target_os = "macos")]
+        #[cfg(not(all(target_os = "linux", feature = "pipewire")))]
         {
-            // TODO: Implement macOS device discovery (e.g., via coreaudio-rs or cpal)
-            vec!["MacOS support coming soon".to_string()]
+            vec![]
         }
-
-        #[cfg(target_os = "windows")]
-        {
-            // TODO: Implement Windows device discovery (e.g., via wasapi or cpal)
-            vec!["Windows support coming soon".to_string()]
-        }
-
-        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-        compile_error!("Unsupported platform");
     };
 
-    let mut input_devices_vec: Vec<StandardListViewItem> = input_names
+    if input_devices.is_empty() {
+        #[cfg(target_os = "linux")]
+        {
+            input_devices.push((0, "No input devices detected".to_string()));
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            input_devices.push((0, "Platform support coming soon".to_string()));
+        }
+    }
+
+    *state.input_devices.lock().unwrap() = input_devices.clone();
+
+    let input_items: Vec<StandardListViewItem> = input_devices
         .iter()
-        .map(|name| {
+        .map(|(_id, name)| {
             let mut item = StandardListViewItem::default();
             item.text = name.clone().into();
             item
         })
         .collect();
 
-    if input_devices_vec.is_empty() {
-        let mut item = StandardListViewItem::default();
-        item.text = "No input devices detected".into();
-        input_devices_vec.push(item);
-    }
-
-    let vec_model = VecModel::from(input_devices_vec);
-    let model_rc: ModelRc<StandardListViewItem> = ModelRc::new(Rc::new(vec_model));
-    ui.set_input_devices(model_rc);
+    let model = VecModel::from(input_items);
+    ui.set_input_devices(ModelRc::new(Rc::new(model)));
 
     fn update_ui_status(ui_weak: &Weak<MainWindow>, state: &Arc<AppState>) {
         if let Some(ui) = ui_weak.upgrade() {
@@ -101,10 +89,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         let ui_weak = ui_weak.clone();
         let state = state.clone();
         move |idx: i32| {
-            let mut selected_idx = state.selected_input.lock().unwrap();
-            let new_selection = if idx < 0 { None } else { Some(idx as usize) };
-            if *selected_idx != new_selection {
-                *selected_idx = new_selection;
+            let devices = state.input_devices.lock().unwrap();
+            let mut selected_input = state.selected_input.lock().unwrap();
+
+            let new_id = if idx < 0 {
+                None
+            } else {
+                devices.get(idx as usize).map(|(id, _)| *id)
+            };
+
+            let new_selection = if new_id == Some(0) { None } else { new_id };
+
+            if *selected_input != new_selection {
+                *selected_input = new_selection;
                 let current_status = state.status.lock().unwrap().clone();
                 if let Status::Active = current_status {
                     state.update_status(Status::Pending);
