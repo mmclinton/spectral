@@ -8,7 +8,7 @@ slint = "1.12.1"
 pipewire = { version = "0.9", optional = true }
 
 [features]
-default = []
+default = ["linux"]
 linux = ["pipewire"]
 macos = []
 windows = []

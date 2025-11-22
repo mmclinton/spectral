@@ -1,6 +1,4 @@
 use pipewire as pw;
-use pw::core::PW_ID_CORE;
-use pw::spa::utils::result::AsyncSeq;
 use pw::{context::ContextRc, main_loop::MainLoopRc, types::ObjectType};
 use std::error::Error;
 use std::sync::{Arc, Mutex};
@@ -20,17 +18,15 @@ pub fn get_input_devices() -> Result<Vec<String>, Box<dyn Error>> {
             if global.type_ == ObjectType::Node {
                 if let Some(props) = &global.props {
                     if props.get("media.class") == Some("Audio/Source") {
-                        let nick = props
+                        let name = props
                             .get("node.nick")
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| {
-                                props
-                                    .get("node.description")
-                                    .map(|s| s.to_string())
-                                    .unwrap_or("Unknown".to_string())
-                            });
-                        if !nick.to_lowercase().contains("monitor") {
-                            devices_clone.lock().unwrap().push(nick);
+                            .or_else(|| props.get("node.description"))
+                            .or_else(|| props.get("node.name"))
+                            .unwrap_or("Unknown device")
+                            .to_string();
+
+                        if !name.to_lowercase().contains("monitor") {
+                            devices_clone.lock().unwrap().push(name);
                         }
                     }
                 }
@@ -38,33 +34,27 @@ pub fn get_input_devices() -> Result<Vec<String>, Box<dyn Error>> {
         })
         .register();
 
-    let pending = Arc::new(Mutex::new(None::<AsyncSeq>));
     let loop_clone = mainloop.clone();
-    let pending_clone = pending.clone();
-
     let _core_listener = core
         .add_listener_local()
-        .done(move |id, seq| {
-            if id == PW_ID_CORE {
-                let mut p = pending_clone.lock().unwrap();
-                if let Some(val) = *p {
-                    if val == seq {
-                        *p = None;
-                        loop_clone.quit();
-                    }
-                }
+        .done(move |id, _seq| {
+            if id == pw::core::PW_ID_CORE {
+                loop_clone.quit();
             }
         })
         .register();
 
-    let seq = core.sync(0)?;
-    *pending.lock().unwrap() = Some(seq);
+    core.sync(0)?;
 
     mainloop.run();
 
-    let input_names = devices.lock().unwrap().clone();
-    if input_names.is_empty() {
-        return Ok(vec!["No input devices detected".to_string()]);
+    let mut names = devices.lock().unwrap().clone();
+
+    names.sort_unstable();
+
+    if names.is_empty() {
+        names = vec!["No input devices detected".to_string()];
     }
-    Ok(input_names)
+
+    Ok(names)
 }
