@@ -17,7 +17,7 @@ export component MainWindow inherits Window {
 
     property <string> default_mic_name: "Spectral-Mic";
     in-out property <string> mic_name_text: "Spectral-Mic";
-    property <int> selected_input_index: -1;
+    in-out property <int> selected_input_index: -1;
     in-out property <[StandardListViewItem]> input_devices;
     in-out property <int> slider_value: 80;
     in-out property <bool> is_recording: false;
@@ -33,6 +33,7 @@ export component MainWindow inherits Window {
     callback enable_clicked();
     callback disable_clicked();
     callback mic_name_text_changed(string);
+    callback refresh_devices_clicked();
 
     Rectangle {
         width: parent.width;
@@ -199,7 +200,7 @@ export component MainWindow inherits Window {
                             height: 28px;
                             text: "Refresh";
                             clicked => {
-                                debug("Refresh input devices");
+                                root.refresh_devices_clicked();
                             }
                         }
                     }

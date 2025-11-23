@@ -268,6 +268,79 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
+    ui.on_refresh_devices_clicked({
+        let ui_weak = ui_weak.clone();
+        let state = state.clone();
+        move || {
+            #[cfg(all(target_os = "linux", feature = "pipewire"))]
+            {
+                if let Some(ui) = ui_weak.upgrade() {
+                    match audio_devices_linux::get_input_devices() {
+                        Ok(fresh_devices) => {
+                            let spectral_mic_name = state.mic_name.lock().unwrap().clone();
+
+                            let filtered_devices: Vec<_> = fresh_devices
+                                .iter()
+                                .filter(|device| {
+                                    let mic_name_hyphen = spectral_mic_name.replace(" ", "-");
+                                    let mic_name_underscore = spectral_mic_name.replace(" ", "_");
+                                    let device_name = &device.name;
+
+                                    device_name != &spectral_mic_name
+                                        && device_name != &mic_name_hyphen
+                                        && device_name != &mic_name_underscore
+                                })
+                                .cloned()
+                                .collect();
+
+                            let items: Vec<StandardListViewItem> = filtered_devices
+                                .iter()
+                                .map(|device| {
+                                    let mut item = StandardListViewItem::default();
+                                    item.text = device.name.clone().into();
+                                    item
+                                })
+                                .collect();
+
+                            let model = VecModel::from(items);
+                            ui.set_input_devices(ModelRc::new(Rc::new(model)));
+
+                            let selected_device_id = state.selected_device_id.lock().unwrap();
+                            if let Some(device_id) = *selected_device_id {
+                                let new_index = filtered_devices
+                                    .iter()
+                                    .position(|d| d.id == device_id)
+                                    .map(|pos| pos as i32)
+                                    .unwrap_or(-1);
+
+                                ui.set_selected_input_index(new_index);
+
+                                let mut selected_idx = state.selected_input.lock().unwrap();
+                                *selected_idx = if new_index >= 0 {
+                                    Some(new_index as usize)
+                                } else {
+                                    None
+                                };
+                            } else {
+                                ui.set_selected_input_index(-1);
+                            }
+
+                            println!("[Refresh] Device list updated");
+                        }
+                        Err(e) => {
+                            eprintln!("[Refresh] Failed to refresh devices: {}", e);
+                        }
+                    }
+                }
+            }
+
+            #[cfg(not(all(target_os = "linux", feature = "pipewire")))]
+            {
+                println!("[Refresh] Device refresh not supported on this platform");
+            }
+        }
+    });
+
     ui.run()?;
 
     Ok(())

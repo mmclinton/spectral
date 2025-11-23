@@ -9,7 +9,7 @@ pipewire = { version = "0.9", optional = true, features = ["v0_3_77"] }
 nnnoiseless = { version = "0.5", optional = true }
 
 [features]
-default = []
+default = ["linux"]
 linux = ["pipewire", "nnnoiseless"]
 macos = []
 windows = []
