@@ -5,14 +5,25 @@ mod state;
 #[cfg(all(target_os = "linux", feature = "pipewire"))]
 mod audio_devices_linux;
 
+#[cfg(all(target_os = "linux", feature = "pipewire"))]
+mod audio_processor_linux;
+
+#[cfg(all(target_os = "linux", feature = "pipewire"))]
+mod pipewire_filter;
+
 use slint::ModelRc;
 use slint::StandardListViewItem;
 use slint::VecModel;
 use slint::Weak;
-use state::{AppState, Status};
+
+#[allow(unused_imports)]
+use state::{AppState, AudioDevice, Status};
 use std::error::Error;
 use std::rc::Rc;
 use std::sync::Arc;
+
+#[cfg(all(target_os = "linux", feature = "pipewire"))]
+use std::sync::Mutex;
 
 slint::include_modules!();
 
@@ -21,41 +32,60 @@ fn main() -> Result<(), Box<dyn Error>> {
     let state = Arc::new(AppState::new());
     let ui_weak = ui.as_weak();
 
-    let mut input_devices: Vec<(u32, String)> = {
-        #[cfg(all(target_os = "linux", feature = "pipewire"))]
-        {
-            audio_devices_linux::get_input_devices()?
-        }
-        #[cfg(not(all(target_os = "linux", feature = "pipewire")))]
-        {
-            vec![]
-        }
-    };
+    #[cfg(all(target_os = "linux", feature = "pipewire"))]
+    let virtual_mic: Arc<Mutex<Option<audio_processor_linux::VirtualMic>>> =
+        Arc::new(Mutex::new(None));
 
-    if input_devices.is_empty() {
-        #[cfg(target_os = "linux")]
-        {
-            input_devices.push((0, "No input devices detected".to_string()));
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            input_devices.push((0, "Platform support coming soon".to_string()));
-        }
-    }
+    #[cfg(all(target_os = "linux", feature = "pipewire"))]
+    let input_devices = audio_devices_linux::get_input_devices()?;
 
-    *state.input_devices.lock().unwrap() = input_devices.clone();
+    #[cfg(all(target_os = "linux", not(feature = "pipewire")))]
+    let input_devices = vec![AudioDevice {
+        id: 0,
+        name: "PipeWire feature not enabled".to_string(),
+    }];
 
-    let input_items: Vec<StandardListViewItem> = input_devices
+    #[cfg(target_os = "macos")]
+    let input_devices = vec![AudioDevice {
+        id: 0,
+        name: "MacOS support coming soon".to_string(),
+    }];
+
+    #[cfg(target_os = "windows")]
+    let input_devices = vec![AudioDevice {
+        id: 0,
+        name: "Windows support coming soon".to_string(),
+    }];
+
+    let mut input_devices_vec: Vec<StandardListViewItem> = input_devices
         .iter()
-        .map(|(_id, name)| {
+        .map(|device| {
             let mut item = StandardListViewItem::default();
-            item.text = name.clone().into();
+            item.text = device.name.clone().into();
             item
         })
         .collect();
 
-    let model = VecModel::from(input_items);
-    ui.set_input_devices(ModelRc::new(Rc::new(model)));
+    if input_devices_vec.is_empty() {
+        let mut item = StandardListViewItem::default();
+        item.text = "No input devices detected".into();
+        input_devices_vec.push(item);
+    }
+
+    let vec_model = VecModel::from(input_devices_vec);
+    let model_rc: ModelRc<StandardListViewItem> = ModelRc::new(Rc::new(vec_model));
+    ui.set_input_devices(model_rc);
+
+    fn hex_to_color(hex: &str) -> slint::Color {
+        let hex = hex.trim_start_matches('#');
+        assert_eq!(hex.len(), 6, "Invalid hex color length");
+
+        let r = u8::from_str_radix(&hex[0..2], 16).expect("Invalid red component");
+        let g = u8::from_str_radix(&hex[2..4], 16).expect("Invalid green component");
+        let b = u8::from_str_radix(&hex[4..6], 16).expect("Invalid blue component");
+
+        slint::Color::from_rgb_u8(r, g, b)
+    }
 
     fn update_ui_status(ui_weak: &Weak<MainWindow>, state: &Arc<AppState>) {
         if let Some(ui) = ui_weak.upgrade() {
@@ -74,34 +104,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    fn hex_to_color(hex: &str) -> slint::Color {
-        let hex = hex.trim_start_matches('#');
-        assert_eq!(hex.len(), 6, "Invalid hex color length");
-
-        let r = u8::from_str_radix(&hex[0..2], 16).expect("Invalid red component");
-        let g = u8::from_str_radix(&hex[2..4], 16).expect("Invalid green component");
-        let b = u8::from_str_radix(&hex[4..6], 16).expect("Invalid blue component");
-
-        slint::Color::from_rgb_u8(r, g, b)
-    }
-
     ui.on_selected_input_index_change({
         let ui_weak = ui_weak.clone();
         let state = state.clone();
+        let devices = input_devices.clone();
         move |idx: i32| {
-            let devices = state.input_devices.lock().unwrap();
-            let mut selected_input = state.selected_input.lock().unwrap();
+            // (device selection needs to be applied immediately)
+            let mut selected_idx = state.selected_input.lock().unwrap();
+            let new_selection = if idx < 0 { None } else { Some(idx as usize) };
+            if *selected_idx != new_selection {
+                *selected_idx = new_selection;
+                drop(selected_idx);
 
-            let new_id = if idx < 0 {
-                None
-            } else {
-                devices.get(idx as usize).map(|(id, _)| *id)
-            };
+                let mut device_id = state.selected_device_id.lock().unwrap();
+                *device_id = new_selection.and_then(|i| devices.get(i).map(|d| d.id));
+                drop(device_id);
 
-            let new_selection = if new_id == Some(0) { None } else { new_id };
-
-            if *selected_input != new_selection {
-                *selected_input = new_selection;
                 let current_status = state.status.lock().unwrap().clone();
                 if let Status::Active = current_status {
                     state.update_status(Status::Pending);
@@ -115,11 +133,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         let ui_weak = ui_weak.clone();
         let state = state.clone();
         move |val| {
-            let mut threshold_val = state.threshold_val.lock().unwrap();
+            let threshold_val = state.threshold_val.lock().unwrap();
             if *threshold_val != val {
-                *threshold_val = val;
-                state.update_status(Status::Pending);
-                update_ui_status(&ui_weak, &state);
+                drop(threshold_val);
+
+                let current_status = state.status.lock().unwrap().clone();
+                if let Status::Active = current_status {
+                    state.update_status(Status::Pending);
+                    update_ui_status(&ui_weak, &state);
+                }
             }
         }
     });
@@ -127,12 +149,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.on_rename_clicked({
         let state = state.clone();
         let ui_weak = ui_weak.clone();
+
         move |new_name| {
-            let mut mic_name_guard = state.mic_name.lock().unwrap();
             let new_name_str = new_name.to_string();
+            let mut mic_name_guard = state.mic_name.lock().unwrap();
+
             if *mic_name_guard != new_name_str {
                 *mic_name_guard = new_name_str;
-                state.update_status(Status::Pending);
+                drop(mic_name_guard);
+
+                let current_status = state.status.lock().unwrap().clone();
+                if let Status::Active = current_status {
+                    state.update_status(Status::Pending);
+                }
                 update_ui_status(&ui_weak, &state);
             }
         }
@@ -141,12 +170,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.on_reset_clicked({
         let state = state.clone();
         let ui_weak = ui_weak.clone();
+
         move |default_name| {
-            let mut mic_name_guard = state.mic_name.lock().unwrap();
             let default_str = default_name.to_string();
+            let mut mic_name_guard = state.mic_name.lock().unwrap();
+
             if *mic_name_guard != default_str {
                 *mic_name_guard = default_str;
-                state.update_status(Status::Pending);
+                drop(mic_name_guard);
+
+                let current_status = state.status.lock().unwrap().clone();
+                if let Status::Active = current_status {
+                    state.update_status(Status::Pending);
+                }
                 update_ui_status(&ui_weak, &state);
             }
         }
@@ -155,8 +191,48 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.on_enable_clicked({
         let state = state.clone();
         let ui_weak = ui_weak.clone();
+        #[cfg(all(target_os = "linux", feature = "pipewire"))]
+        let virtual_mic = virtual_mic.clone();
+
         move || {
-            state.update_status(Status::Active);
+            if let Some(ui) = ui_weak.upgrade() {
+                let ui_threshold = ui.get_slider_value();
+                let mut threshold_val = state.threshold_val.lock().unwrap();
+                *threshold_val = ui_threshold;
+            }
+
+            #[cfg(all(target_os = "linux", feature = "pipewire"))]
+            {
+                let device_id = state.selected_device_id.lock().unwrap();
+                let mic_name = state.mic_name.lock().unwrap().clone();
+
+                if let Some(id) = *device_id {
+                    let mut mic_guard = virtual_mic.lock().unwrap();
+                    if let Some(mic) = mic_guard.take() {
+                        mic.stop();
+                    }
+
+                    match audio_processor_linux::VirtualMic::create(state.clone(), id, &mic_name) {
+                        Ok(mic) => {
+                            println!("Virtual mic '{}' created successfully", mic_name);
+                            *mic_guard = Some(mic);
+                            state.update_status(Status::Active);
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to create virtual mic: {}", e);
+                            state.update_status(Status::Inactive);
+                        }
+                    }
+                } else {
+                    eprintln!("No input device selected");
+                }
+            }
+
+            #[cfg(not(all(target_os = "linux", feature = "pipewire")))]
+            {
+                state.update_status(Status::Active);
+            }
+
             update_ui_status(&ui_weak, &state);
         }
     });
@@ -164,7 +240,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.on_disable_clicked({
         let state = state.clone();
         let ui_weak = ui_weak.clone();
+        #[cfg(all(target_os = "linux", feature = "pipewire"))]
+        let virtual_mic = virtual_mic.clone();
+
         move || {
+            #[cfg(all(target_os = "linux", feature = "pipewire"))]
+            {
+                let mut mic_guard = virtual_mic.lock().unwrap();
+                if let Some(mic) = mic_guard.take() {
+                    mic.stop();
+                    println!("Virtual mic stopped");
+                }
+            }
+
             state.update_status(Status::Inactive);
             update_ui_status(&ui_weak, &state);
         }
