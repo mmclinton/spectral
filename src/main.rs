@@ -258,6 +258,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
+    let ui_weak_clone = ui_weak.clone();
+    ui.on_mic_name_text_changed(move |text| {
+        let text_str = text.to_string();
+        if text_str.len() > 21 {
+            if let Some(ui) = ui_weak_clone.upgrade() {
+                ui.set_mic_name_text(text_str.chars().take(21).collect::<String>().into());
+            }
+        }
+    });
+
     ui.run()?;
 
     Ok(())

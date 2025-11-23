@@ -16,6 +16,7 @@ export component MainWindow inherits Window {
     background: #0D1117;
 
     property <string> default_mic_name: "Spectral-Mic";
+    in-out property <string> mic_name_text: "Spectral-Mic";
     property <int> selected_input_index: -1;
     in-out property <[StandardListViewItem]> input_devices;
     in-out property <int> slider_value: 80;
@@ -31,6 +32,7 @@ export component MainWindow inherits Window {
     callback reset_clicked(string);
     callback enable_clicked();
     callback disable_clicked();
+    callback mic_name_text_changed(string);
 
     Rectangle {
         width: parent.width;
@@ -118,7 +120,6 @@ export component MainWindow inherits Window {
                 maximum: 100;
                 changed(value) => {
                     root.slider_value = value;
-                    // Mark as pending when slider changes (if currently active)
                     if (root.status_color == #3FB950) {
                         root.threshold_change(value)
                     }
@@ -184,6 +185,25 @@ export component MainWindow inherits Window {
                         }
                     }
 
+                    Rectangle {
+                        x: 5px;
+                        y: parent.height - 33px;
+                        width: 98px;
+                        height: 26px;
+                        background: #161B22;
+                        border-width: 1px;
+                        border-radius: 2px;
+
+                        Button {
+                            width: 100px;
+                            height: 28px;
+                            text: "Refresh";
+                            clicked => {
+                                debug("Refresh input devices");
+                            }
+                        }
+                    }
+
                     // Not seeing your device? 
                     device-help := Text {
                         width: parent.width - 15px;
@@ -241,10 +261,13 @@ export component MainWindow inherits Window {
                         x: 15px;
                         y: 0px;
                         height: 30px;
-                        text: default_mic_name;
+                        text <=> root.mic_name_text;
                         font-size: 14px;
                         color: white;
                         vertical-alignment: center;
+                        edited() => {
+                            root.mic_name_text_changed(self.text);
+                        }
                     }
 
                     // Rename button
@@ -263,7 +286,6 @@ export component MainWindow inherits Window {
                             text: "Rename";
                             clicked => {
                                 mic_name.clear-focus();
-                                // Allow rename in any state - will recreate mic if Active
                                 root.rename_clicked(mic_name.text);
                             }
                         }
@@ -285,7 +307,6 @@ export component MainWindow inherits Window {
                             text: "Reset";
                             clicked => {
                                 mic_name.clear-focus();
-                                // Reset both UI and state - will recreate mic if Active
                                 if (mic_name.text != root.default_mic_name) {
                                     mic_name.text = root.default_mic_name;
                                     root.reset_clicked(root.default_mic_name);
