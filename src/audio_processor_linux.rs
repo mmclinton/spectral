@@ -5,8 +5,6 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 
 // Audio processing constants for nnnoiseless RNNoise implementation
-const SAMPLE_RATE: u32 = 48000;
-const CHANNELS: u32 = 1; // Mono audio for noise reduction (nnnoiseless requirement)
 const FRAME_SIZE: usize = 480; // RNNoise processes 10ms frames at 48kHz (480 samples)
 
 // IMPORTANT: RNNoise expects samples in i16 range [-32768.0, 32767.0] as f32 values
@@ -54,7 +52,7 @@ impl AudioProcessor {
             static mut FRAME_COUNTER: u32 = 0;
             unsafe {
                 FRAME_COUNTER += 1;
-                if FRAME_COUNTER % 100 == 0 {
+                if FRAME_COUNTER.is_multiple_of(100) {
                     let input_rms =
                         (frame.iter().map(|&s| s * s).sum::<f32>() / FRAME_SIZE as f32).sqrt();
                     println!(
@@ -90,7 +88,7 @@ impl AudioProcessor {
                     *vad_state = attack_coef * (*vad_state) + (1.0 - attack_coef);
                 } else {
                     // No voice - ramp down gate state
-                    *vad_state = release_coef * (*vad_state);
+                    *vad_state *= release_coef;
                 }
 
                 // Apply smooth gain instead of binary gate
@@ -156,7 +154,7 @@ impl VirtualMic {
         );
 
         let output = Command::new("pactl")
-            .args(&[
+            .args([
                 "load-module",
                 "module-null-sink",
                 &format!("sink_name={}", sink_name),
@@ -192,7 +190,7 @@ impl VirtualMic {
         );
 
         let output = Command::new("pactl")
-            .args(&[
+            .args([
                 "load-module",
                 "module-remap-source",
                 &format!("source_name={}", source_name),
@@ -205,7 +203,7 @@ impl VirtualMic {
         if !output.status.success() {
             if let Some(id) = sink_module_id {
                 let _ = Command::new("pactl")
-                    .args(&["unload-module", &id.to_string()])
+                    .args(["unload-module", &id.to_string()])
                     .output();
             }
             return Err(format!(
@@ -272,7 +270,7 @@ impl VirtualMic {
 
     fn get_node_name(node_id: u32) -> Result<String, Box<dyn std::error::Error>> {
         let output = Command::new("wpctl")
-            .args(&["inspect", &node_id.to_string()])
+            .args(["inspect", &node_id.to_string()])
             .output()?;
 
         if !output.status.success() {
@@ -304,13 +302,13 @@ impl VirtualMic {
 
         if let Some(id) = self.remap_module_id {
             let _ = Command::new("pactl")
-                .args(&["unload-module", &id.to_string()])
+                .args(["unload-module", &id.to_string()])
                 .output();
             println!("  ✓ Unloaded remap module {}", id);
         }
         if let Some(id) = self.sink_module_id {
             let _ = Command::new("pactl")
-                .args(&["unload-module", &id.to_string()])
+                .args(["unload-module", &id.to_string()])
                 .output();
             println!("  ✓ Unloaded sink module {}", id);
         }

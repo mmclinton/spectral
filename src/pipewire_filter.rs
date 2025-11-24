@@ -38,7 +38,7 @@ impl AudioPipeline {
         // Start pacat for recording (capture from physical mic)
         // Use --raw flag for raw PCM over stdout (no file format)
         let mut record_process = Command::new("pacat")
-            .args(&[
+            .args([
                 "--record",
                 "--device",
                 source_node,
@@ -64,7 +64,7 @@ impl AudioPipeline {
         // Start pacat for playback (play to virtual sink)
         // Use --raw flag for raw PCM over stdin (no file format)
         let mut play_process = Command::new("pacat")
-            .args(&[
+            .args([
                 "--playback",
                 "--device",
                 sink_node,
