@@ -27,8 +27,3 @@ cargo build
 cargo run
 cargo test
 ```
-
-## Customization
-
-1. Update `Cargo.toml` with the project name and dependencies
-2. Update `flake.nix` variables (`pname`, `version`, `binaryName`)
