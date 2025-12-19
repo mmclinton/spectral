@@ -1,34 +1,62 @@
 {
-  description = "Spectral – cross-platform real-time noise suppression";
+  description = "Spectral - Real-time audio noise suppression application.";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    rust-overlay.url = "github:oxalica/rust-overlay";
     flake-utils.url = "github:numtide/flake-utils";
-    rust-overlay = {
-      url = "github:oxalica/rust-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
   outputs =
     {
       self,
       nixpkgs,
-      flake-utils,
       rust-overlay,
+      flake-utils,
+      ...
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
-        pkgs = import nixpkgs {
-          inherit system;
-          overlays = [ rust-overlay.overlays.default ];
+        overlays = [ (import rust-overlay) ];
+        pkgs = import nixpkgs { inherit system overlays; };
+
+        rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+          extensions = [
+            "rust-analyzer"
+            "rust-src"
+            "rustfmt"
+            "clippy"
+          ];
         };
 
-        libPath =
-          with pkgs;
-          lib.makeLibraryPath [
-            fontconfig
+        pname = "spectral";
+        version = "0.1.0";
+        binaryName = "spectral";
+
+        spectral = pkgs.rustPlatform.buildRustPackage {
+          inherit pname version;
+
+          src = ./.;
+
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+          };
+
+          # Environment variables for build
+          LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+
+          # Native build inputs (e.g., for C compilers or pkg-config)
+          nativeBuildInputs = with pkgs; [
+            pkg-config
+            cmake
+            python3
+            clang
+          ];
+
+          # Runtime/build dependencies (e.g., for linking libraries)
+          buildInputs = with pkgs; [
+            # GUI/Graphics dependencies for Slint
             libGL
             libxkbcommon
             wayland
@@ -36,69 +64,46 @@
             xorg.libXcursor
             xorg.libXi
             xorg.libXrandr
-            pipewire
-          ];
+            fontconfig
+            freetype
 
-        rust = pkgs.rust-bin.stable.latest.default.override {
-          extensions = [
-            "rust-src"
-            "rust-analyzer"
+            # Audio dependencies for PipeWire
+            pipewire
+            glib
+            dbus
+            systemd
+            pulseaudio
+
+            # Additional libraries
+            libclang.lib
           ];
+          postInstall = pkgs.lib.optionalString (pname != binaryName) ''
+            mv $out/bin/${pname} $out/bin/${binaryName}
+          '';
+
+          meta = with pkgs.lib; {
+            description = "Real-time audio noise suppression application";
+            homepage = "https://codeberg.org/spectral";
+            license = licenses.mit;
+            maintainers = [ ];
+            mainProgram = binaryName;
+            platforms = platforms.linux;
+          };
         };
       in
       {
+        packages.default = spectral;
+        packages.${pname} = spectral;
+
         devShells.default = pkgs.mkShell {
-          nativeBuildInputs = with pkgs; [
-            rust
-            cargo
-            clippy
-            pkg-config
-            rust-analyzer
-            rustfmt
-            nixfmt
-            slint-lsp
-            slint-viewer
-            pipewire.dev
-            clang
-            rust-bindgen
-            pulseaudio
-          ];
-
           buildInputs = with pkgs; [
-            openssl
-            pipewire
-            glib
-            dbus
-            systemd
-          ];
-
-          LIBCLANG_PATH = "${pkgs.llvmPackages.clang-unwrapped.lib}/lib";
-          LD_LIBRARY_PATH = libPath;
-          hardeningDisable = [ "fortify" ];
-        };
-
-        packages.default = pkgs.stdenv.mkDerivation {
-          pname = "spectral";
-          version = "0.1.0";
-          src = ./.;
-
-          nativeBuildInputs = with pkgs; [
-            rust
+            rustToolchain
             pkg-config
-            slint-build
-            pipewire.dev
+            cmake
+            python3
             clang
-            rust-bindgen
-            pulseaudio
-          ];
 
-          buildInputs = with pkgs; [
-            openssl
-            pipewire
-            glib
-            dbus
-            systemd
-            fontconfig
+            # GUI/Graphics dependencies for Slint
             libGL
             libxkbcommon
             wayland
@@ -106,18 +111,49 @@
             xorg.libXcursor
             xorg.libXi
             xorg.libXrandr
+            fontconfig
+            freetype
+
+            # Audio dependencies for PipeWire
+            pipewire
+            pipewire.dev
+
+            # System libraries
+            glib
+            dbus
+            systemd
+            pulseaudio
+          ];
+          NIX_ENFORCE_PURITY = "0";
+          RUST_BACKTRACE = "1";
+
+          # Environment variables for build tools
+          LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+            pkgs.libGL
+            pkgs.libxkbcommon
+            pkgs.wayland
+            pkgs.xorg.libX11
+            pkgs.xorg.libXcursor
+            pkgs.xorg.libXi
+            pkgs.xorg.libXrandr
+            pkgs.fontconfig
+            pkgs.freetype
+            pkgs.pipewire
+            pkgs.glib
+            pkgs.dbus
+            pkgs.systemd
+            pkgs.pulseaudio
           ];
 
-          LIBCLANG_PATH = "${pkgs.llvmPackages.clang-unwrapped.lib}/lib";
-
-          buildPhase = "cargo build --release";
-          installPhase = ''
-            mkdir -p $out/bin
-            cp target/release/spectral $out/bin/
-          '';
+          shellHook = '''';
         };
 
-        apps.default = flake-utils.lib.mkApp { drv = self.packages.${system}.default; };
+        # Apps: Run with `nix run`
+        apps.default = {
+          type = "app";
+          program = "${spectral}/bin/${binaryName}";
+        };
       }
     );
 }
