@@ -1,28 +1,17 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
-mod state;
-
-#[cfg(all(target_os = "linux", feature = "pipewire"))]
 mod audio_devices_linux;
-
-#[cfg(all(target_os = "linux", feature = "pipewire"))]
 mod audio_processor_linux;
-
-#[cfg(all(target_os = "linux", feature = "pipewire"))]
 mod pipewire_filter;
+mod state;
 
 use slint::ModelRc;
 use slint::StandardListViewItem;
 use slint::VecModel;
 use slint::Weak;
 
-#[allow(unused_imports)]
-use state::{AppState, AudioDevice, Status};
+use state::{AppState, Status};
 use std::error::Error;
 use std::rc::Rc;
 use std::sync::Arc;
-
-#[cfg(all(target_os = "linux", feature = "pipewire"))]
 use std::sync::Mutex;
 
 slint::include_modules!();
@@ -32,30 +21,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let state = Arc::new(AppState::new());
     let ui_weak = ui.as_weak();
 
-    #[cfg(all(target_os = "linux", feature = "pipewire"))]
     let virtual_mic: Arc<Mutex<Option<audio_processor_linux::VirtualMic>>> =
         Arc::new(Mutex::new(None));
 
-    #[cfg(all(target_os = "linux", feature = "pipewire"))]
     let input_devices = audio_devices_linux::get_input_devices()?;
-
-    #[cfg(all(target_os = "linux", not(feature = "pipewire")))]
-    let input_devices = vec![AudioDevice {
-        id: 0,
-        name: "PipeWire feature not enabled".to_string(),
-    }];
-
-    #[cfg(target_os = "macos")]
-    let input_devices = vec![AudioDevice {
-        id: 0,
-        name: "MacOS support coming soon".to_string(),
-    }];
-
-    #[cfg(target_os = "windows")]
-    let input_devices = vec![AudioDevice {
-        id: 0,
-        name: "Windows support coming soon".to_string(),
-    }];
 
     let mut input_devices_vec: Vec<StandardListViewItem> = input_devices
         .iter()
@@ -191,7 +160,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.on_enable_clicked({
         let state = state.clone();
         let ui_weak = ui_weak.clone();
-        #[cfg(all(target_os = "linux", feature = "pipewire"))]
         let virtual_mic = virtual_mic.clone();
 
         move || {
@@ -201,36 +169,28 @@ fn main() -> Result<(), Box<dyn Error>> {
                 *threshold_val = ui_threshold;
             }
 
-            #[cfg(all(target_os = "linux", feature = "pipewire"))]
-            {
-                let device_id = state.selected_device_id.lock().unwrap();
-                let mic_name = state.mic_name.lock().unwrap().clone();
+            let device_id = state.selected_device_id.lock().unwrap();
+            let mic_name = state.mic_name.lock().unwrap().clone();
 
-                if let Some(id) = *device_id {
-                    let mut mic_guard = virtual_mic.lock().unwrap();
-                    if let Some(mic) = mic_guard.take() {
-                        mic.stop();
-                    }
-
-                    match audio_processor_linux::VirtualMic::create(state.clone(), id, &mic_name) {
-                        Ok(mic) => {
-                            println!("Virtual mic '{}' created successfully", mic_name);
-                            *mic_guard = Some(mic);
-                            state.update_status(Status::Active);
-                        }
-                        Err(e) => {
-                            eprintln!("Failed to create virtual mic: {}", e);
-                            state.update_status(Status::Inactive);
-                        }
-                    }
-                } else {
-                    eprintln!("No input device selected");
+            if let Some(id) = *device_id {
+                let mut mic_guard = virtual_mic.lock().unwrap();
+                if let Some(mic) = mic_guard.take() {
+                    mic.stop();
                 }
-            }
 
-            #[cfg(not(all(target_os = "linux", feature = "pipewire")))]
-            {
-                state.update_status(Status::Active);
+                match audio_processor_linux::VirtualMic::create(state.clone(), id, &mic_name) {
+                    Ok(mic) => {
+                        println!("Virtual mic '{}' created successfully", mic_name);
+                        *mic_guard = Some(mic);
+                        state.update_status(Status::Active);
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to create virtual mic: {}", e);
+                        state.update_status(Status::Inactive);
+                    }
+                }
+            } else {
+                eprintln!("No input device selected");
             }
 
             update_ui_status(&ui_weak, &state);
@@ -240,17 +200,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.on_disable_clicked({
         let state = state.clone();
         let ui_weak = ui_weak.clone();
-        #[cfg(all(target_os = "linux", feature = "pipewire"))]
         let virtual_mic = virtual_mic.clone();
 
         move || {
-            #[cfg(all(target_os = "linux", feature = "pipewire"))]
-            {
-                let mut mic_guard = virtual_mic.lock().unwrap();
-                if let Some(mic) = mic_guard.take() {
-                    mic.stop();
-                    println!("Virtual mic stopped");
-                }
+            let mut mic_guard = virtual_mic.lock().unwrap();
+            if let Some(mic) = mic_guard.take() {
+                mic.stop();
+                println!("Virtual mic stopped");
             }
 
             state.update_status(Status::Inactive);
@@ -272,71 +228,63 @@ fn main() -> Result<(), Box<dyn Error>> {
         let ui_weak = ui_weak.clone();
         let state = state.clone();
         move || {
-            #[cfg(all(target_os = "linux", feature = "pipewire"))]
-            {
-                if let Some(ui) = ui_weak.upgrade() {
-                    match audio_devices_linux::get_input_devices() {
-                        Ok(fresh_devices) => {
-                            let spectral_mic_name = state.mic_name.lock().unwrap().clone();
+            if let Some(ui) = ui_weak.upgrade() {
+                match audio_devices_linux::get_input_devices() {
+                    Ok(fresh_devices) => {
+                        let spectral_mic_name = state.mic_name.lock().unwrap().clone();
 
-                            let filtered_devices: Vec<_> = fresh_devices
+                        let filtered_devices: Vec<_> = fresh_devices
+                            .iter()
+                            .filter(|device| {
+                                let mic_name_hyphen = spectral_mic_name.replace(" ", "-");
+                                let mic_name_underscore = spectral_mic_name.replace(" ", "_");
+                                let device_name = &device.name;
+
+                                device_name != &spectral_mic_name
+                                    && device_name != &mic_name_hyphen
+                                    && device_name != &mic_name_underscore
+                            })
+                            .cloned()
+                            .collect();
+
+                        let items: Vec<StandardListViewItem> = filtered_devices
+                            .iter()
+                            .map(|device| {
+                                let mut item = StandardListViewItem::default();
+                                item.text = device.name.clone().into();
+                                item
+                            })
+                            .collect();
+
+                        let model = VecModel::from(items);
+                        ui.set_input_devices(ModelRc::new(Rc::new(model)));
+
+                        let selected_device_id = state.selected_device_id.lock().unwrap();
+                        if let Some(device_id) = *selected_device_id {
+                            let new_index = filtered_devices
                                 .iter()
-                                .filter(|device| {
-                                    let mic_name_hyphen = spectral_mic_name.replace(" ", "-");
-                                    let mic_name_underscore = spectral_mic_name.replace(" ", "_");
-                                    let device_name = &device.name;
+                                .position(|d| d.id == device_id)
+                                .map(|pos| pos as i32)
+                                .unwrap_or(-1);
 
-                                    device_name != &spectral_mic_name
-                                        && device_name != &mic_name_hyphen
-                                        && device_name != &mic_name_underscore
-                                })
-                                .cloned()
-                                .collect();
+                            ui.set_selected_input_index(new_index);
 
-                            let items: Vec<StandardListViewItem> = filtered_devices
-                                .iter()
-                                .map(|device| {
-                                    let mut item = StandardListViewItem::default();
-                                    item.text = device.name.clone().into();
-                                    item
-                                })
-                                .collect();
-
-                            let model = VecModel::from(items);
-                            ui.set_input_devices(ModelRc::new(Rc::new(model)));
-
-                            let selected_device_id = state.selected_device_id.lock().unwrap();
-                            if let Some(device_id) = *selected_device_id {
-                                let new_index = filtered_devices
-                                    .iter()
-                                    .position(|d| d.id == device_id)
-                                    .map(|pos| pos as i32)
-                                    .unwrap_or(-1);
-
-                                ui.set_selected_input_index(new_index);
-
-                                let mut selected_idx = state.selected_input.lock().unwrap();
-                                *selected_idx = if new_index >= 0 {
-                                    Some(new_index as usize)
-                                } else {
-                                    None
-                                };
+                            let mut selected_idx = state.selected_input.lock().unwrap();
+                            *selected_idx = if new_index >= 0 {
+                                Some(new_index as usize)
                             } else {
-                                ui.set_selected_input_index(-1);
-                            }
+                                None
+                            };
+                        } else {
+                            ui.set_selected_input_index(-1);
+                        }
 
-                            println!("[Refresh] Device list updated");
-                        }
-                        Err(e) => {
-                            eprintln!("[Refresh] Failed to refresh devices: {}", e);
-                        }
+                        println!("[Refresh] Device list updated");
+                    }
+                    Err(e) => {
+                        eprintln!("[Refresh] Failed to refresh devices: {}", e);
                     }
                 }
-            }
-
-            #[cfg(not(all(target_os = "linux", feature = "pipewire")))]
-            {
-                println!("[Refresh] Device refresh not supported on this platform");
             }
         }
     });
