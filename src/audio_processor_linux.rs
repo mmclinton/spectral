@@ -79,9 +79,9 @@ impl AudioProcessor {
                 // Smooth gate transitions to prevent clicks and word cutoff
                 // These coefficients create fade-in/fade-out instead of hard cuts
                 // Attack: 0.85 = ~75ms ramp up (fast enough to catch word start)
-                // Release: 0.98 = ~500ms ramp down (keeps tail of words/sentences)
+                // Release: 0.96 = ~250ms ramp down (keeps tail of words/sentences)
                 let attack_coef = 0.85; // Faster attack to catch word beginning
-                let release_coef = 0.98; // Slower release to avoid cutting word end
+                let release_coef = 0.96; // Faster release than previous (0.98) - closes gate quicker after voice stops
 
                 if target_gate > 0.5 {
                     // Voice detected - ramp up gate state
