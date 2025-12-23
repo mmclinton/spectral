@@ -1,19 +1,20 @@
+use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AudioDevice {
     pub id: u32,
     pub name: String,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub enum Status {
     Inactive,
     Active,
     Pending,
 }
 
-pub(crate) struct AppState {
+pub struct AppState {
     pub status: Arc<Mutex<Status>>,
     pub selected_input: Arc<Mutex<Option<usize>>>,
     pub selected_device_id: Arc<Mutex<Option<u32>>>,

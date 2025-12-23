@@ -1,32 +1,95 @@
-mod audio_devices_linux;
-mod audio_processor_linux;
-mod pipewire_filter;
-mod state;
+use spectral_lib::audio_devices_linux;
+use spectral_lib::ipc::{DaemonClient, DaemonCommand, DaemonResponse};
 
 use slint::ModelRc;
 use slint::StandardListViewItem;
 use slint::VecModel;
 use slint::Weak;
 
-use state::{AppState, Status};
 use std::error::Error;
+use std::process::{Command, Stdio};
 use std::rc::Rc;
-use std::sync::Arc;
-use std::sync::Mutex;
 
 slint::include_modules!();
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let ui = MainWindow::new()?;
-    let state = Arc::new(AppState::new());
-    let ui_weak = ui.as_weak();
+fn start_daemon() -> Result<(), Box<dyn Error>> {
+    let daemon_path = std::env::current_exe()?
+        .parent()
+        .unwrap()
+        .join("spectral-daemon");
 
-    let virtual_mic: Arc<Mutex<Option<audio_processor_linux::VirtualMic>>> =
-        Arc::new(Mutex::new(None));
+    let log_path = std::env::var("XDG_RUNTIME_DIR")
+        .or_else(|_| std::env::var("HOME").map(|h| format!("{}/tmp", h)))
+        .unwrap_or_else(|_| "/tmp".to_string());
+
+    let log_file = std::path::PathBuf::from(log_path).join("spectral-daemon.log");
+    let log = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&log_file)?;
+
+    Command::new(&daemon_path)
+        .stdin(Stdio::null())
+        .stdout(log.try_clone()?)
+        .stderr(log)
+        .spawn()?;
+
+    println!("Daemon started. Logs: {}", log_file.display());
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    Ok(())
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let mut daemon_client = match DaemonClient::connect() {
+        Ok(client) => client,
+        Err(_) => {
+            println!("Daemon not running, starting daemon...");
+            start_daemon()?;
+            DaemonClient::connect()?
+        }
+    };
+
+    let daemon_state = match daemon_client.send_command(DaemonCommand::GetState) {
+        Ok(DaemonResponse::State(state)) => state,
+        Ok(_) => return Err("Unexpected response from daemon".into()),
+        Err(e) => {
+            eprintln!(
+                "Failed to communicate with daemon (possibly old version), restarting: {}",
+                e
+            );
+            let _ = daemon_client.send_command(DaemonCommand::Shutdown);
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            start_daemon()?;
+
+            let mut new_client = DaemonClient::connect()?;
+            match new_client.send_command(DaemonCommand::GetState) {
+                Ok(DaemonResponse::State(state)) => state,
+                _ => return Err("Failed to get daemon state after restart".into()),
+            }
+        }
+    };
+
+    let ui = MainWindow::new()?;
+    let ui_weak = ui.as_weak();
 
     let input_devices = audio_devices_linux::get_input_devices()?;
 
-    let mut input_devices_vec: Vec<StandardListViewItem> = input_devices
+    let filtered_devices: Vec<_> = input_devices
+        .iter()
+        .filter(|device| {
+            let mic_name_hyphen = daemon_state.mic_name.replace(" ", "-");
+            let mic_name_underscore = daemon_state.mic_name.replace(" ", "_");
+            let device_name = &device.name;
+
+            device_name != &daemon_state.mic_name
+                && device_name != &mic_name_hyphen
+                && device_name != &mic_name_underscore
+        })
+        .cloned()
+        .collect();
+
+    let mut input_devices_vec: Vec<StandardListViewItem> = filtered_devices
         .iter()
         .map(|device| {
             let mut item = StandardListViewItem::default();
@@ -45,6 +108,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     let model_rc: ModelRc<StandardListViewItem> = ModelRc::new(Rc::new(vec_model));
     ui.set_input_devices(model_rc);
 
+    ui.set_mic_name_text(daemon_state.mic_name.clone().into());
+    ui.set_slider_value(daemon_state.threshold);
+
+    if let Some(device_id) = daemon_state.device_id {
+        if let Some(idx) = filtered_devices.iter().position(|d| d.id == device_id) {
+            ui.set_selected_input_index(idx as i32);
+        }
+    }
+
     fn hex_to_color(hex: &str) -> slint::Color {
         let hex = hex.trim_start_matches('#');
         assert_eq!(hex.len(), 6, "Invalid hex color length");
@@ -56,161 +128,143 @@ fn main() -> Result<(), Box<dyn Error>> {
         slint::Color::from_rgb_u8(r, g, b)
     }
 
-    fn update_ui_status(ui_weak: &Weak<MainWindow>, state: &Arc<AppState>) {
+    fn update_ui_status(ui_weak: &Weak<MainWindow>, is_active: bool, is_pending: bool) {
         if let Some(ui) = ui_weak.upgrade() {
-            let status = state.status.lock().unwrap();
-            let color_str = match *status {
-                Status::Inactive => "#FF0000",
-                Status::Active => "#3FB950",
-                Status::Pending => "#FFFF00",
+            let (color_str, status_text) = if is_pending {
+                ("#FFFF00", "Status: Pending Changes")
+            } else if is_active {
+                ("#3FB950", "Status: Active")
+            } else {
+                ("#FF0000", "Status: Inactive")
             };
             ui.set_status_color(hex_to_color(color_str));
-            ui.set_status_text(match *status {
-                Status::Inactive => "Status: Inactive".into(),
-                Status::Active => "Status: Active".into(),
-                Status::Pending => "Status: Pending Changes".into(),
-            });
+            ui.set_status_text(status_text.into());
         }
     }
 
+    let is_active = daemon_state.status == "Active";
+    let is_pending = daemon_state.status == "Pending";
+    update_ui_status(&ui_weak, is_active, is_pending);
+
     ui.on_selected_input_index_change({
         let ui_weak = ui_weak.clone();
-        let state = state.clone();
-        let devices = input_devices.clone();
+        let devices = filtered_devices.clone();
         move |idx: i32| {
-            // (device selection needs to be applied immediately)
-            let mut selected_idx = state.selected_input.lock().unwrap();
-            let new_selection = if idx < 0 { None } else { Some(idx as usize) };
-            if *selected_idx != new_selection {
-                *selected_idx = new_selection;
-                drop(selected_idx);
+            let device_id = if idx >= 0 && (idx as usize) < devices.len() {
+                Some(devices[idx as usize].id)
+            } else {
+                None
+            };
 
-                let mut device_id = state.selected_device_id.lock().unwrap();
-                *device_id = new_selection.and_then(|i| devices.get(i).map(|d| d.id));
-                drop(device_id);
+            if let Some(id) = device_id {
+                let mut client = DaemonClient::connect().ok();
+                if let Some(ref mut c) = client {
+                    let _ = c.send_command(DaemonCommand::UpdateDevice(id));
 
-                let current_status = state.status.lock().unwrap().clone();
-                if let Status::Active = current_status {
-                    state.update_status(Status::Pending);
+                    if let Ok(DaemonResponse::State(state)) =
+                        c.send_command(DaemonCommand::GetState)
+                    {
+                        let is_active = state.status == "Active";
+                        let is_pending = state.status == "Pending";
+                        update_ui_status(&ui_weak, is_active, is_pending);
+                    }
                 }
-                update_ui_status(&ui_weak, &state);
             }
         }
     });
 
     ui.on_threshold_change({
         let ui_weak = ui_weak.clone();
-        let state = state.clone();
         move |val| {
-            let threshold_val = state.threshold_val.lock().unwrap();
-            if *threshold_val != val {
-                drop(threshold_val);
+            let mut client = DaemonClient::connect().ok();
+            if let Some(ref mut c) = client {
+                let _ = c.send_command(DaemonCommand::UpdateThreshold(val));
 
-                let current_status = state.status.lock().unwrap().clone();
-                if let Status::Active = current_status {
-                    state.update_status(Status::Pending);
-                    update_ui_status(&ui_weak, &state);
+                if let Ok(DaemonResponse::State(state)) = c.send_command(DaemonCommand::GetState) {
+                    let is_active = state.status == "Active";
+                    let is_pending = state.status == "Pending";
+                    update_ui_status(&ui_weak, is_active, is_pending);
                 }
             }
         }
     });
 
     ui.on_rename_clicked({
-        let state = state.clone();
         let ui_weak = ui_weak.clone();
-
         move |new_name| {
-            let new_name_str = new_name.to_string();
-            let mut mic_name_guard = state.mic_name.lock().unwrap();
+            let mut client = DaemonClient::connect().ok();
+            if let Some(ref mut c) = client {
+                let _ = c.send_command(DaemonCommand::UpdateMicName(new_name.to_string()));
 
-            if *mic_name_guard != new_name_str {
-                *mic_name_guard = new_name_str;
-                drop(mic_name_guard);
-
-                let current_status = state.status.lock().unwrap().clone();
-                if let Status::Active = current_status {
-                    state.update_status(Status::Pending);
+                if let Ok(DaemonResponse::State(state)) = c.send_command(DaemonCommand::GetState) {
+                    let is_active = state.status == "Active";
+                    let is_pending = state.status == "Pending";
+                    update_ui_status(&ui_weak, is_active, is_pending);
                 }
-                update_ui_status(&ui_weak, &state);
             }
         }
     });
 
     ui.on_reset_clicked({
-        let state = state.clone();
         let ui_weak = ui_weak.clone();
-
         move |default_name| {
-            let default_str = default_name.to_string();
-            let mut mic_name_guard = state.mic_name.lock().unwrap();
+            let mut client = DaemonClient::connect().ok();
+            if let Some(ref mut c) = client {
+                let _ = c.send_command(DaemonCommand::UpdateMicName(default_name.to_string()));
 
-            if *mic_name_guard != default_str {
-                *mic_name_guard = default_str;
-                drop(mic_name_guard);
-
-                let current_status = state.status.lock().unwrap().clone();
-                if let Status::Active = current_status {
-                    state.update_status(Status::Pending);
+                if let Ok(DaemonResponse::State(state)) = c.send_command(DaemonCommand::GetState) {
+                    let is_active = state.status == "Active";
+                    let is_pending = state.status == "Pending";
+                    update_ui_status(&ui_weak, is_active, is_pending);
                 }
-                update_ui_status(&ui_weak, &state);
             }
         }
     });
 
     ui.on_enable_clicked({
-        let state = state.clone();
         let ui_weak = ui_weak.clone();
-        let virtual_mic = virtual_mic.clone();
-
+        let devices = filtered_devices.clone();
         move || {
             if let Some(ui) = ui_weak.upgrade() {
-                let ui_threshold = ui.get_slider_value();
-                let mut threshold_val = state.threshold_val.lock().unwrap();
-                *threshold_val = ui_threshold;
-            }
+                let idx = ui.get_selected_input_index();
+                let threshold = ui.get_slider_value();
+                let mic_name = ui.get_mic_name_text().to_string();
 
-            let device_id = state.selected_device_id.lock().unwrap();
-            let mic_name = state.mic_name.lock().unwrap().clone();
+                if idx >= 0 && (idx as usize) < devices.len() {
+                    let device_id = devices[idx as usize].id;
 
-            if let Some(id) = *device_id {
-                let mut mic_guard = virtual_mic.lock().unwrap();
-                if let Some(mic) = mic_guard.take() {
-                    mic.stop();
-                }
-
-                match audio_processor_linux::VirtualMic::create(state.clone(), id, &mic_name) {
-                    Ok(mic) => {
-                        println!("Virtual mic '{}' created successfully", mic_name);
-                        *mic_guard = Some(mic);
-                        state.update_status(Status::Active);
+                    let mut client = DaemonClient::connect().ok();
+                    if let Some(ref mut c) = client {
+                        match c.send_command(DaemonCommand::Enable {
+                            device_id,
+                            mic_name,
+                            threshold,
+                        }) {
+                            Ok(DaemonResponse::Ok) => {
+                                update_ui_status(&ui_weak, true, false);
+                            }
+                            Ok(DaemonResponse::Error(e)) => {
+                                eprintln!("Failed to enable: {}", e);
+                                update_ui_status(&ui_weak, false, false);
+                            }
+                            _ => {
+                                update_ui_status(&ui_weak, false, false);
+                            }
+                        }
                     }
-                    Err(e) => {
-                        eprintln!("Failed to create virtual mic: {}", e);
-                        state.update_status(Status::Inactive);
-                    }
                 }
-            } else {
-                eprintln!("No input device selected");
             }
-
-            update_ui_status(&ui_weak, &state);
         }
     });
 
     ui.on_disable_clicked({
-        let state = state.clone();
         let ui_weak = ui_weak.clone();
-        let virtual_mic = virtual_mic.clone();
-
         move || {
-            let mut mic_guard = virtual_mic.lock().unwrap();
-            if let Some(mic) = mic_guard.take() {
-                mic.stop();
-                println!("Virtual mic stopped");
+            let mut client = DaemonClient::connect().ok();
+            if let Some(ref mut c) = client {
+                let _ = c.send_command(DaemonCommand::Disable);
+                update_ui_status(&ui_weak, false, false);
             }
-
-            state.update_status(Status::Inactive);
-            update_ui_status(&ui_weak, &state);
         }
     });
 
@@ -226,21 +280,28 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     ui.on_refresh_devices_clicked({
         let ui_weak = ui_weak.clone();
-        let state = state.clone();
         move || {
             if let Some(ui) = ui_weak.upgrade() {
                 match audio_devices_linux::get_input_devices() {
                     Ok(fresh_devices) => {
-                        let spectral_mic_name = state.mic_name.lock().unwrap().clone();
+                        let mut client = DaemonClient::connect().ok();
+                        let mic_name = if let Some(ref mut c) = client {
+                            match c.send_command(DaemonCommand::GetState) {
+                                Ok(DaemonResponse::State(state)) => state.mic_name,
+                                _ => "Spectral-Mic".to_string(),
+                            }
+                        } else {
+                            "Spectral-Mic".to_string()
+                        };
 
                         let filtered_devices: Vec<_> = fresh_devices
                             .iter()
                             .filter(|device| {
-                                let mic_name_hyphen = spectral_mic_name.replace(" ", "-");
-                                let mic_name_underscore = spectral_mic_name.replace(" ", "_");
+                                let mic_name_hyphen = mic_name.replace(" ", "-");
+                                let mic_name_underscore = mic_name.replace(" ", "_");
                                 let device_name = &device.name;
 
-                                device_name != &spectral_mic_name
+                                device_name != &mic_name
                                     && device_name != &mic_name_hyphen
                                     && device_name != &mic_name_underscore
                             })
@@ -259,22 +320,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let model = VecModel::from(items);
                         ui.set_input_devices(ModelRc::new(Rc::new(model)));
 
-                        let selected_device_id = state.selected_device_id.lock().unwrap();
-                        if let Some(device_id) = *selected_device_id {
-                            let new_index = filtered_devices
-                                .iter()
-                                .position(|d| d.id == device_id)
-                                .map(|pos| pos as i32)
-                                .unwrap_or(-1);
-
-                            ui.set_selected_input_index(new_index);
-
-                            let mut selected_idx = state.selected_input.lock().unwrap();
-                            *selected_idx = if new_index >= 0 {
-                                Some(new_index as usize)
-                            } else {
-                                None
-                            };
+                        let selected_idx = ui.get_selected_input_index();
+                        if selected_idx >= 0 && (selected_idx as usize) < filtered_devices.len() {
+                            ui.set_selected_input_index(selected_idx);
                         } else {
                             ui.set_selected_input_index(-1);
                         }

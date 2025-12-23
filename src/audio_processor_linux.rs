@@ -139,26 +139,14 @@ impl VirtualMic {
 
         let source_name = virtual_name.replace(" ", "_");
         let sink_name = format!("{}_sink", source_name);
-
-        // For now: Replace spaces with hyphens for display name to avoid parsing issues
-        // Mark as internal filter so it doesn't appear in user-facing output device lists--this depends on various apps
         let display_name = virtual_name.replace(" ", "-");
-        let sink_properties = format!(
-            "device.description={} node.description={} device.class=filter device.intended_roles=hidden device.suspend-on-idle=false",
-            display_name, display_name
-        );
-
-        println!(
-            "[Debug] Creating null sink with properties: {}",
-            sink_properties
-        );
 
         let output = Command::new("pactl")
             .args([
                 "load-module",
                 "module-null-sink",
                 &format!("sink_name={}", sink_name),
-                &format!("sink_properties={}", sink_properties),
+                "sink_properties=device.description=Spectral-DoNotUse",
                 "rate=48000",
                 "channels=1",
                 "format=float32le",
@@ -227,6 +215,26 @@ impl VirtualMic {
         println!("  - Remap module ID: {:?}", remap_module_id);
         println!("  - PipeWire node name: {}", source_name);
         println!("═══════════════════════════════════════════════════════════");
+        println!();
+
+        let set_default_output = Command::new("pactl")
+            .args(["set-default-source", &source_name])
+            .output();
+
+        match set_default_output {
+            Ok(output) if output.status.success() => {
+                println!("[System] ✓ Set {} as default input source", virtual_name);
+            }
+            Ok(output) => {
+                eprintln!(
+                    "[System] Failed to set default source: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            Err(e) => {
+                eprintln!("[System] Failed to execute pactl set-default-source: {}", e);
+            }
+        }
         println!();
 
         let source_node_name = Self::get_node_name(source_device_id)?;
