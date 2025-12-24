@@ -408,14 +408,9 @@ export component MainWindow inherits Window {
                 y: 700px;
                 width: 140px;
                 height: 40px;
-                text: "Enable";
+                text: root.status_color == #FF0000 ? "Enable" : "Apply";
                 clicked => {
-                    if (root.status_color == #FF0000) {
-                        self.text = "Apply"
-                    }
-                    if (root.status_color != #3FB950) {
-                        root.enable_clicked();
-                    }
+                    root.enable_clicked();
                 }
             }
         }

@@ -53,7 +53,7 @@ impl AudioPipeline {
                 "--raw", // Critical: output raw PCM, not a file format
             ])
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::inherit())
             .spawn()?;
 
         let record_stdout = record_process

@@ -34,6 +34,28 @@
         version = "0.1.0";
         binaryName = "spectral";
 
+        # Runtime libraries that need to be dynamically linked
+        runtimeLibs = with pkgs; [
+          # GUI/Graphics dependencies for Slint
+          libGL
+          libxkbcommon
+          wayland
+          xorg.libX11
+          xorg.libXcursor
+          xorg.libXi
+          xorg.libXrandr
+          fontconfig
+          freetype
+
+          # Audio dependencies
+          pipewire
+        ];
+
+        # Runtime tools that need to be in the PATH
+        runtimeTools = with pkgs; [
+          pulseaudio # Provides 'pacat' used by the daemon
+        ];
+
         spectral = pkgs.rustPlatform.buildRustPackage {
           inherit pname version;
 
@@ -46,39 +68,25 @@
           # Environment variables for build
           LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
 
-          # Native build inputs (e.g., for C compilers or pkg-config)
+          # Native build inputs (build-time tools)
           nativeBuildInputs = with pkgs; [
             pkg-config
             cmake
-            python3
             clang
+            makeWrapper
           ];
 
-          # Runtime/build dependencies (e.g., for linking libraries)
-          buildInputs = with pkgs; [
-            # GUI/Graphics dependencies for Slint
-            libGL
-            libxkbcommon
-            wayland
-            xorg.libX11
-            xorg.libXcursor
-            xorg.libXi
-            xorg.libXrandr
-            fontconfig
-            freetype
+          # Build inputs (libraries to link against)
+          buildInputs = runtimeLibs;
 
-            # Audio dependencies for PipeWire
-            pipewire
-            glib
-            dbus
-            systemd
-            pulseaudio
+          postInstall = ''
+            wrapProgram $out/bin/spectral \
+              --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath runtimeLibs}" \
+              --prefix PATH : "${pkgs.lib.makeBinPath runtimeTools}"
 
-            # Additional libraries
-            libclang.lib
-          ];
-          postInstall = pkgs.lib.optionalString (pname != binaryName) ''
-            mv $out/bin/${pname} $out/bin/${binaryName}
+            wrapProgram $out/bin/spectral-daemon \
+              --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath runtimeLibs}" \
+              --prefix PATH : "${pkgs.lib.makeBinPath runtimeTools}"
           '';
 
           meta = with pkgs.lib; {
@@ -96,57 +104,25 @@
         packages.${pname} = spectral;
 
         devShells.default = pkgs.mkShell {
-          buildInputs = with pkgs; [
-            rustToolchain
-            pkg-config
-            cmake
-            python3
-            clang
+          buildInputs =
+            with pkgs;
+            [
+              rustToolchain
+              pkg-config
+              cmake
+              clang
+            ]
+            ++ runtimeLibs
+            ++ runtimeTools;
 
-            # GUI/Graphics dependencies for Slint
-            libGL
-            libxkbcommon
-            wayland
-            xorg.libX11
-            xorg.libXcursor
-            xorg.libXi
-            xorg.libXrandr
-            fontconfig
-            freetype
-
-            # Audio dependencies for PipeWire
-            pipewire
-            pipewire.dev
-
-            # System libraries
-            glib
-            dbus
-            systemd
-            pulseaudio
-          ];
           NIX_ENFORCE_PURITY = "0";
           RUST_BACKTRACE = "1";
 
           # Environment variables for build tools
           LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
-          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
-            pkgs.libGL
-            pkgs.libxkbcommon
-            pkgs.wayland
-            pkgs.xorg.libX11
-            pkgs.xorg.libXcursor
-            pkgs.xorg.libXi
-            pkgs.xorg.libXrandr
-            pkgs.fontconfig
-            pkgs.freetype
-            pkgs.pipewire
-            pkgs.glib
-            pkgs.dbus
-            pkgs.systemd
-            pkgs.pulseaudio
-          ];
 
-          shellHook = '''';
+          # Ensure libraries are found during cargo run
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath runtimeLibs;
         };
 
         # Apps: Run with `nix run`
