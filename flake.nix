@@ -49,11 +49,14 @@
 
           # Audio dependencies
           pipewire
+          libpulseaudio # Provides libpulse.so.0 for libpulse-binding
         ];
 
         # Runtime tools that need to be in the PATH
         runtimeTools = with pkgs; [
-          pulseaudio # Provides 'pacat' used by the daemon
+          pipewire # Provides 'pw-record' and 'pw-play'
+          wireplumber # PipeWire session manager
+          pulseaudio # Provides 'pacat' for audio streaming (TODO: migrate to pw-record/pw-play)
         ];
 
         spectral = pkgs.rustPlatform.buildRustPackage {

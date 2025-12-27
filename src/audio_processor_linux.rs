@@ -1,4 +1,5 @@
 use crate::pipewire_filter::AudioPipeline;
+use crate::pulse_module::PulseContext;
 use crate::state::AppState;
 use nnnoiseless::DenoiseState;
 use std::process::Command;
@@ -141,30 +142,24 @@ impl VirtualMic {
         let sink_name = format!("{}_sink", source_name);
         let display_name = virtual_name.replace(" ", "-");
 
-        let output = Command::new("pactl")
-            .args([
-                "load-module",
-                "module-null-sink",
-                &format!("sink_name={}", sink_name),
-                "sink_properties=device.description=Spectral-DoNotUse",
-                "rate=48000",
-                "channels=1",
-                "format=float32le",
-            ])
-            .output()?;
+        // Create PulseAudio context
+        let mut pulse_ctx = PulseContext::new("spectral")?;
 
-        if !output.status.success() {
-            return Err(format!(
-                "Failed to create null sink: {}",
-                String::from_utf8_lossy(&output.stderr)
-            )
-            .into());
-        }
+        // Load null sink module
+        let sink_args = format!(
+            "sink_name={} sink_properties=device.description=Spectral-DoNotUse rate=48000 channels=1 format=float32le",
+            sink_name
+        );
 
-        let sink_module_id = String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .parse::<u32>()
-            .ok();
+        let sink_module_id = match pulse_ctx.load_module("module-null-sink", &sink_args) {
+            Ok(id) => {
+                println!("[PulseAudio] Loaded module-null-sink: module ID {}", id);
+                Some(id)
+            }
+            Err(e) => {
+                return Err(format!("Failed to create null sink: {}", e).into());
+            }
+        };
 
         let monitor_name = format!("{}.monitor", sink_name);
         let source_properties = format!(
@@ -177,34 +172,25 @@ impl VirtualMic {
             source_properties
         );
 
-        let output = Command::new("pactl")
-            .args([
-                "load-module",
-                "module-remap-source",
-                &format!("source_name={}", source_name),
-                &format!("master={}", monitor_name),
-                &format!("source_properties={}", source_properties),
-                "channels=1",
-            ])
-            .output()?;
+        // Load remap source module
+        let remap_args = format!(
+            "source_name={} master={} source_properties={} channels=1",
+            source_name, monitor_name, source_properties
+        );
 
-        if !output.status.success() {
-            if let Some(id) = sink_module_id {
-                let _ = Command::new("pactl")
-                    .args(["unload-module", &id.to_string()])
-                    .output();
+        let remap_module_id = match pulse_ctx.load_module("module-remap-source", &remap_args) {
+            Ok(id) => {
+                println!("[PulseAudio] Loaded module-remap-source: module ID {}", id);
+                Some(id)
             }
-            return Err(format!(
-                "Failed to create remapped source: {}",
-                String::from_utf8_lossy(&output.stderr)
-            )
-            .into());
-        }
-
-        let remap_module_id = String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .parse::<u32>()
-            .ok();
+            Err(e) => {
+                // Cleanup sink module on failure
+                if let Some(sink_id) = sink_module_id {
+                    let _ = pulse_ctx.unload_module(sink_id);
+                }
+                return Err(format!("Failed to create remapped source: {}", e).into());
+            }
+        };
 
         println!("═══════════════════════════════════════════════════════════");
         println!(
@@ -217,22 +203,37 @@ impl VirtualMic {
         println!("═══════════════════════════════════════════════════════════");
         println!();
 
-        let set_default_output = Command::new("pactl")
-            .args(["set-default-source", &source_name])
-            .output();
+        // Find the node ID for the virtual mic we just created
+        // wpctl requires numeric ID, not name
+        let node_id = Self::find_node_id_by_name(&source_name);
 
-        match set_default_output {
-            Ok(output) if output.status.success() => {
-                println!("[System] ✓ Set {} as default input source", virtual_name);
-            }
-            Ok(output) => {
-                eprintln!(
-                    "[System] Failed to set default source: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
+        match node_id {
+            Ok(id) => {
+                let set_default_output = Command::new("wpctl")
+                    .args(["set-default", &id.to_string()])
+                    .output();
+
+                match set_default_output {
+                    Ok(output) if output.status.success() => {
+                        println!(
+                            "[System] ✓ Set {} (ID {}) as default input source",
+                            virtual_name, id
+                        );
+                    }
+                    Ok(output) => {
+                        eprintln!(
+                            "[System] Failed to set default source: {}",
+                            String::from_utf8_lossy(&output.stderr)
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!("[System] Failed to execute wpctl set-default: {}", e);
+                    }
+                }
             }
             Err(e) => {
-                eprintln!("[System] Failed to execute pactl set-default-source: {}", e);
+                eprintln!("[System] Could not find node ID for {}: {}", source_name, e);
+                eprintln!("[System] Skipping set-default (virtual mic still usable manually)");
             }
         }
         println!();
@@ -299,6 +300,33 @@ impl VirtualMic {
         Err(format!("Could not find node.name for node {}", node_id).into())
     }
 
+    fn find_node_id_by_name(name: &str) -> Result<u32, Box<dyn std::error::Error>> {
+        let output = Command::new("wpctl").args(["status"]).output()?;
+
+        if !output.status.success() {
+            return Err("Failed to run wpctl status".into());
+        }
+
+        let output_str = String::from_utf8_lossy(&output.stdout);
+
+        // Look for lines like: "  *  157. Spectral-Mic"
+        for line in output_str.lines() {
+            if line.contains(name) {
+                // Extract the node ID (number before the dot)
+                let parts: Vec<&str> = line.trim().split('.').collect();
+                if !parts.is_empty() {
+                    // Remove asterisk and whitespace
+                    let id_part = parts[0].trim().trim_start_matches('*').trim();
+                    if let Ok(id) = id_part.parse::<u32>() {
+                        return Ok(id);
+                    }
+                }
+            }
+        }
+
+        Err(format!("Could not find node ID for '{}'", name).into())
+    }
+
     pub fn stop(mut self) {
         println!();
         println!("═══════════════════════════════════════════════════════════");
@@ -308,17 +336,22 @@ impl VirtualMic {
             pipeline.stop();
         }
 
-        if let Some(id) = self.remap_module_id {
-            let _ = Command::new("pactl")
-                .args(["unload-module", &id.to_string()])
-                .output();
-            println!("  ✓ Unloaded remap module {}", id);
-        }
-        if let Some(id) = self.sink_module_id {
-            let _ = Command::new("pactl")
-                .args(["unload-module", &id.to_string()])
-                .output();
-            println!("  ✓ Unloaded sink module {}", id);
+        // Create a new PulseContext just for cleanup
+        if let Ok(mut ctx) = PulseContext::new("spectral-cleanup") {
+            if let Some(id) = self.remap_module_id {
+                match ctx.unload_module(id) {
+                    Ok(_) => println!("  ✓ Unloaded remap module {}", id),
+                    Err(e) => eprintln!("  ✗ Failed to unload remap module {}: {}", id, e),
+                }
+            }
+            if let Some(id) = self.sink_module_id {
+                match ctx.unload_module(id) {
+                    Ok(_) => println!("  ✓ Unloaded sink module {}", id),
+                    Err(e) => eprintln!("  ✗ Failed to unload sink module {}: {}", id, e),
+                }
+            }
+        } else {
+            eprintln!("  ✗ Failed to create PulseContext for cleanup");
         }
 
         println!("Virtual microphone stopped");
