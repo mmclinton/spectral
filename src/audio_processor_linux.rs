@@ -32,14 +32,29 @@ impl AudioProcessor {
 
     /// Called from PipeWire stream callbacks for real-time audio processing
     pub fn process_audio_buffer(&self, input: &[f32], output: &mut [f32]) {
-        let threshold = *self.state.threshold_val.lock().unwrap() as f32 / 100.0;
+        let threshold = *self
+            .state
+            .threshold_val
+            .lock()
+            .expect("threshold_val mutex poisoned in audio processing")
+            as f32
+            / 100.0;
 
-        let mut buffer = self.input_buffer.lock().unwrap();
+        let mut buffer = self
+            .input_buffer
+            .lock()
+            .expect("input_buffer mutex poisoned in audio processing");
         buffer.extend_from_slice(input);
 
         let mut out_idx = 0;
-        let mut denoiser = self.denoiser.lock().unwrap();
-        let mut vad_state = self.vad_state.lock().unwrap();
+        let mut denoiser = self
+            .denoiser
+            .lock()
+            .expect("denoiser mutex poisoned in audio processing");
+        let mut vad_state = self
+            .vad_state
+            .lock()
+            .expect("vad_state mutex poisoned in audio processing");
 
         // Process in FRAME_SIZE chunks (480 samples = 10ms at 48kHz)
         while buffer.len() >= FRAME_SIZE {
@@ -202,28 +217,59 @@ impl VirtualMic {
         println!("═══════════════════════════════════════════════════════════");
         println!();
 
+        // Give PipeWire a moment to register the new node
+        std::thread::sleep(std::time::Duration::from_millis(200));
+
         // Find the node ID for the virtual mic we just created
         // wpctl requires numeric ID, not name
-        let node_id = Self::find_node_id_by_name(&source_name);
-
-        match node_id {
+        match Self::find_node_id_by_name(&source_name) {
             Ok(id) => {
+                println!("[System] Found {} with node ID: {}", source_name, id);
+
                 let set_default_output = Command::new("wpctl")
                     .args(["set-default", &id.to_string()])
                     .output();
 
                 match set_default_output {
-                    Ok(output) if output.status.success() => {
-                        println!(
-                            "[System] ✓ Set {} (ID {}) as default input source",
-                            virtual_name, id
-                        );
-                    }
                     Ok(output) => {
-                        eprintln!(
-                            "[System] Failed to set default source: {}",
-                            String::from_utf8_lossy(&output.stderr)
-                        );
+                        // wpctl may write to stderr even on success, check actual result
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+
+                        if output.status.success() {
+                            // Success - wpctl returns 0 even if it writes warnings to stderr
+                            if !stderr.is_empty() && stderr.contains("not found") {
+                                // Benign warning, but actually succeeded
+                                println!(
+                                    "[System] ✓ Set {} (ID {}) as default input source",
+                                    virtual_name, id
+                                );
+                                println!(
+                                    "[System] ℹ Note: wpctl reported warnings but operation succeeded"
+                                );
+                            } else {
+                                println!(
+                                    "[System] ✓ Set {} (ID {}) as default input source",
+                                    virtual_name, id
+                                );
+                            }
+                        } else {
+                            // Actual failure
+                            eprintln!(
+                                "[System] ⚠ Failed to set default source (exit code {})",
+                                output.status
+                            );
+                            if !stderr.is_empty() {
+                                eprintln!("[System]   Error: {}", stderr.trim());
+                            }
+                            if !stdout.is_empty() {
+                                eprintln!("[System]   Output: {}", stdout.trim());
+                            }
+                            eprintln!(
+                                "[System] ℹ Virtual mic '{}' created but may need manual selection",
+                                virtual_name
+                            );
+                        }
                     }
                     Err(e) => {
                         eprintln!("[System] Failed to execute wpctl set-default: {}", e);
@@ -232,7 +278,10 @@ impl VirtualMic {
             }
             Err(e) => {
                 eprintln!("[System] Could not find node ID for {}: {}", source_name, e);
-                eprintln!("[System] Skipping set-default (virtual mic still usable manually)");
+                eprintln!(
+                    "[System] ℹ Virtual mic '{}' created but not set as default - select manually",
+                    virtual_name
+                );
             }
         }
         println!();
@@ -247,7 +296,10 @@ impl VirtualMic {
         // Physical Mic → parecord → RNNoise Filter → pacat → Virtual Sink → Virtual Mic
         println!(
             "[Audio Pipeline] Threshold: {}%",
-            *state.threshold_val.lock().unwrap()
+            *state
+                .threshold_val
+                .lock()
+                .expect("threshold_val mutex poisoned during mic creation")
         );
 
         let audio_pipeline =
@@ -308,22 +360,53 @@ impl VirtualMic {
 
         let output_str = String::from_utf8_lossy(&output.stdout);
 
-        // Look for lines like: "  *  157. Spectral-Mic"
+        // Virtual mics created via PulseAudio appear in the Filters section as [Audio/Source]
+        // Look for the Filters section first, then parse node IDs from there
+        let mut in_audio_section = false;
+        let mut in_filters_section = false;
+
         for line in output_str.lines() {
-            if line.contains(name) {
+            let trimmed = line.trim();
+
+            // Track which section we're in
+            if line.starts_with("Audio") {
+                in_audio_section = true;
+                in_filters_section = false;
+                continue;
+            } else if line.starts_with("Video") || line.starts_with("Settings") {
+                in_audio_section = false;
+                in_filters_section = false;
+                continue;
+            }
+
+            // Check for subsection markers within Audio section
+            if in_audio_section {
+                if trimmed.starts_with("├─ Filters:") || trimmed.starts_with("└─ Filters:")
+                {
+                    in_filters_section = true;
+                    continue;
+                } else if trimmed.starts_with("├─") || trimmed.starts_with("└─") {
+                    // Different subsection (Sinks, Sources, Streams, etc.)
+                    in_filters_section = false;
+                    continue;
+                }
+            }
+
+            // Look for our node in the Filters section
+            // Format: "  *  114. Spectral-Mic                                                 [Audio/Source]"
+            if in_filters_section && line.contains(name) && line.contains("[Audio/Source]") {
                 // Extract the node ID (number before the dot)
-                let parts: Vec<&str> = line.trim().split('.').collect();
-                if !parts.is_empty() {
-                    // Remove asterisk and whitespace
-                    let id_part = parts[0].trim().trim_start_matches('*').trim();
-                    if let Ok(id) = id_part.parse::<u32>() {
+                let stripped = trimmed.trim_start_matches('*').trim();
+                if let Some(dot_pos) = stripped.find('.') {
+                    let id_str = stripped[..dot_pos].trim();
+                    if let Ok(id) = id_str.parse::<u32>() {
                         return Ok(id);
                     }
                 }
             }
         }
 
-        Err(format!("Could not find node ID for '{}'", name).into())
+        Err(format!("Could not find node ID for '{}' in Filters section", name).into())
     }
 
     pub fn stop(mut self) {
@@ -337,13 +420,13 @@ impl VirtualMic {
 
         // Create a new PulseContext just for cleanup
         if let Ok(mut ctx) = PulseContext::new("spectral-cleanup") {
-            if let Some(id) = self.remap_module_id {
+            if let Some(id) = self.remap_module_id.take() {
                 match ctx.unload_module(id) {
                     Ok(_) => println!("  ✓ Unloaded remap module {}", id),
                     Err(e) => eprintln!("  ✗ Failed to unload remap module {}: {}", id, e),
                 }
             }
-            if let Some(id) = self.sink_module_id {
+            if let Some(id) = self.sink_module_id.take() {
                 match ctx.unload_module(id) {
                     Ok(_) => println!("  ✓ Unloaded sink module {}", id),
                     Err(e) => eprintln!("  ✗ Failed to unload sink module {}: {}", id, e),
@@ -361,8 +444,12 @@ impl VirtualMic {
 
 impl Drop for VirtualMic {
     fn drop(&mut self) {
-        // Only clean up if not already stopped (stop() takes ownership, so Drop won't run after stop())
-        if self.audio_pipeline.is_some() || self.sink_module_id.is_some() {
+        // Only clean up if resources haven't been released
+        // stop() takes ownership and clears these fields
+        if self.audio_pipeline.is_some()
+            || self.sink_module_id.is_some()
+            || self.remap_module_id.is_some()
+        {
             eprintln!("⚠ VirtualMic dropped without explicit stop(), cleaning up...");
 
             if let Some(mut pipeline) = self.audio_pipeline.take() {

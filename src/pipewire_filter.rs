@@ -208,6 +208,12 @@ impl AudioPipeline {
 
 impl Drop for AudioPipeline {
     fn drop(&mut self) {
-        self.stop();
+        // Only call stop if there are still resources to clean up
+        if self.record_process.is_some()
+            || self.play_process.is_some()
+            || self.processing_thread.is_some()
+        {
+            self.stop();
+        }
     }
 }

@@ -47,6 +47,9 @@ impl AppState {
     }
 
     pub fn update_status(&self, new_status: Status) {
-        *self.status.lock().unwrap() = new_status;
+        *self
+            .status
+            .lock()
+            .expect("status mutex poisoned in update_status") = new_status;
     }
 }
