@@ -3,6 +3,7 @@ use crate::pulse_module::PulseContext;
 use crate::state::AppState;
 use nnnoiseless::DenoiseState;
 use std::process::Command;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 // Audio processing constants for nnnoiseless RNNoise implementation
@@ -50,20 +51,18 @@ impl AudioProcessor {
             // Returns VAD probability (0.0-1.0) indicating voice presence confidence
             let vad_probability = denoiser.process_frame(&mut denoised_frame[..], &frame[..]);
 
-            static mut FRAME_COUNTER: u32 = 0;
-            unsafe {
-                FRAME_COUNTER += 1;
-                if FRAME_COUNTER.is_multiple_of(100) {
-                    let input_rms =
-                        (frame.iter().map(|&s| s * s).sum::<f32>() / FRAME_SIZE as f32).sqrt();
-                    println!(
-                        "[RNNoise] VAD: {:.3}, Gate: {:.3}, Threshold: {:.0}%, Input RMS: {:.1}",
-                        vad_probability,
-                        *vad_state,
-                        threshold * 100.0,
-                        input_rms
-                    );
-                }
+            static FRAME_COUNTER: AtomicU32 = AtomicU32::new(0);
+            let count = FRAME_COUNTER.fetch_add(1, Ordering::Relaxed);
+            if count % 100 == 0 {
+                let input_rms =
+                    (frame.iter().map(|&s| s * s).sum::<f32>() / FRAME_SIZE as f32).sqrt();
+                println!(
+                    "[RNNoise] VAD: {:.3}, Gate: {:.3}, Threshold: {:.0}%, Input RMS: {:.1}",
+                    vad_probability,
+                    *vad_state,
+                    threshold * 100.0,
+                    input_rms
+                );
             }
 
             if threshold >= 0.5 {
@@ -357,5 +356,27 @@ impl VirtualMic {
         println!("Virtual microphone stopped");
         println!("═══════════════════════════════════════════════════════════");
         println!();
+    }
+}
+
+impl Drop for VirtualMic {
+    fn drop(&mut self) {
+        // Only clean up if not already stopped (stop() takes ownership, so Drop won't run after stop())
+        if self.audio_pipeline.is_some() || self.sink_module_id.is_some() {
+            eprintln!("⚠ VirtualMic dropped without explicit stop(), cleaning up...");
+
+            if let Some(mut pipeline) = self.audio_pipeline.take() {
+                pipeline.stop();
+            }
+
+            if let Ok(mut ctx) = PulseContext::new("spectral-cleanup") {
+                if let Some(id) = self.remap_module_id.take() {
+                    let _ = ctx.unload_module(id);
+                }
+                if let Some(id) = self.sink_module_id.take() {
+                    let _ = ctx.unload_module(id);
+                }
+            }
+        }
     }
 }

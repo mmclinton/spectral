@@ -79,12 +79,17 @@ impl DaemonServer {
     pub fn bind() -> Result<Self, std::io::Error> {
         let socket_path = get_socket_path();
 
-        if socket_path.exists() {
-            std::fs::remove_file(&socket_path)?;
+        // Try to bind first, handle conflicts if they occur
+        match UnixListener::bind(&socket_path) {
+            Ok(listener) => Ok(Self { listener }),
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+                // Socket exists, try to remove and retry once
+                std::fs::remove_file(&socket_path)?;
+                let listener = UnixListener::bind(&socket_path)?;
+                Ok(Self { listener })
+            }
+            Err(e) => Err(e),
         }
-
-        let listener = UnixListener::bind(&socket_path)?;
-        Ok(Self { listener })
     }
 
     pub fn accept(&self) -> Result<DaemonConnection, std::io::Error> {
@@ -99,6 +104,11 @@ pub struct DaemonConnection {
 
 impl DaemonConnection {
     pub fn read_command(&mut self) -> Result<DaemonCommand, std::io::Error> {
+        use std::time::Duration;
+        
+        // Set read timeout to prevent indefinite blocking
+        self.stream.set_read_timeout(Some(Duration::from_secs(30)))?;
+        
         let mut reader = BufReader::new(&self.stream);
         let mut line = String::new();
         reader.read_line(&mut line)?;

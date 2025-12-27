@@ -2,14 +2,34 @@ use spectral_lib::audio_processor_linux::VirtualMic;
 use spectral_lib::ipc::{DaemonCommand, DaemonResponse, DaemonServer, DaemonState};
 use spectral_lib::persistence::{PersistedState, load_state, save_state};
 use spectral_lib::state::{AppState, Status};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 fn main() {
     println!("Spectral Daemon starting...");
 
     let state = Arc::new(AppState::new());
     let virtual_mic: Arc<Mutex<Option<VirtualMic>>> = Arc::new(Mutex::new(None));
+    
+    // Set up graceful shutdown flag
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+
+    // Set up signal handlers for graceful shutdown
+    let mut signals = signal_hook::iterator::Signals::new(&[
+        signal_hook::consts::SIGTERM,
+        signal_hook::consts::SIGINT,
+    ]).expect("Failed to register signal handlers");
+    
+    let signal_thread = thread::spawn(move || {
+        for sig in signals.forever() {
+            eprintln!("Received signal {:?}, initiating graceful shutdown...", sig);
+            r.store(false, Ordering::SeqCst);
+            break;
+        }
+    });
 
     let persisted = load_state().unwrap_or_default();
     {
@@ -45,24 +65,75 @@ fn main() {
     };
 
     println!("Daemon listening for connections...");
+    
+    // Track client handler threads for proper cleanup
+    let mut client_threads: Vec<thread::JoinHandle<()>> = Vec::new();
 
     loop {
+        // Check if we should shutdown
+        if !running.load(Ordering::SeqCst) {
+            break;
+        }
+        
+        // Clean up finished threads periodically
+        client_threads.retain(|handle| !handle.is_finished());
+        
+        // Use non-blocking accept by checking with a timeout pattern
+        // Note: UnixListener doesn't support set_nonblocking in all cases,
+        // so we spawn threads but track them properly
         match server.accept() {
             Ok(mut conn) => {
                 let state = state.clone();
                 let virtual_mic = virtual_mic.clone();
-
-                thread::spawn(move || {
+                
+                let handle = thread::spawn(move || {
                     if let Err(e) = handle_client(&mut conn, state, virtual_mic) {
                         eprintln!("Client handler error: {}", e);
                     }
                 });
+                
+                client_threads.push(handle);
             }
             Err(e) => {
-                eprintln!("Failed to accept connection: {}", e);
+                // Only log actual errors, not timeout/interrupt
+                if e.kind() != std::io::ErrorKind::Interrupted {
+                    eprintln!("Failed to accept connection: {}", e);
+                }
+                // Small sleep to prevent busy loop on errors
+                thread::sleep(Duration::from_millis(100));
             }
         }
     }
+    
+    // Graceful shutdown sequence
+    println!("Shutting down gracefully...");
+    
+    // Stop virtual mic if active
+    if let Some(mic) = virtual_mic.lock().unwrap().take() {
+        mic.stop();
+    }
+    
+    // Save state
+    let persisted = PersistedState {
+        is_active: false,
+        device_id: *state.selected_device_id.lock().unwrap(),
+        mic_name: state.mic_name.lock().unwrap().clone(),
+        threshold: *state.threshold_val.lock().unwrap(),
+    };
+    let _ = save_state(&persisted);
+    
+    // Wait for client threads to finish (with timeout)
+    println!("Waiting for client threads to finish...");
+    for handle in client_threads {
+        // Join with a reasonable timeout concept (Rust's JoinHandle doesn't have timeout,
+        // but threads should finish quickly after connections close)
+        let _ = handle.join();
+    }
+    
+    // Wait for signal thread
+    let _ = signal_thread.join();
+    
+    println!("Daemon shutdown complete");
 }
 
 fn handle_client(

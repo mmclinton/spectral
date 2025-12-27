@@ -176,20 +176,30 @@ impl AudioPipeline {
         println!("[Audio Pipeline] Stopping noise reduction processing...");
 
         if let Some(mut process) = self.record_process.take() {
-            let _ = process.kill();
-            let _ = process.wait();
-            println!("[Audio Pipeline] ✓ Stopped pw-record");
+            if let Err(e) = process.kill() {
+                eprintln!("⚠ Failed to kill pw-record: {}", e);
+            }
+            match process.wait() {
+                Ok(status) => println!("[Audio Pipeline] ✓ pw-record exited: {}", status),
+                Err(e) => eprintln!("⚠ Failed to wait for pw-record: {}", e),
+            }
         }
 
         if let Some(mut process) = self.play_process.take() {
-            let _ = process.kill();
-            let _ = process.wait();
-            println!("[Audio Pipeline] ✓ Stopped pw-play");
+            if let Err(e) = process.kill() {
+                eprintln!("⚠ Failed to kill pw-play: {}", e);
+            }
+            match process.wait() {
+                Ok(status) => println!("[Audio Pipeline] ✓ pw-play exited: {}", status),
+                Err(e) => eprintln!("⚠ Failed to wait for pw-play: {}", e),
+            }
         }
 
         if let Some(handle) = self.processing_thread.take() {
-            let _ = handle.join();
-            println!("[Audio Pipeline] ✓ Processing thread stopped");
+            match handle.join() {
+                Ok(_) => println!("[Audio Pipeline] ✓ Processing thread stopped"),
+                Err(_) => eprintln!("⚠ Processing thread panicked"),
+            }
         }
 
         println!("═══════════════════════════════════════════════════════════");
