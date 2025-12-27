@@ -81,16 +81,33 @@ fn handle_client(
                         mic_name,
                         threshold,
                     } => {
-                        *state.threshold_val.lock().unwrap() = threshold;
-                        *state.mic_name.lock().unwrap() = mic_name.clone();
-                        *state.selected_device_id.lock().unwrap() = Some(device_id);
+                        // Apply all values (both from pending and direct)
+                        let final_threshold =
+                            state.pending_threshold.lock().unwrap().unwrap_or(threshold);
+                        let final_device_id =
+                            state.pending_device_id.lock().unwrap().unwrap_or(device_id);
+                        let final_mic_name = state
+                            .pending_mic_name
+                            .lock()
+                            .unwrap()
+                            .clone()
+                            .unwrap_or(mic_name.clone());
+
+                        *state.threshold_val.lock().unwrap() = final_threshold;
+                        *state.mic_name.lock().unwrap() = final_mic_name.clone();
+                        *state.selected_device_id.lock().unwrap() = Some(final_device_id);
+
+                        // Clear all pending values
+                        *state.pending_threshold.lock().unwrap() = None;
+                        *state.pending_device_id.lock().unwrap() = None;
+                        *state.pending_mic_name.lock().unwrap() = None;
 
                         let mut mic_guard = virtual_mic.lock().unwrap();
                         if let Some(mic) = mic_guard.take() {
                             mic.stop();
                         }
 
-                        match VirtualMic::create(state.clone(), device_id, &mic_name) {
+                        match VirtualMic::create(state.clone(), final_device_id, &final_mic_name) {
                             Ok(mic) => {
                                 *mic_guard = Some(mic);
                                 state.update_status(Status::Active);
@@ -114,9 +131,27 @@ fn handle_client(
                         DaemonResponse::Ok
                     }
                     DaemonCommand::UpdateThreshold(threshold) => {
-                        let old_threshold = *state.threshold_val.lock().unwrap();
-                        if old_threshold != threshold {
-                            *state.threshold_val.lock().unwrap() = threshold;
+                        let applied_threshold = *state.threshold_val.lock().unwrap();
+
+                        // Check if this matches the currently applied value
+                        if threshold == applied_threshold {
+                            // UI value matches applied - clear pending
+                            *state.pending_threshold.lock().unwrap() = None;
+
+                            // Check if all pending values are None
+                            let has_pending_device =
+                                state.pending_device_id.lock().unwrap().is_some();
+                            let has_pending_name = state.pending_mic_name.lock().unwrap().is_some();
+
+                            if !has_pending_device && !has_pending_name {
+                                let status = state.status.lock().unwrap().clone();
+                                if let Status::Pending = status {
+                                    state.update_status(Status::Active);
+                                }
+                            }
+                        } else {
+                            // UI value differs from applied - mark as pending
+                            *state.pending_threshold.lock().unwrap() = Some(threshold);
 
                             let status = state.status.lock().unwrap().clone();
                             if let Status::Active = status {
@@ -126,9 +161,24 @@ fn handle_client(
                         DaemonResponse::Ok
                     }
                     DaemonCommand::UpdateMicName(mic_name) => {
-                        let old_name = state.mic_name.lock().unwrap().clone();
-                        if old_name != mic_name {
-                            *state.mic_name.lock().unwrap() = mic_name;
+                        let applied_name = state.mic_name.lock().unwrap().clone();
+
+                        if mic_name == applied_name {
+                            *state.pending_mic_name.lock().unwrap() = None;
+
+                            let has_pending_threshold =
+                                state.pending_threshold.lock().unwrap().is_some();
+                            let has_pending_device =
+                                state.pending_device_id.lock().unwrap().is_some();
+
+                            if !has_pending_threshold && !has_pending_device {
+                                let status = state.status.lock().unwrap().clone();
+                                if let Status::Pending = status {
+                                    state.update_status(Status::Active);
+                                }
+                            }
+                        } else {
+                            *state.pending_mic_name.lock().unwrap() = Some(mic_name);
 
                             let status = state.status.lock().unwrap().clone();
                             if let Status::Active = status {
@@ -138,9 +188,23 @@ fn handle_client(
                         DaemonResponse::Ok
                     }
                     DaemonCommand::UpdateDevice(device_id) => {
-                        let old_id = *state.selected_device_id.lock().unwrap();
-                        if old_id != Some(device_id) {
-                            *state.selected_device_id.lock().unwrap() = Some(device_id);
+                        let applied_device = *state.selected_device_id.lock().unwrap();
+
+                        if Some(device_id) == applied_device {
+                            *state.pending_device_id.lock().unwrap() = None;
+
+                            let has_pending_threshold =
+                                state.pending_threshold.lock().unwrap().is_some();
+                            let has_pending_name = state.pending_mic_name.lock().unwrap().is_some();
+
+                            if !has_pending_threshold && !has_pending_name {
+                                let status = state.status.lock().unwrap().clone();
+                                if let Status::Pending = status {
+                                    state.update_status(Status::Active);
+                                }
+                            }
+                        } else {
+                            *state.pending_device_id.lock().unwrap() = Some(device_id);
 
                             let status = state.status.lock().unwrap().clone();
                             if let Status::Active = status {

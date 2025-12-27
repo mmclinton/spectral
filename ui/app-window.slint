@@ -121,9 +121,8 @@ export component MainWindow inherits Window {
                 maximum: 100;
                 changed(value) => {
                     root.slider_value = value;
-                    if (root.status_color == #3FB950) {
-                        root.threshold_change(value)
-                    }
+                    // Don't auto-apply - just notify daemon of pending change
+                    root.threshold_change(value)
                 }
             }
 
