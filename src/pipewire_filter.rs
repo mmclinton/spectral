@@ -37,8 +37,20 @@ impl AudioPipeline {
 
         // Start pw-record for recording (capture from physical mic)
         // Use "--raw" flag for raw PCM mode, "-" for stdout
-        let mut record_process = Command::new("pw-record")
+        // We set PIPEWIRE_LATENCY env var to force the quantum to match our frame size (480 samples)
+        // Use stdbuf -o0 to disable stdout buffering (critical for low latency)
+        let mut record_process = Command::new("stdbuf")
+            .env(
+                "PIPEWIRE_LATENCY",
+                format!("{}/{}", BUFFER_SIZE, SAMPLE_RATE),
+            )
+            .env(
+                "PIPEWIRE_QUANTUM",
+                format!("{}/{}", BUFFER_SIZE, SAMPLE_RATE),
+            )
             .args([
+                "-o0",
+                "pw-record",
                 "--target",
                 source_node,
                 "--rate",
@@ -47,7 +59,8 @@ impl AudioPipeline {
                 &INPUT_CHANNELS.to_string(),
                 "--format",
                 "f32",
-                "--latency=10ms",
+                "--latency",
+                &BUFFER_SIZE.to_string(), // Request exact sample count
                 "--volume=1.0",
                 "--raw", // Critical: enable raw PCM mode
                 "-",     // Output to stdout
@@ -63,8 +76,19 @@ impl AudioPipeline {
 
         // Start pw-play for playback (play to virtual sink)
         // Use "--raw" flag for raw PCM mode, "-" for stdin
-        let mut play_process = Command::new("pw-play")
+        // Use stdbuf -i0 to disable stdin buffering
+        let mut play_process = Command::new("stdbuf")
+            .env(
+                "PIPEWIRE_LATENCY",
+                format!("{}/{}", BUFFER_SIZE, SAMPLE_RATE),
+            )
+            .env(
+                "PIPEWIRE_QUANTUM",
+                format!("{}/{}", BUFFER_SIZE, SAMPLE_RATE),
+            )
             .args([
+                "-i0",
+                "pw-play",
                 "--target",
                 sink_node,
                 "--rate",
@@ -73,7 +97,8 @@ impl AudioPipeline {
                 &CHANNELS.to_string(),
                 "--format",
                 "f32",
-                "--latency=10ms",
+                "--latency",
+                &BUFFER_SIZE.to_string(), // Request exact sample count
                 "--volume=1.0",
                 "--raw", // Critical: enable raw PCM mode
                 "-",     // Read from stdin
