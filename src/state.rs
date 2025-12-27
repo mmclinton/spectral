@@ -26,6 +26,12 @@ pub struct AppState {
     pub pending_mic_name: Arc<Mutex<Option<String>>>,
 }
 
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AppState {
     pub fn new() -> Self {
         Self {

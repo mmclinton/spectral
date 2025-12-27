@@ -18,25 +18,24 @@ pub fn get_input_devices() -> Result<Vec<AudioDevice>, Box<dyn Error>> {
     let _reg_listener = registry
         .add_listener_local()
         .global(move |global| {
-            if global.type_ == ObjectType::Node {
-                if let Some(props) = &global.props {
-                    if props.get("media.class") == Some("Audio/Source") {
-                        let nick = props
-                            .get("node.nick")
+            if global.type_ == ObjectType::Node
+                && let Some(props) = &global.props
+                && props.get("media.class") == Some("Audio/Source")
+            {
+                let nick = props
+                    .get("node.nick")
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| {
+                        props
+                            .get("node.description")
                             .map(|s| s.to_string())
-                            .unwrap_or_else(|| {
-                                props
-                                    .get("node.description")
-                                    .map(|s| s.to_string())
-                                    .unwrap_or("Unknown".to_string())
-                            });
-                        if !nick.to_lowercase().contains("monitor") {
-                            devices_clone.lock().unwrap().push(AudioDevice {
-                                id: global.id,
-                                name: nick,
-                            });
-                        }
-                    }
+                            .unwrap_or("Unknown".to_string())
+                    });
+                if !nick.to_lowercase().contains("monitor") {
+                    devices_clone.lock().unwrap().push(AudioDevice {
+                        id: global.id,
+                        name: nick,
+                    });
                 }
             }
         })
@@ -51,11 +50,11 @@ pub fn get_input_devices() -> Result<Vec<AudioDevice>, Box<dyn Error>> {
         .done(move |id, seq| {
             if id == PW_ID_CORE {
                 let mut p = pending_clone.lock().unwrap();
-                if let Some(val) = *p {
-                    if val == seq {
-                        *p = None;
-                        loop_clone.quit();
-                    }
+                if let Some(val) = *p
+                    && val == seq
+                {
+                    *p = None;
+                    loop_clone.quit();
                 }
             }
         })

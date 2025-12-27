@@ -111,11 +111,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.set_mic_name_text(daemon_state.mic_name.clone().into());
     ui.set_slider_value(daemon_state.threshold);
 
-    if let Some(device_id) = daemon_state.device_id {
-        if let Some(idx) = filtered_devices.iter().position(|d| d.id == device_id) {
+    if let Some(device_id) = daemon_state.device_id
+        && let Some(idx) = filtered_devices.iter().position(|d| d.id == device_id) {
             ui.set_selected_input_index(idx as i32);
         }
-    }
 
     fn hex_to_color(hex: &str) -> slint::Color {
         let hex = hex.trim_start_matches('#');
@@ -271,11 +270,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let ui_weak_clone = ui_weak.clone();
     ui.on_mic_name_text_changed(move |text| {
         let text_str = text.to_string();
-        if text_str.len() > 21 {
-            if let Some(ui) = ui_weak_clone.upgrade() {
+        if text_str.len() > 21
+            && let Some(ui) = ui_weak_clone.upgrade() {
                 ui.set_mic_name_text(text_str.chars().take(21).collect::<String>().into());
             }
-        }
     });
 
     ui.on_refresh_devices_clicked({

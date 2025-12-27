@@ -18,8 +18,8 @@ fn main() {
         *state.selected_device_id.lock().unwrap() = persisted.device_id;
     }
 
-    if persisted.is_active {
-        if let Some(device_id) = persisted.device_id {
+    if persisted.is_active
+        && let Some(device_id) = persisted.device_id {
             println!(
                 "Restoring previous session: device_id={}, mic_name={}, threshold={}",
                 device_id, persisted.mic_name, persisted.threshold
@@ -35,7 +35,6 @@ fn main() {
                 }
             }
         }
-    }
 
     let server = match DaemonServer::bind() {
         Ok(s) => s,
