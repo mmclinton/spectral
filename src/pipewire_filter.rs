@@ -35,22 +35,22 @@ impl AudioPipeline {
         );
         println!("═══════════════════════════════════════════════════════════");
 
-        // Start pacat for recording (capture from physical mic)
-        // Use --raw flag for raw PCM over stdout (no file format)
-        let mut record_process = Command::new("pacat")
+        // Start pw-record for recording (capture from physical mic)
+        // Use "--raw" flag for raw PCM mode, "-" for stdout
+        let mut record_process = Command::new("pw-record")
             .args([
-                "--record",
-                "--device",
+                "--target",
                 source_node,
                 "--rate",
                 &SAMPLE_RATE.to_string(),
                 "--channels",
                 &INPUT_CHANNELS.to_string(),
                 "--format",
-                "float32le",
-                "--latency-msec=10",
-                "--process-time-msec=10",
-                "--raw", // Critical: output raw PCM, not a file format
+                "f32",
+                "--latency=10ms",
+                "--volume=1.0",
+                "--raw", // Critical: enable raw PCM mode
+                "-",     // Output to stdout
             ])
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -59,24 +59,24 @@ impl AudioPipeline {
         let record_stdout = record_process
             .stdout
             .take()
-            .ok_or("Failed to capture pacat stdout")?;
+            .ok_or("Failed to capture pw-record stdout")?;
 
-        // Start pacat for playback (play to virtual sink)
-        // Use --raw flag for raw PCM over stdin (no file format)
-        let mut play_process = Command::new("pacat")
+        // Start pw-play for playback (play to virtual sink)
+        // Use "--raw" flag for raw PCM mode, "-" for stdin
+        let mut play_process = Command::new("pw-play")
             .args([
-                "--playback",
-                "--device",
+                "--target",
                 sink_node,
                 "--rate",
                 &SAMPLE_RATE.to_string(),
                 "--channels",
                 &CHANNELS.to_string(),
                 "--format",
-                "float32le",
-                "--latency-msec=10",
-                "--process-time-msec=10",
-                "--raw", // Critical: read raw PCM, not a file format
+                "f32",
+                "--latency=10ms",
+                "--volume=1.0",
+                "--raw", // Critical: enable raw PCM mode
+                "-",     // Read from stdin
             ])
             .stdin(Stdio::piped())
             .spawn()?;
@@ -84,9 +84,9 @@ impl AudioPipeline {
         let play_stdin = play_process
             .stdin
             .take()
-            .ok_or("Failed to capture pacat stdin")?;
+            .ok_or("Failed to capture pw-play stdin")?;
 
-        println!("[Audio Pipeline] ✓ pacat record and playback processes started");
+        println!("[Audio Pipeline] ✓ pw-record and pw-play processes started");
 
         let processing_thread = thread::spawn(move || {
             let mut reader = std::io::BufReader::new(record_stdout);
@@ -100,6 +100,11 @@ impl AudioPipeline {
             // Output: mono float32le
             let mut mono_samples = vec![0f32; BUFFER_SIZE];
             let mut processed_samples = vec![0f32; BUFFER_SIZE];
+
+            // Simple one-pole lowpass filter state for smoothing RNNoise artifacts
+            // Helps reduce the static artifacts from neural processing
+            let mut prev_sample = 0.0f32;
+            let smoothing_alpha = 0.15; // Higher = more smoothing (0.0 = none, 1.0 = full)
 
             println!("[Audio Pipeline] ✓ Processing thread started - RNNoise active");
             println!("[Audio Pipeline] Converting stereo → mono, applying noise reduction");
@@ -129,14 +134,21 @@ impl AudioPipeline {
 
                         // Convert f32 samples back to bytes
                         // Scale back from i16 range [-32768.0, 32767.0] to float32 PCM [-1.0, 1.0]
+                        // Apply gentle smoothing filter to reduce potential RNNoise musical noise artifacts
                         let mut byte_output = Vec::with_capacity(BUFFER_SIZE * 4);
                         for &sample in &processed_samples {
-                            let normalized = sample / 32768.0;
+                            // Simple one-pole lowpass: y[n] = (1-α)·x[n] + α·y[n-1]
+                            // This reduces high-frequency artifacts while preserving speech
+                            let smoothed =
+                                (1.0 - smoothing_alpha) * sample + smoothing_alpha * prev_sample;
+                            prev_sample = smoothed;
+
+                            let normalized = smoothed / 32768.0;
                             byte_output.extend_from_slice(&normalized.to_le_bytes());
                         }
 
                         if writer.write_all(&byte_output).is_err() {
-                            eprintln!("[Audio Pipeline] ✗ Failed to write to pacat - stopping");
+                            eprintln!("[Audio Pipeline] ✗ Failed to write to pw-play - stopping");
                             break;
                         }
 
@@ -166,13 +178,13 @@ impl AudioPipeline {
         if let Some(mut process) = self.record_process.take() {
             let _ = process.kill();
             let _ = process.wait();
-            println!("[Audio Pipeline] ✓ Stopped pacat record");
+            println!("[Audio Pipeline] ✓ Stopped pw-record");
         }
 
         if let Some(mut process) = self.play_process.take() {
             let _ = process.kill();
             let _ = process.wait();
-            println!("[Audio Pipeline] ✓ Stopped pacat playback");
+            println!("[Audio Pipeline] ✓ Stopped pw-play");
         }
 
         if let Some(handle) = self.processing_thread.take() {

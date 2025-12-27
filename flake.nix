@@ -54,9 +54,8 @@
 
         # Runtime tools that need to be in the PATH
         runtimeTools = with pkgs; [
-          pipewire # Provides 'pw-record' and 'pw-play'
+          pipewire # Provides 'pw-record' and 'pw-play' for audio streaming
           wireplumber # PipeWire session manager
-          pulseaudio # Provides 'pacat' for audio streaming (TODO: migrate to pw-record/pw-play)
         ];
 
         spectral = pkgs.rustPlatform.buildRustPackage {
