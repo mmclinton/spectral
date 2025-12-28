@@ -20,7 +20,6 @@ pub mod macos;
 #[cfg(target_os = "windows")]
 pub mod windows;
 
-// Re-export the current platform's modules for convenient access
 #[cfg(target_os = "linux")]
 pub use linux::audio_devices;
 #[cfg(target_os = "linux")]

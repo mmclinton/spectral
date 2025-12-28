@@ -14,27 +14,22 @@ pub struct PulseContext {
 }
 
 impl PulseContext {
-    /// Create a new PulseAudio context connected to the server
     pub fn new(app_name: &str) -> Result<Self, String> {
-        // Create mainloop
         let mut mainloop =
             Mainloop::new().ok_or_else(|| "Failed to create mainloop".to_string())?;
 
-        // Create context
         let context = Context::new(&mainloop, app_name)
             .ok_or_else(|| "Failed to create context".to_string())?;
 
         let context = Rc::new(RefCell::new(context));
 
-        // Start mainloop BEFORE locking
+        // Must start mainloop before locking
         mainloop
             .start()
             .map_err(|e| format!("Failed to start mainloop: {}", e))?;
 
-        // Now lock for operations
         mainloop.lock();
 
-        // Connect to server
         {
             let mut ctx = context.borrow_mut();
             ctx.connect(None, ContextFlagSet::NOFLAGS, None)
@@ -44,10 +39,8 @@ impl PulseContext {
                 })?;
         }
 
-        // Unlock so callbacks can run
         mainloop.unlock();
 
-        // Wait for context to be ready by polling state
         let start = std::time::Instant::now();
         let timeout = std::time::Duration::from_secs(5);
 
@@ -68,7 +61,6 @@ impl PulseContext {
                     return Err(format!("Connection failed, state: {:?}", state));
                 }
                 _ => {
-                    // Still connecting
                     if start.elapsed() > timeout {
                         return Err("Timeout waiting for PulseAudio connection".to_string());
                     }
@@ -80,7 +72,6 @@ impl PulseContext {
         Ok(PulseContext { mainloop, context })
     }
 
-    /// Load a PulseAudio module with the given name and arguments
     pub fn load_module(&mut self, name: &str, argument: &str) -> Result<u32, String> {
         let result = Arc::new((Mutex::new(None), Condvar::new()));
         let result_clone = result.clone();
@@ -99,7 +90,6 @@ impl PulseContext {
 
         self.mainloop.unlock();
 
-        // Wait for callback with timeout
         let (lock, cvar) = &*result;
         let timeout = std::time::Duration::from_secs(5);
         let wait_result = cvar
@@ -118,7 +108,41 @@ impl PulseContext {
         Ok(index)
     }
 
-    /// Unload a PulseAudio module by index
+    pub fn set_default_source(&mut self, source_name: &str) -> Result<(), String> {
+        let result = Arc::new((Mutex::new(None), Condvar::new()));
+        let result_clone = result.clone();
+
+        self.mainloop.lock();
+
+        self.context
+            .borrow_mut()
+            .set_default_source(source_name, move |success| {
+                let (lock, cvar) = &*result_clone;
+                let mut result = lock.lock().unwrap();
+                *result = Some(success);
+                cvar.notify_one();
+            });
+
+        self.mainloop.unlock();
+
+        let (lock, cvar) = &*result;
+        let timeout = std::time::Duration::from_secs(5);
+        let wait_result = cvar
+            .wait_timeout_while(lock.lock().unwrap(), timeout, |result| result.is_none())
+            .unwrap();
+
+        if wait_result.1.timed_out() {
+            return Err("Timeout setting default source".to_string());
+        }
+
+        let success = wait_result.0.unwrap();
+        if !success {
+            return Err("Failed to set default source".to_string());
+        }
+
+        Ok(())
+    }
+
     pub fn unload_module(&mut self, index: u32) -> Result<(), String> {
         let result = Arc::new((Mutex::new(None), Condvar::new()));
         let result_clone = result.clone();
@@ -137,7 +161,6 @@ impl PulseContext {
 
         self.mainloop.unlock();
 
-        // Wait for callback with timeout
         let (lock, cvar) = &*result;
         let timeout = std::time::Duration::from_secs(5);
         let wait_result = cvar

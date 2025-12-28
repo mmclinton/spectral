@@ -13,7 +13,6 @@ use std::rc::Rc;
 
 slint::include_modules!();
 
-/// Filter out the virtual mic from the device list to avoid feedback loops
 fn filter_devices(devices: &[AudioDevice], mic_name: &str) -> Vec<AudioDevice> {
     let mic_name_hyphen = mic_name.replace(" ", "-");
     let mic_name_underscore = mic_name.replace(" ", "_");
@@ -144,7 +143,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let applied_threshold = Rc::new(std::cell::Cell::new(daemon_state.threshold));
     let applied_device_id = Rc::new(std::cell::Cell::new(daemon_state.device_id));
     let applied_mic_name = Rc::new(std::cell::RefCell::new(daemon_state.mic_name.clone()));
-    let current_status = Rc::new(std::cell::Cell::new(daemon_state.status.clone()));
+    let current_status = Rc::new(std::cell::Cell::new(daemon_state.status));
 
     update_ui_status(&ui_weak, daemon_state.status);
 
@@ -156,23 +155,24 @@ fn main() -> Result<(), Box<dyn Error>> {
         let applied_mic_name = applied_mic_name.clone();
         let current_status = current_status.clone();
         move |idx: i32| {
-            if idx >= 0 && (idx as usize) < devices.len() {
-                if let Some(ui) = ui_weak.upgrade() {
-                    let selected_device = devices[idx as usize].id;
-                    let device_matches = Some(selected_device) == applied_device_id.get();
-                    let threshold_matches = ui.get_slider_value() == applied_threshold.get();
-                    let mic_matches =
-                        ui.get_mic_name_text().to_string() == *applied_mic_name.borrow();
+            if idx >= 0
+                && (idx as usize) < devices.len()
+                && let Some(ui) = ui_weak.upgrade()
+            {
+                let selected_device = devices[idx as usize].id;
+                let device_matches = Some(selected_device) == applied_device_id.get();
+                let threshold_matches = ui.get_slider_value() == applied_threshold.get();
+                let mic_matches =
+                    ui.get_mic_name_text().as_str() == applied_mic_name.borrow().as_str();
 
-                    let all_match = device_matches && threshold_matches && mic_matches;
+                let all_match = device_matches && threshold_matches && mic_matches;
 
-                    if current_status.get() == Status::Active && !all_match {
-                        current_status.set(Status::Pending);
-                        update_ui_status(&ui_weak, Status::Pending);
-                    } else if current_status.get() == Status::Pending && all_match {
-                        current_status.set(Status::Active);
-                        update_ui_status(&ui_weak, Status::Active);
-                    }
+                if current_status.get() == Status::Active && !all_match {
+                    current_status.set(Status::Pending);
+                    update_ui_status(&ui_weak, Status::Pending);
+                } else if current_status.get() == Status::Pending && all_match {
+                    current_status.set(Status::Active);
+                    update_ui_status(&ui_weak, Status::Active);
                 }
             }
         }
@@ -188,7 +188,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         move |val| {
             if let Some(ui) = ui_weak.upgrade() {
                 let threshold_matches = val == applied_threshold.get();
-                let mic_matches = ui.get_mic_name_text().to_string() == *applied_mic_name.borrow();
+                let mic_matches =
+                    ui.get_mic_name_text().as_str() == applied_mic_name.borrow().as_str();
                 let idx = ui.get_selected_input_index();
                 let device_matches = if idx >= 0 && (idx as usize) < devices.len() {
                     Some(devices[idx as usize].id) == applied_device_id.get()
@@ -297,7 +298,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                         threshold,
                     }) {
                         Ok(DaemonResponse::Ok) => {
-                            // Update applied values on success
                             applied_threshold.set(threshold);
                             applied_device_id.set(Some(device_id));
                             *applied_mic_name.borrow_mut() = mic_name;

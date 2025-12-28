@@ -11,11 +11,9 @@ fn main() {
     let state = Arc::new(AppState::new());
     let virtual_mic: Arc<Mutex<Option<VirtualMic>>> = Arc::new(Mutex::new(None));
 
-    // Set up graceful shutdown flag
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
 
-    // Set up signal handlers for graceful shutdown
     let mut signals = signal_hook::iterator::Signals::new([
         signal_hook::consts::SIGTERM,
         signal_hook::consts::SIGINT,
@@ -68,19 +66,16 @@ fn main() {
         }
     };
 
-    // Track client handler threads for proper cleanup
     let mut client_threads: Vec<thread::JoinHandle<()>> = Vec::new();
 
     loop {
-        // Check if we should shutdown
         if !running.load(Ordering::SeqCst) {
             break;
         }
 
-        // Clean up finished threads periodically
         client_threads.retain(|handle| !handle.is_finished());
 
-        // Accept is non-blocking, so we poll with small delays
+        // Non-blocking accept with polling
         match server.accept() {
             Ok(mut conn) => {
                 let state = state.clone();
@@ -100,11 +95,9 @@ fn main() {
                 client_threads.push(handle);
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                // No connection waiting, sleep briefly and check shutdown flag
                 thread::sleep(Duration::from_millis(100));
             }
             Err(e) => {
-                // Actual error - only log if not interrupted
                 if e.kind() != std::io::ErrorKind::Interrupted {
                     eprintln!("Failed to accept connection: {}", e);
                 }
@@ -113,9 +106,6 @@ fn main() {
         }
     }
 
-    // Graceful shutdown sequence
-
-    // Stop virtual mic if active
     if let Some(mic) = virtual_mic
         .lock()
         .expect("virtual_mic mutex poisoned during shutdown")
@@ -124,7 +114,6 @@ fn main() {
         mic.stop();
     }
 
-    // Save state
     let persisted = PersistedState {
         is_active: false,
         device_id: *state
@@ -143,14 +132,10 @@ fn main() {
     };
     let _ = save_state(&persisted);
 
-    // Wait for client threads to finish (with timeout)
     for handle in client_threads {
-        // Join with a reasonable timeout concept (Rust's JoinHandle doesn't have timeout,
-        // but threads should finish quickly after connections close)
         let _ = handle.join();
     }
 
-    // Wait for signal thread
     let _ = signal_thread.join();
 }
 
@@ -182,8 +167,6 @@ fn handle_client(
                         mic_name,
                         threshold,
                     } => {
-                        // Apply all values (both from pending and direct)
-                        // Follow lock ordering: pending locks first
                         let final_threshold = state
                             .pending_threshold
                             .lock()
@@ -201,7 +184,6 @@ fn handle_client(
                             .clone()
                             .unwrap_or(mic_name.clone());
 
-                        // Then apply to actual state
                         *state
                             .threshold_val
                             .lock()
@@ -213,7 +195,6 @@ fn handle_client(
                             .lock()
                             .expect("selected_device_id mutex poisoned") = Some(final_device_id);
 
-                        // Clear all pending values
                         *state
                             .pending_threshold
                             .lock()
@@ -282,8 +263,7 @@ fn handle_client(
                                 .is_some();
 
                             if !has_pending_device && !has_pending_name {
-                                let status =
-                                    state.status.lock().expect("status mutex poisoned").clone();
+                                let status = *state.status.lock().expect("status mutex poisoned");
                                 if let Status::Pending = status {
                                     state.update_status(Status::Active);
                                 }
@@ -295,8 +275,7 @@ fn handle_client(
                                 .lock()
                                 .expect("pending_threshold mutex poisoned") = Some(threshold);
 
-                            let status =
-                                state.status.lock().expect("status mutex poisoned").clone();
+                            let status = *state.status.lock().expect("status mutex poisoned");
                             if let Status::Active = status {
                                 state.update_status(Status::Pending);
                             }
@@ -328,8 +307,7 @@ fn handle_client(
                                 .is_some();
 
                             if !has_pending_threshold && !has_pending_device {
-                                let status =
-                                    state.status.lock().expect("status mutex poisoned").clone();
+                                let status = *state.status.lock().expect("status mutex poisoned");
                                 if let Status::Pending = status {
                                     state.update_status(Status::Active);
                                 }
@@ -340,8 +318,7 @@ fn handle_client(
                                 .lock()
                                 .expect("pending_mic_name mutex poisoned") = Some(mic_name);
 
-                            let status =
-                                state.status.lock().expect("status mutex poisoned").clone();
+                            let status = *state.status.lock().expect("status mutex poisoned");
                             if let Status::Active = status {
                                 state.update_status(Status::Pending);
                             }
@@ -372,8 +349,7 @@ fn handle_client(
                                 .is_some();
 
                             if !has_pending_threshold && !has_pending_name {
-                                let status =
-                                    state.status.lock().expect("status mutex poisoned").clone();
+                                let status = *state.status.lock().expect("status mutex poisoned");
                                 if let Status::Pending = status {
                                     state.update_status(Status::Active);
                                 }
@@ -384,8 +360,7 @@ fn handle_client(
                                 .lock()
                                 .expect("pending_device_id mutex poisoned") = Some(device_id);
 
-                            let status =
-                                state.status.lock().expect("status mutex poisoned").clone();
+                            let status = *state.status.lock().expect("status mutex poisoned");
                             if let Status::Active = status {
                                 state.update_status(Status::Pending);
                             }
@@ -393,7 +368,7 @@ fn handle_client(
                         DaemonResponse::Ok
                     }
                     DaemonCommand::GetState => {
-                        let status = state.status.lock().expect("status mutex poisoned").clone();
+                        let status = *state.status.lock().expect("status mutex poisoned");
                         let daemon_state = DaemonState {
                             status,
                             device_id: *state

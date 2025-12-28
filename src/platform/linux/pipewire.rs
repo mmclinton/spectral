@@ -31,16 +31,11 @@ const INPUT_CHANNELS: u32 = 2; // Stereo input from microphone
 const OUTPUT_CHANNELS: u32 = 1; // Mono output after processing
 const BUFFER_SIZE: usize = 480; // 10ms buffer at 48kHz - MUST match RNNoise FRAME_SIZE
 
-/// Shared data for the capture/playback streams
 struct PipelineData {
     processor: Arc<AudioProcessor>,
-    /// Ring buffer to accumulate input samples until we have a full frame
     input_buffer: Vec<f32>,
-    /// Processed output samples ready to be sent to playback
     output_buffer: Vec<f32>,
-    /// Smoothing filter state
     prev_sample: f32,
-    /// Smoothing coefficient  
     smoothing_alpha: f32,
 }
 
@@ -56,19 +51,12 @@ impl PipelineData {
     }
 }
 
-/// Native PipeWire audio pipeline using direct stream connections
 pub struct NativeAudioPipeline {
-    /// Flag to signal the pipeline thread to stop
     running: Arc<AtomicBool>,
-    /// Handle to the pipeline thread
     pipeline_thread: Option<JoinHandle<()>>,
 }
 
 impl NativeAudioPipeline {
-    /// Start the native PipeWire audio pipeline
-    ///
-    /// Creates capture and playback streams connected to the specified nodes,
-    /// with RNNoise processing in between.
     pub fn start(
         processor: Arc<AudioProcessor>,
         source_node: &str,
@@ -91,12 +79,9 @@ impl NativeAudioPipeline {
         })
     }
 
-    /// Stop the audio pipeline
     pub fn stop(&mut self) {
-        // Signal the pipeline to stop
         self.running.store(false, Ordering::SeqCst);
 
-        // Wait for the thread to finish
         if let Some(handle) = self.pipeline_thread.take()
             && handle.join().is_err()
         {
@@ -113,7 +98,6 @@ impl Drop for NativeAudioPipeline {
     }
 }
 
-/// Build an audio format Pod for stream negotiation
 fn build_audio_format_pod(
     format: AudioFormat,
     rate: u32,
@@ -139,34 +123,25 @@ fn build_audio_format_pod(
     Ok(values)
 }
 
-/// Run the PipeWire main loop with capture and playback streams
 fn run_pipeline(
     processor: Arc<AudioProcessor>,
     source_node: &str,
     sink_node: &str,
     running: Arc<AtomicBool>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Initialize PipeWire (safe to call multiple times)
     pipewire::init();
 
-    // Create the main loop (this also initializes PipeWire internally)
     let mainloop = MainLoopBox::new(None)?;
-
-    // Create context from the loop
     let context = ContextBox::new(mainloop.loop_(), None)?;
-
-    // Connect to PipeWire daemon
     let core = context.connect(None)?;
 
-    // Shared data for processing - must use Rc because PipeWire callbacks are !Send
+    // Must use Rc because PipeWire callbacks are !Send
     let pipeline_data = Rc::new(RefCell::new(PipelineData::new(processor)));
 
-    // Build audio format pods
     let capture_format = build_audio_format_pod(AudioFormat::F32LE, SAMPLE_RATE, INPUT_CHANNELS)?;
     let playback_format = build_audio_format_pod(AudioFormat::F32LE, SAMPLE_RATE, OUTPUT_CHANNELS)?;
 
-    // Create capture stream properties
-    // Note: We use the raw string "target.object" since NODE_TARGET isn't exposed in the Rust bindings
+    // "target.object" used since NODE_TARGET isn't exposed in the Rust bindings
     let capture_props = properties! {
         *pipewire::keys::MEDIA_TYPE => "Audio",
         *pipewire::keys::MEDIA_CATEGORY => "Capture",
@@ -176,10 +151,8 @@ fn run_pipeline(
         "target.object" => source_node,
     };
 
-    // Create capture stream
     let capture_stream = StreamBox::new(&core, "spectral-capture", capture_props)?;
 
-    // Set up capture stream callbacks
     let capture_data = pipeline_data.clone();
     let _capture_listener = capture_stream
         .add_local_listener_with_user_data(capture_data)
@@ -189,7 +162,6 @@ fn run_pipeline(
         })
         .register()?;
 
-    // Connect capture stream
     let capture_pod =
         Pod::from_bytes(&capture_format).ok_or("Failed to create capture format pod")?;
     capture_stream.connect(
@@ -199,7 +171,6 @@ fn run_pipeline(
         &mut [capture_pod],
     )?;
 
-    // Create playback stream properties
     let playback_props = properties! {
         *pipewire::keys::MEDIA_TYPE => "Audio",
         *pipewire::keys::MEDIA_CATEGORY => "Playback",
@@ -209,10 +180,8 @@ fn run_pipeline(
         "target.object" => sink_node,
     };
 
-    // Create playback stream
     let playback_stream = StreamBox::new(&core, "spectral-playback", playback_props)?;
 
-    // Set up playback stream callbacks
     let playback_data = pipeline_data.clone();
     let _playback_listener = playback_stream
         .add_local_listener_with_user_data(playback_data)
@@ -222,7 +191,6 @@ fn run_pipeline(
         })
         .register()?;
 
-    // Connect playback stream
     let playback_pod =
         Pod::from_bytes(&playback_format).ok_or("Failed to create playback format pod")?;
     playback_stream.connect(
@@ -232,36 +200,23 @@ fn run_pipeline(
         &mut [playback_pod],
     )?;
 
-    // Set up a timer to periodically check if we should stop
-    // Note: We don't actually use the timer callback since we use polling iteration
-    // This timer is kept for potential future use with proper main loop quit support
-    let _timer = mainloop.loop_().add_timer(|_| {
-        // Timer fires but we don't need to do anything here
-        // Polling loop handles the stop check
-    });
-
-    // Schedule timer (not strictly needed since we use polling, but keeps the loop responsive)
+    let _timer = mainloop.loop_().add_timer(|_| {});
     let _ = _timer.update_timer(
         Some(std::time::Duration::from_millis(100)),
         Some(std::time::Duration::from_millis(100)),
     );
 
-    // Run the main loop in a polling manner so we can check the running flag
     while running.load(Ordering::SeqCst) {
-        // Process pending events with a short timeout
         let _ = mainloop
             .loop_()
             .iterate(std::time::Duration::from_millis(10));
     }
 
-    // Quit the mainloop cleanly
     mainloop.quit();
 
-    // Cleanup happens automatically when streams are dropped
     Ok(())
 }
 
-/// Process captured audio data from the capture stream
 fn process_capture_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCell<PipelineData>>) {
     if let Some(mut buffer) = stream.dequeue_buffer() {
         let datas = buffer.datas_mut();
@@ -269,14 +224,11 @@ fn process_capture_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCe
             return;
         }
 
-        // Get the chunk metadata to know how many bytes are valid
         let chunk = datas[0].chunk();
         let chunk_offset = chunk.offset() as usize;
         let chunk_size = chunk.size() as usize;
 
-        // Get the audio data from the buffer
         if let Some(slice) = datas[0].data() {
-            // Only process the valid portion of the buffer as indicated by chunk
             if chunk_size == 0 || chunk_offset + chunk_size > slice.len() {
                 return;
             }
@@ -284,7 +236,6 @@ fn process_capture_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCe
             let valid_data = &slice[chunk_offset..chunk_offset + chunk_size];
             let mut pipeline_data = data.borrow_mut();
 
-            // Convert bytes to f32 samples
             for audio_chunk in valid_data.chunks_exact(4) {
                 let sample = f32::from_le_bytes([
                     audio_chunk[0],
@@ -295,10 +246,9 @@ fn process_capture_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCe
                 pipeline_data.input_buffer.push(sample);
             }
 
-            // Process complete frames (stereo input, 480 samples per channel = 960 samples)
+            // Process complete stereo frames (480 samples per channel = 960 samples)
             let frame_size = BUFFER_SIZE * INPUT_CHANNELS as usize;
             while pipeline_data.input_buffer.len() >= frame_size {
-                // Extract one frame of stereo samples
                 let frame: Vec<f32> = pipeline_data.input_buffer.drain(..frame_size).collect();
 
                 // Convert stereo to mono and scale to i16 range for RNNoise
@@ -307,25 +257,22 @@ fn process_capture_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCe
                     let left = frame[i * 2];
                     let right = frame[i * 2 + 1];
                     let mono = (left + right) / 2.0;
-                    mono_samples[i] = mono * 32768.0; // Scale to i16 range
+                    mono_samples[i] = mono * 32768.0;
                 }
 
-                // Process through RNNoise
                 let mut processed_samples = vec![0f32; BUFFER_SIZE];
                 pipeline_data
                     .processor
                     .process_audio_buffer(&mono_samples, &mut processed_samples);
 
-                // Apply smoothing and scale back to float range
                 let smoothing_alpha = pipeline_data.smoothing_alpha;
                 for sample in &mut processed_samples {
                     let smoothed = (1.0 - smoothing_alpha) * *sample
                         + smoothing_alpha * pipeline_data.prev_sample;
                     pipeline_data.prev_sample = smoothed;
-                    *sample = smoothed / 32768.0; // Scale back to float range [-1, 1]
+                    *sample = smoothed / 32768.0;
                 }
 
-                // Add to output buffer
                 pipeline_data
                     .output_buffer
                     .extend_from_slice(&processed_samples);
@@ -334,7 +281,6 @@ fn process_capture_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCe
     }
 }
 
-/// Process playback - output processed audio to the playback stream
 fn process_playback_buffer(
     stream: &pipewire::stream::Stream,
     data: &mut Rc<RefCell<PipelineData>>,
@@ -345,25 +291,21 @@ fn process_playback_buffer(
             return;
         }
 
-        // Get mutable access to the output buffer
         if let Some(slice) = datas[0].data() {
             let mut pipeline_data = data.borrow_mut();
 
-            // Calculate how many samples we can output
-            let max_samples = slice.len() / 4; // 4 bytes per f32
+            let max_samples = slice.len() / 4;
             let available = pipeline_data.output_buffer.len().min(max_samples);
 
             let bytes_written = if available > 0 {
-                // Copy processed samples to output buffer
                 let output_samples: Vec<f32> =
                     pipeline_data.output_buffer.drain(..available).collect();
 
-                // Write samples to the buffer
                 for (i, &sample) in output_samples.iter().enumerate() {
                     let bytes = sample.to_le_bytes();
                     let offset = i * 4;
                     if offset + 4 <= slice.len() {
-                        // This is safe because we're within bounds
+                        // SAFETY: bounds checked above
                         unsafe {
                             std::ptr::copy_nonoverlapping(
                                 bytes.as_ptr(),
@@ -373,9 +315,8 @@ fn process_playback_buffer(
                         }
                     }
                 }
-                available * 4 // bytes written
+                available * 4
             } else {
-                // Output silence if no data available
                 0
             };
 

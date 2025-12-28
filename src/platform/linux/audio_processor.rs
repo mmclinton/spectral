@@ -5,12 +5,9 @@ use nnnoiseless::DenoiseState;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
-// Audio processing constants for nnnoiseless RNNoise implementation
-const FRAME_SIZE: usize = 480; // RNNoise processes 10ms frames at 48kHz (480 samples)
-
-// IMPORTANT: RNNoise expects samples in i16 range [-32768.0, 32767.0] as f32 values
+// RNNoise expects samples in i16 range [-32768.0, 32767.0] as f32 values,
 // NOT the typical float32 PCM range of [-1.0, 1.0]
-// Conversion is handled in pipewire_native.rs before/after RNNoise processing
+const FRAME_SIZE: usize = 480; // 10ms at 48kHz
 
 struct ProcessingContext {
     denoiser: Box<DenoiseState<'static>>,
@@ -39,7 +36,6 @@ impl AudioProcessor {
         }
     }
 
-    /// Called from PipeWire stream callbacks for real-time audio processing
     pub fn process_audio_buffer(&self, input: &[f32], output: &mut [f32]) {
         let threshold = *self
             .state
@@ -66,9 +62,7 @@ impl AudioProcessor {
 
         let mut out_idx = 0;
 
-        // Process in FRAME_SIZE chunks (480 samples = 10ms at 48kHz)
         while input_buffer.len() >= FRAME_SIZE {
-            // Move data to scratch_input without allocating a new Vec
             for (i, sample) in input_buffer.drain(..FRAME_SIZE).enumerate() {
                 scratch_input[i] = sample;
             }
@@ -81,34 +75,23 @@ impl AudioProcessor {
                 // Map threshold 50-100% to VAD cutoff 0.5-0.95
                 let vad_threshold = (threshold - 0.5) * 0.9 + 0.5;
 
-                // Determine gate state from VAD probability
                 let target_gate = if vad_probability > vad_threshold {
                     1.0
                 } else {
                     0.0
                 };
 
-                // Smooth gate transitions to prevent clicks and word cutoff
-                // These coefficients create fade-in/fade-out instead of hard cuts
-                // Attack: 0.85 = ~75ms ramp up (fast enough to catch word start)
-                // Release: 0.96 = ~250ms ramp down (keeps tail of words/sentences)
-                let attack_coef = 0.85; // Faster attack to catch word beginning
-                let release_coef = 0.96; // Faster release than previous (0.98) - closes gate quicker after voice stops
+                // Smooth gate transitions: attack=0.85 (~75ms ramp), release=0.96 (~250ms decay)
+                let attack_coef = 0.85;
+                let release_coef = 0.96;
 
                 if target_gate > 0.5 {
-                    // Voice detected - ramp up gate state
                     *vad_state = attack_coef * (*vad_state) + (1.0 - attack_coef);
                 } else {
-                    // No voice - ramp down gate state
                     *vad_state *= release_coef;
                 }
 
-                // Apply smooth gain instead of binary gate
-                // This should create a more natural fade-in/fade-out transitions
-                // vad_state ranges from 0.0 (silent) to 1.0 (full volume)
                 let gain = *vad_state;
-
-                // Apply the smooth gain to create gradual transitions
                 for &sample in scratch_output.iter() {
                     if out_idx < output.len() {
                         output[out_idx] = sample * gain;
@@ -116,7 +99,6 @@ impl AudioProcessor {
                     }
                 }
             } else {
-                // Low threshold: passthrough denoised audio without gating
                 for &sample in scratch_output.iter() {
                     if out_idx < output.len() {
                         output[out_idx] = sample;
@@ -153,10 +135,8 @@ impl VirtualMic {
         let sink_name = format!("{}_sink", source_name);
         let display_name = virtual_name.replace(" ", "-");
 
-        // Create PulseAudio context
         let mut pulse_ctx = PulseContext::new("spectral")?;
 
-        // Load null sink module
         let sink_args = format!(
             "sink_name={} sink_properties=device.description=Spectral-DoNotUse rate=48000 channels=1 format=float32le",
             sink_name
@@ -175,7 +155,6 @@ impl VirtualMic {
             display_name, display_name
         );
 
-        // Load remap source module
         let remap_args = format!(
             "source_name={} master={} source_properties={} channels=1",
             source_name, monitor_name, source_properties
@@ -184,7 +163,6 @@ impl VirtualMic {
         let remap_module_id = match pulse_ctx.load_module("module-remap-source", &remap_args) {
             Ok(id) => Some(id),
             Err(e) => {
-                // Cleanup sink module on failure
                 if let Some(sink_id) = sink_module_id {
                     let _ = pulse_ctx.unload_module(sink_id);
                 }
@@ -192,8 +170,13 @@ impl VirtualMic {
             }
         };
 
-        // Give PipeWire a moment to register the new node
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        if let Err(e) = pulse_ctx.set_default_source(&source_name) {
+            eprintln!("Warning: Failed to set default source: {}", e);
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
 
         let source_node_name = Self::get_node_name(source_device_id)?;
 
@@ -215,6 +198,7 @@ impl VirtualMic {
         })
     }
 
+    //TODO: find an alternative
     fn get_node_name(node_id: u32) -> Result<String, Box<dyn std::error::Error>> {
         let output = Command::new("wpctl")
             .args(["inspect", &node_id.to_string()])
@@ -243,7 +227,6 @@ impl VirtualMic {
             pipeline.stop();
         }
 
-        // Create a new PulseContext just for cleanup
         if let Ok(mut ctx) = PulseContext::new("spectral-cleanup") {
             if let Some(id) = self.remap_module_id.take()
                 && let Err(e) = ctx.unload_module(id)
