@@ -71,8 +71,7 @@
           # Native build inputs (build-time tools)
           nativeBuildInputs = with pkgs; [
             pkg-config
-            cmake
-            clang
+            clang # Required by bindgen for pipewire-sys FFI bindings
             makeWrapper
           ];
 
@@ -109,8 +108,7 @@
             [
               rustToolchain
               pkg-config
-              cmake
-              clang
+              clang # Required by bindgen for pipewire-sys FFI bindings
             ]
             ++ runtimeLibs
             ++ runtimeTools;
@@ -119,7 +117,7 @@
           RUST_BACKTRACE = "1";
 
           # Environment variables for build tools
-          LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
+          LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
 
           # Ensure libraries are found during cargo run
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath runtimeLibs;

@@ -8,6 +8,9 @@ import {
 import { SectionHeader } from "section-headers.slint";
 import { ClickableLink } from "links.slint";
 
+// Custom font import - this line is replaced at build time by build.rs
+// @FONT_IMPORT_PLACEHOLDER@
+
 export component MainWindow inherits Window {
     title: "Spectral";
     default-font-family: "Berkeley Mono";
