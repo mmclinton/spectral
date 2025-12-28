@@ -13,11 +13,6 @@ pub struct PulseContext {
     context: Rc<RefCell<Context>>,
 }
 
-pub struct ModuleLoadResult {
-    pub index: u32,
-    pub success: bool,
-}
-
 impl PulseContext {
     /// Create a new PulseAudio context connected to the server
     pub fn new(app_name: &str) -> Result<Self, String> {

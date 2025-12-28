@@ -52,10 +52,8 @@
           libpulseaudio # Provides libpulse.so.0 for libpulse-binding
         ];
 
-        # Runtime tools that need to be in the PATH
+        # Runtime tools
         runtimeTools = with pkgs; [
-          pipewire # Provides 'pw-record' and 'pw-play' for audio streaming
-          wireplumber # PipeWire session manager
         ];
 
         spectral = pkgs.rustPlatform.buildRustPackage {

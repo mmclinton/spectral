@@ -16,7 +16,6 @@ pub enum Status {
 
 pub struct AppState {
     pub status: Arc<Mutex<Status>>,
-    pub selected_input: Arc<Mutex<Option<usize>>>,
     pub selected_device_id: Arc<Mutex<Option<u32>>>,
     pub threshold_val: Arc<Mutex<i32>>,
     pub mic_name: Arc<Mutex<String>>,
@@ -36,7 +35,6 @@ impl AppState {
     pub fn new() -> Self {
         Self {
             status: Arc::new(Mutex::new(Status::Inactive)),
-            selected_input: Arc::new(Mutex::new(None)),
             selected_device_id: Arc::new(Mutex::new(None)),
             threshold_val: Arc::new(Mutex::new(80)),
             mic_name: Arc::new(Mutex::new("Spectral-Mic".to_string())),

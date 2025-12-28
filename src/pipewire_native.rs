@@ -74,25 +74,6 @@ impl NativeAudioPipeline {
         source_node: &str,
         sink_node: &str,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        println!("═══════════════════════════════════════════════════════════");
-        println!("[Native Pipeline] Starting PipeWire noise reduction");
-        println!("[Native Pipeline] Source: {}", source_node);
-        println!("[Native Pipeline] Sink: {}", sink_node);
-        println!(
-            "[Native Pipeline] Input: {}Hz, {} channels (stereo → mono)",
-            SAMPLE_RATE, INPUT_CHANNELS
-        );
-        println!(
-            "[Native Pipeline] Output: {}Hz, {} channel (mono)",
-            SAMPLE_RATE, OUTPUT_CHANNELS
-        );
-        println!(
-            "[Native Pipeline] Buffer: {} samples ({:.1}ms)",
-            BUFFER_SIZE,
-            (BUFFER_SIZE as f32 / SAMPLE_RATE as f32) * 1000.0
-        );
-        println!("═══════════════════════════════════════════════════════════");
-
         let running = Arc::new(AtomicBool::new(true));
         let running_clone = running.clone();
         let source_node = source_node.to_string();
@@ -112,21 +93,15 @@ impl NativeAudioPipeline {
 
     /// Stop the audio pipeline
     pub fn stop(&mut self) {
-        println!("═══════════════════════════════════════════════════════════");
-        println!("[Native Pipeline] Stopping...");
-
         // Signal the pipeline to stop
         self.running.store(false, Ordering::SeqCst);
 
         // Wait for the thread to finish
-        if let Some(handle) = self.pipeline_thread.take() {
-            match handle.join() {
-                Ok(_) => println!("[Native Pipeline] ✓ Pipeline thread stopped"),
-                Err(_) => eprintln!("[Native Pipeline] ⚠ Pipeline thread panicked"),
-            }
+        if let Some(handle) = self.pipeline_thread.take()
+            && handle.join().is_err()
+        {
+            eprintln!("Pipeline thread panicked during shutdown");
         }
-
-        println!("═══════════════════════════════════════════════════════════");
     }
 }
 
@@ -208,9 +183,7 @@ fn run_pipeline(
     let capture_data = pipeline_data.clone();
     let _capture_listener = capture_stream
         .add_local_listener_with_user_data(capture_data)
-        .state_changed(|_stream, _data, old, new| {
-            println!("[Capture] State: {:?} -> {:?}", old, new);
-        })
+        .state_changed(|_stream, _data, _old, _new| {})
         .process(|stream, data| {
             process_capture_buffer(stream, data);
         })
@@ -243,9 +216,7 @@ fn run_pipeline(
     let playback_data = pipeline_data.clone();
     let _playback_listener = playback_stream
         .add_local_listener_with_user_data(playback_data)
-        .state_changed(|_stream, _data, old, new| {
-            println!("[Playback] State: {:?} -> {:?}", old, new);
-        })
+        .state_changed(|_stream, _data, _old, _new| {})
         .process(|stream, data| {
             process_playback_buffer(stream, data);
         })
@@ -275,9 +246,6 @@ fn run_pipeline(
         Some(std::time::Duration::from_millis(100)),
     );
 
-    println!("[Native Pipeline] ✓ Streams connected, RNNoise active");
-    println!("═══════════════════════════════════════════════════════════");
-
     // Run the main loop in a polling manner so we can check the running flag
     while running.load(Ordering::SeqCst) {
         // Process pending events with a short timeout
@@ -290,7 +258,6 @@ fn run_pipeline(
     mainloop.quit();
 
     // Cleanup happens automatically when streams are dropped
-    println!("[Native Pipeline] Pipeline terminated");
     Ok(())
 }
 

@@ -8,8 +8,6 @@ use std::thread;
 use std::time::Duration;
 
 fn main() {
-    println!("Spectral Daemon starting...");
-
     let state = Arc::new(AppState::new());
     let virtual_mic: Arc<Mutex<Option<VirtualMic>>> = Arc::new(Mutex::new(None));
 
@@ -18,17 +16,15 @@ fn main() {
     let r = running.clone();
 
     // Set up signal handlers for graceful shutdown
-    let mut signals = signal_hook::iterator::Signals::new(&[
+    let mut signals = signal_hook::iterator::Signals::new([
         signal_hook::consts::SIGTERM,
         signal_hook::consts::SIGINT,
     ])
     .expect("Failed to register signal handlers");
 
     let signal_thread = thread::spawn(move || {
-        for sig in signals.forever() {
-            eprintln!("Received signal {:?}, initiating graceful shutdown...", sig);
+        if signals.forever().next().is_some() {
             r.store(false, Ordering::SeqCst);
-            break;
         }
     });
 
@@ -51,17 +47,12 @@ fn main() {
     if persisted.is_active
         && let Some(device_id) = persisted.device_id
     {
-        println!(
-            "Restoring previous session: device_id={}, mic_name={}, threshold={}",
-            device_id, persisted.mic_name, persisted.threshold
-        );
         match VirtualMic::create(state.clone(), device_id, &persisted.mic_name) {
             Ok(mic) => {
                 *virtual_mic
                     .lock()
                     .expect("virtual_mic mutex poisoned on startup") = Some(mic);
                 state.update_status(Status::Active);
-                println!("Virtual mic restored successfully");
             }
             Err(e) => {
                 eprintln!("Failed to restore virtual mic: {}", e);
@@ -76,8 +67,6 @@ fn main() {
             return;
         }
     };
-
-    println!("Daemon listening for connections...");
 
     // Track client handler threads for proper cleanup
     let mut client_threads: Vec<thread::JoinHandle<()>> = Vec::new();
@@ -125,7 +114,6 @@ fn main() {
     }
 
     // Graceful shutdown sequence
-    println!("Shutting down gracefully...");
 
     // Stop virtual mic if active
     if let Some(mic) = virtual_mic
@@ -156,7 +144,6 @@ fn main() {
     let _ = save_state(&persisted);
 
     // Wait for client threads to finish (with timeout)
-    println!("Waiting for client threads to finish...");
     for handle in client_threads {
         // Join with a reasonable timeout concept (Rust's JoinHandle doesn't have timeout,
         // but threads should finish quickly after connections close)
@@ -165,8 +152,6 @@ fn main() {
 
     // Wait for signal thread
     let _ = signal_thread.join();
-
-    println!("Daemon shutdown complete");
 }
 
 fn handle_client(
@@ -191,7 +176,6 @@ fn handle_client(
     loop {
         match conn.read_command() {
             Ok(command) => {
-                println!("[Daemon] Received command: {:?}", command);
                 let response = match command {
                     DaemonCommand::Enable {
                         device_id,
@@ -410,13 +394,8 @@ fn handle_client(
                     }
                     DaemonCommand::GetState => {
                         let status = state.status.lock().expect("status mutex poisoned").clone();
-                        let status_str = match status {
-                            Status::Inactive => "Inactive",
-                            Status::Active => "Active",
-                            Status::Pending => "Pending",
-                        };
                         let daemon_state = DaemonState {
-                            status: status_str.to_string(),
+                            status,
                             device_id: *state
                                 .selected_device_id
                                 .lock()

@@ -1,10 +1,8 @@
-use crate::audio_devices_linux;
 use crate::pipewire_native::NativeAudioPipeline;
 use crate::pulse_module::PulseContext;
 use crate::state::AppState;
 use nnnoiseless::DenoiseState;
 use std::process::Command;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 // Audio processing constants for nnnoiseless RNNoise implementation
@@ -78,20 +76,6 @@ impl AudioProcessor {
             // Apply RNNoise - processes audio in i16 range [-32768.0, 32767.0]
             // Returns VAD probability (0.0-1.0) indicating voice presence confidence
             let vad_probability = denoiser.process_frame(scratch_output, scratch_input);
-
-            static FRAME_COUNTER: AtomicU32 = AtomicU32::new(0);
-            let count = FRAME_COUNTER.fetch_add(1, Ordering::Relaxed);
-            if count % 100 == 0 {
-                let input_rms =
-                    (scratch_input.iter().map(|&s| s * s).sum::<f32>() / FRAME_SIZE as f32).sqrt();
-                println!(
-                    "[RNNoise] VAD: {:.3}, Gate: {:.3}, Threshold: {:.0}%, Input RMS: {:.1}",
-                    vad_probability,
-                    *vad_state,
-                    threshold * 100.0,
-                    input_rms
-                );
-            }
 
             if threshold >= 0.5 {
                 // Map threshold 50-100% to VAD cutoff 0.5-0.95
@@ -179,10 +163,7 @@ impl VirtualMic {
         );
 
         let sink_module_id = match pulse_ctx.load_module("module-null-sink", &sink_args) {
-            Ok(id) => {
-                println!("[PulseAudio] Loaded module-null-sink: module ID {}", id);
-                Some(id)
-            }
+            Ok(id) => Some(id),
             Err(e) => {
                 return Err(format!("Failed to create null sink: {}", e).into());
             }
@@ -194,11 +175,6 @@ impl VirtualMic {
             display_name, display_name
         );
 
-        println!(
-            "[Debug] Creating remap source with properties: {}",
-            source_properties
-        );
-
         // Load remap source module
         let remap_args = format!(
             "source_name={} master={} source_properties={} channels=1",
@@ -206,10 +182,7 @@ impl VirtualMic {
         );
 
         let remap_module_id = match pulse_ctx.load_module("module-remap-source", &remap_args) {
-            Ok(id) => {
-                println!("[PulseAudio] Loaded module-remap-source: module ID {}", id);
-                Some(id)
-            }
+            Ok(id) => Some(id),
             Err(e) => {
                 // Cleanup sink module on failure
                 if let Some(sink_id) = sink_module_id {
@@ -219,124 +192,19 @@ impl VirtualMic {
             }
         };
 
-        println!("═══════════════════════════════════════════════════════════");
-        println!(
-            "✓ Virtual microphone '{}' created successfully",
-            virtual_name
-        );
-        println!("  - Sink module ID: {:?}", sink_module_id);
-        println!("  - Remap module ID: {:?}", remap_module_id);
-        println!("  - PipeWire node name: {}", source_name);
-        println!("═══════════════════════════════════════════════════════════");
-        println!();
-
         // Give PipeWire a moment to register the new node
         std::thread::sleep(std::time::Duration::from_millis(200));
 
-        // Find the node ID for the virtual mic we just created
-        match audio_devices_linux::find_node_by_name(&source_name) {
-            Ok(Some(id)) => {
-                println!("[System] Found {} with node ID: {}", source_name, id);
-
-                let set_default_output = Command::new("wpctl")
-                    .args(["set-default", &id.to_string()])
-                    .output();
-
-                match set_default_output {
-                    Ok(output) => {
-                        // wpctl may write to stderr even on success, check actual result
-                        let stderr = String::from_utf8_lossy(&output.stderr);
-                        let stdout = String::from_utf8_lossy(&output.stdout);
-
-                        if output.status.success() {
-                            // Success - wpctl returns 0 even if it writes warnings to stderr
-                            if !stderr.is_empty() && stderr.contains("not found") {
-                                // Benign warning, but actually succeeded
-                                println!(
-                                    "[System] ✓ Set {} (ID {}) as default input source",
-                                    virtual_name, id
-                                );
-                                println!(
-                                    "[System] ℹ Note: wpctl reported warnings but operation succeeded"
-                                );
-                            } else {
-                                println!(
-                                    "[System] ✓ Set {} (ID {}) as default input source",
-                                    virtual_name, id
-                                );
-                            }
-                        } else {
-                            // Actual failure
-                            eprintln!(
-                                "[System] ⚠ Failed to set default source (exit code {})",
-                                output.status
-                            );
-                            if !stderr.is_empty() {
-                                eprintln!("[System]   Error: {}", stderr.trim());
-                            }
-                            if !stdout.is_empty() {
-                                eprintln!("[System]   Output: {}", stdout.trim());
-                            }
-                            eprintln!(
-                                "[System] ℹ Virtual mic '{}' created but may need manual selection",
-                                virtual_name
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("[System] Failed to execute wpctl set-default: {}", e);
-                    }
-                }
-            }
-            Ok(None) => {
-                eprintln!("[System] Could not find node ID for {}", source_name);
-                eprintln!(
-                    "[System] ℹ Virtual mic '{}' created but not set as default - select manually",
-                    virtual_name
-                );
-            }
-            Err(e) => {
-                eprintln!("[System] Error finding node ID for {}: {}", source_name, e);
-                eprintln!(
-                    "[System] ℹ Virtual mic '{}' created but not set as default - select manually",
-                    virtual_name
-                );
-            }
-        }
-        println!();
-
         let source_node_name = Self::get_node_name(source_device_id)?;
-        println!(
-            "[Device] Input source (ID {}): {}",
-            source_device_id, source_node_name
-        );
-        println!();
-
-        // Physical Mic → parecord → RNNoise Filter → pacat → Virtual Sink → Virtual Mic
-        println!(
-            "[Audio Pipeline] Threshold: {}%",
-            *state
-                .threshold_val
-                .lock()
-                .expect("threshold_val mutex poisoned during mic creation")
-        );
 
         let audio_pipeline =
             match NativeAudioPipeline::start(processor.clone(), &source_node_name, &sink_name) {
-                Ok(pipeline) => {
-                    println!();
-                    println!("✓ Native audio pipeline created successfully");
-                    println!("[Status] 🎤 NOISE REDUCTION ACTIVE (Native PipeWire) 🎤");
-                    Some(pipeline)
-                }
+                Ok(pipeline) => Some(pipeline),
                 Err(e) => {
-                    eprintln!("✗ ERROR: Failed to create native audio pipeline: {}", e);
-                    eprintln!("  Falling back to passthrough mode");
+                    eprintln!("Failed to create audio pipeline: {}", e);
                     None
                 }
             };
-
-        println!();
 
         Ok(Self {
             _source_name: source_name,
@@ -371,35 +239,25 @@ impl VirtualMic {
     }
 
     pub fn stop(mut self) {
-        println!();
-        println!("═══════════════════════════════════════════════════════════");
-        println!("Stopping virtual microphone...");
-
         if let Some(mut pipeline) = self.audio_pipeline.take() {
             pipeline.stop();
         }
 
         // Create a new PulseContext just for cleanup
         if let Ok(mut ctx) = PulseContext::new("spectral-cleanup") {
-            if let Some(id) = self.remap_module_id.take() {
-                match ctx.unload_module(id) {
-                    Ok(_) => println!("  ✓ Unloaded remap module {}", id),
-                    Err(e) => eprintln!("  ✗ Failed to unload remap module {}: {}", id, e),
-                }
+            if let Some(id) = self.remap_module_id.take()
+                && let Err(e) = ctx.unload_module(id)
+            {
+                eprintln!("Failed to unload remap module: {}", e);
             }
-            if let Some(id) = self.sink_module_id.take() {
-                match ctx.unload_module(id) {
-                    Ok(_) => println!("  ✓ Unloaded sink module {}", id),
-                    Err(e) => eprintln!("  ✗ Failed to unload sink module {}: {}", id, e),
-                }
+            if let Some(id) = self.sink_module_id.take()
+                && let Err(e) = ctx.unload_module(id)
+            {
+                eprintln!("Failed to unload sink module: {}", e);
             }
         } else {
-            eprintln!("  ✗ Failed to create PulseContext for cleanup");
+            eprintln!("Failed to create PulseContext for cleanup");
         }
-
-        println!("Virtual microphone stopped");
-        println!("═══════════════════════════════════════════════════════════");
-        println!();
     }
 }
 

@@ -1,3 +1,4 @@
+use crate::state::Status;
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -20,7 +21,7 @@ pub enum DaemonCommand {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DaemonState {
-    pub status: String,
+    pub status: Status,
     pub device_id: Option<u32>,
     pub mic_name: String,
     pub threshold: i32,
