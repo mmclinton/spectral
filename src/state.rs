@@ -7,7 +7,7 @@ pub struct AudioDevice {
     pub name: String,
 }
 
-#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub enum Status {
     Inactive,
     Active,

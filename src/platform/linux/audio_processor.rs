@@ -1,5 +1,5 @@
-use crate::pipewire_native::NativeAudioPipeline;
-use crate::pulse_module::PulseContext;
+use super::pipewire::NativeAudioPipeline;
+use super::pulse::PulseContext;
 use crate::state::AppState;
 use nnnoiseless::DenoiseState;
 use std::process::Command;

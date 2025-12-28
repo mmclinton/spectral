@@ -1,4 +1,4 @@
-use spectral_lib::audio_processor_linux::VirtualMic;
+use spectral_lib::audio_processor::VirtualMic;
 use spectral_lib::ipc::{DaemonCommand, DaemonResponse, DaemonServer, DaemonState};
 use spectral_lib::persistence::{PersistedState, load_state, save_state};
 use spectral_lib::state::{AppState, Status};

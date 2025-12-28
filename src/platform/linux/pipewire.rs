@@ -8,7 +8,7 @@
 //! - Better reliability: No dependency on external CLI tools being installed
 //! - Precise control: Direct buffer sizing and format negotiation
 
-use crate::audio_processor_linux::AudioProcessor;
+use super::audio_processor::AudioProcessor;
 use pipewire::spa::{
     param::audio::{AudioFormat, AudioInfoRaw},
     pod::Pod,

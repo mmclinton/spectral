@@ -1,7 +1,16 @@
-pub mod audio_devices_linux;
-pub mod audio_processor_linux;
-pub mod ipc;
-pub mod persistence;
-pub mod pipewire_native;
-pub mod pulse_module;
+pub mod platform;
 pub mod state;
+
+// Re-export platform modules for backward compatibility and convenience
+#[cfg(target_os = "linux")]
+pub use platform::linux::audio_devices;
+#[cfg(target_os = "linux")]
+pub use platform::linux::audio_processor;
+#[cfg(target_os = "linux")]
+pub use platform::linux::ipc;
+#[cfg(target_os = "linux")]
+pub use platform::linux::persistence;
+#[cfg(target_os = "linux")]
+pub use platform::linux::pipewire;
+#[cfg(target_os = "linux")]
+pub use platform::linux::pulse;
