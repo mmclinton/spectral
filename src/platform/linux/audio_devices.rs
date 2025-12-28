@@ -31,10 +31,20 @@ pub fn get_input_devices() -> Result<Vec<AudioDevice>, Box<dyn Error>> {
                             .map(|s| s.to_string())
                             .unwrap_or("Unknown".to_string())
                     });
+
+                // TODO: Validate that "audio.channels" is reliably populated by PipeWire
+                // for all device types. Some devices may not expose this property until
+                // a stream is negotiated. Fallback to 2 (stereo) if not available.
+                let channels = props
+                    .get("audio.channels")
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(2);
+
                 if !nick.to_lowercase().contains("monitor") {
                     devices_clone.lock().unwrap().push(AudioDevice {
                         id: global.id,
                         name: nick,
+                        channels,
                     });
                 }
             }
@@ -67,4 +77,19 @@ pub fn get_input_devices() -> Result<Vec<AudioDevice>, Box<dyn Error>> {
 
     let input_devices = devices.lock().unwrap().clone();
     Ok(input_devices)
+}
+
+/// Get the channel count for a specific device by ID.
+/// Returns the channel count if found, or a default of 2 (stereo) if not found.
+///
+/// TODO: Validate this fallback behavior - should we error instead of defaulting?
+pub fn get_device_channels(device_id: u32) -> u32 {
+    match get_input_devices() {
+        Ok(devices) => devices
+            .iter()
+            .find(|d| d.id == device_id)
+            .map(|d| d.channels)
+            .unwrap_or(2),
+        Err(_) => 2, // Default to stereo on error
+    }
 }

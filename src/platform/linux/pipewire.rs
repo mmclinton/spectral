@@ -27,26 +27,30 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 
 const SAMPLE_RATE: u32 = 48000;
-const INPUT_CHANNELS: u32 = 2; // Stereo input from microphone
 const OUTPUT_CHANNELS: u32 = 1; // Mono output after processing
 const BUFFER_SIZE: usize = 480; // 10ms buffer at 48kHz - MUST match RNNoise FRAME_SIZE
+
+/// Maximum supported input channels
+/// TODO: Validate behavior with devices that have more than 8 channels
+const MAX_INPUT_CHANNELS: u32 = 8;
 
 struct PipelineData {
     processor: Arc<AudioProcessor>,
     input_buffer: Vec<f32>,
     output_buffer: Vec<f32>,
-    prev_sample: f32,
-    smoothing_alpha: f32,
+    input_channels: u32,
 }
 
 impl PipelineData {
-    fn new(processor: Arc<AudioProcessor>) -> Self {
+    fn new(processor: Arc<AudioProcessor>, input_channels: u32) -> Self {
+        // Clamp channels to valid range
+        // TODO: Validate that channel clamping produces acceptable audio quality
+        let channels = input_channels.clamp(1, MAX_INPUT_CHANNELS);
         Self {
             processor,
-            input_buffer: Vec::with_capacity(BUFFER_SIZE * INPUT_CHANNELS as usize * 4),
+            input_buffer: Vec::with_capacity(BUFFER_SIZE * channels as usize * 4),
             output_buffer: Vec::with_capacity(BUFFER_SIZE * 4),
-            prev_sample: 0.0,
-            smoothing_alpha: 0.15,
+            input_channels: channels,
         }
     }
 }
@@ -57,10 +61,21 @@ pub struct NativeAudioPipeline {
 }
 
 impl NativeAudioPipeline {
+    /// Start the native audio pipeline.
+    ///
+    /// # Arguments
+    /// * `processor` - Audio processor for noise reduction
+    /// * `source_node` - PipeWire node name of the source device
+    /// * `sink_node` - PipeWire node name of the sink
+    /// * `input_channels` - Number of channels on the input device
+    ///
+    /// TODO: Validate that PipeWire correctly negotiates the channel count
+    /// for various device types (USB mics, built-in mics, audio interfaces)
     pub fn start(
         processor: Arc<AudioProcessor>,
         source_node: &str,
         sink_node: &str,
+        input_channels: u32,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let running = Arc::new(AtomicBool::new(true));
         let running_clone = running.clone();
@@ -68,7 +83,13 @@ impl NativeAudioPipeline {
         let sink_node = sink_node.to_string();
 
         let pipeline_thread = thread::spawn(move || {
-            if let Err(e) = run_pipeline(processor, &source_node, &sink_node, running_clone) {
+            if let Err(e) = run_pipeline(
+                processor,
+                &source_node,
+                &sink_node,
+                running_clone,
+                input_channels,
+            ) {
                 eprintln!("[Native Pipeline] ✗ Pipeline error: {}", e);
             }
         });
@@ -128,6 +149,7 @@ fn run_pipeline(
     source_node: &str,
     sink_node: &str,
     running: Arc<AtomicBool>,
+    input_channels: u32,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     pipewire::init();
 
@@ -135,10 +157,13 @@ fn run_pipeline(
     let context = ContextBox::new(mainloop.loop_(), None)?;
     let core = context.connect(None)?;
 
-    // Must use Rc because PipeWire callbacks are !Send
-    let pipeline_data = Rc::new(RefCell::new(PipelineData::new(processor)));
+    let channels = input_channels.clamp(1, MAX_INPUT_CHANNELS);
 
-    let capture_format = build_audio_format_pod(AudioFormat::F32LE, SAMPLE_RATE, INPUT_CHANNELS)?;
+    // Must use Rc because PipeWire callbacks are !Send
+    let pipeline_data = Rc::new(RefCell::new(PipelineData::new(processor, channels)));
+
+    // TODO: Verify PipeWire format negotiation works correctly for mono (1 channel) devices
+    let capture_format = build_audio_format_pod(AudioFormat::F32LE, SAMPLE_RATE, channels)?;
     let playback_format = build_audio_format_pod(AudioFormat::F32LE, SAMPLE_RATE, OUTPUT_CHANNELS)?;
 
     // "target.object" used since NODE_TARGET isn't exposed in the Rust bindings
@@ -217,6 +242,38 @@ fn run_pipeline(
     Ok(())
 }
 
+/// Mix N channels down to mono.
+///
+/// This function handles any number of input channels (1-8) and produces
+/// a mono output scaled to the i16 range expected by RNNoise.
+///
+/// TODO: Validate audio quality for various channel configurations:
+/// - Mono (1 channel): Should pass through directly
+/// - Stereo (2 channels): Standard L+R/2 mixing
+/// - Surround (5.1/7.1): May need weighted mixing for better voice capture
+#[inline]
+fn mix_to_mono(input: &[f32], channels: usize, output: &mut [f32]) {
+    let frame_count = input.len() / channels;
+    let channel_divisor = channels as f32;
+
+    for i in 0..frame_count {
+        if i >= output.len() {
+            break;
+        }
+
+        // TODO: Consider weighted mixing for surround sound (center channel boost for voice)
+        let sum: f32 = (0..channels)
+            .map(|ch| {
+                let idx = i * channels + ch;
+                if idx < input.len() { input[idx] } else { 0.0 }
+            })
+            .sum();
+
+        // Scale to i16 range for RNNoise
+        output[i] = (sum / channel_divisor) * 32768.0;
+    }
+}
+
 fn process_capture_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCell<PipelineData>>) {
     if let Some(mut buffer) = stream.dequeue_buffer() {
         let datas = buffer.datas_mut();
@@ -236,6 +293,8 @@ fn process_capture_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCe
             let valid_data = &slice[chunk_offset..chunk_offset + chunk_size];
             let mut pipeline_data = data.borrow_mut();
 
+            let input_channels = pipeline_data.input_channels as usize;
+
             for audio_chunk in valid_data.chunks_exact(4) {
                 let sample = f32::from_le_bytes([
                     audio_chunk[0],
@@ -246,31 +305,23 @@ fn process_capture_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCe
                 pipeline_data.input_buffer.push(sample);
             }
 
-            // Process complete stereo frames (480 samples per channel = 960 samples)
-            let frame_size = BUFFER_SIZE * INPUT_CHANNELS as usize;
+            // Process complete frames (480 samples per channel)
+            let frame_size = BUFFER_SIZE * input_channels;
             while pipeline_data.input_buffer.len() >= frame_size {
                 let frame: Vec<f32> = pipeline_data.input_buffer.drain(..frame_size).collect();
 
-                // Convert stereo to mono and scale to i16 range for RNNoise
+                // Convert N channels to mono and scale to i16 range for RNNoise
                 let mut mono_samples = vec![0f32; BUFFER_SIZE];
-                for i in 0..BUFFER_SIZE {
-                    let left = frame[i * 2];
-                    let right = frame[i * 2 + 1];
-                    let mono = (left + right) / 2.0;
-                    mono_samples[i] = mono * 32768.0;
-                }
+                mix_to_mono(&frame, input_channels, &mut mono_samples);
 
                 let mut processed_samples = vec![0f32; BUFFER_SIZE];
                 pipeline_data
                     .processor
                     .process_audio_buffer(&mono_samples, &mut processed_samples);
 
-                let smoothing_alpha = pipeline_data.smoothing_alpha;
+                // Scale back to f32 PCM range [-1.0, 1.0]
                 for sample in &mut processed_samples {
-                    let smoothed = (1.0 - smoothing_alpha) * *sample
-                        + smoothing_alpha * pipeline_data.prev_sample;
-                    pipeline_data.prev_sample = smoothed;
-                    *sample = smoothed / 32768.0;
+                    *sample /= 32768.0;
                 }
 
                 pipeline_data

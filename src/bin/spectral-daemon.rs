@@ -1,3 +1,4 @@
+use spectral_lib::audio_devices::get_device_channels;
 use spectral_lib::audio_processor::VirtualMic;
 use spectral_lib::ipc::{DaemonCommand, DaemonResponse, DaemonServer, DaemonState};
 use spectral_lib::persistence::{PersistedState, load_state, save_state};
@@ -45,7 +46,10 @@ fn main() {
     if persisted.is_active
         && let Some(device_id) = persisted.device_id
     {
-        match VirtualMic::create(state.clone(), device_id, &persisted.mic_name) {
+        // TODO: Validate that get_device_channels returns accurate info for restored sessions
+        // (device may have been unplugged/changed since last run)
+        let channels = get_device_channels(device_id);
+        match VirtualMic::create(state.clone(), device_id, &persisted.mic_name, channels) {
             Ok(mic) => {
                 *virtual_mic
                     .lock()
@@ -213,7 +217,9 @@ fn handle_client(
                             mic.stop();
                         }
 
-                        match VirtualMic::create(state.clone(), final_device_id, &final_mic_name) {
+                        // TODO: Validate channel detection for dynamically connected devices
+                        let channels = get_device_channels(final_device_id);
+                        match VirtualMic::create(state.clone(), final_device_id, &final_mic_name, channels) {
                             Ok(mic) => {
                                 *mic_guard = Some(mic);
                                 state.update_status(Status::Active);

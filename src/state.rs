@@ -5,6 +5,14 @@ use std::sync::{Arc, Mutex};
 pub struct AudioDevice {
     pub id: u32,
     pub name: String,
+    /// Number of audio channels (1=mono, 2=stereo, etc.)
+    /// TODO: Validate channel handling for devices with >2 channels (e.g., multichannel interfaces)
+    #[serde(default = "default_channels")]
+    pub channels: u32,
+}
+
+fn default_channels() -> u32 {
+    2 // Default to stereo for backwards compatibility
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]

@@ -124,10 +124,21 @@ pub struct VirtualMic {
 }
 
 impl VirtualMic {
+    /// Create a new virtual microphone with noise reduction.
+    ///
+    /// # Arguments
+    /// * `state` - Application state
+    /// * `source_device_id` - PipeWire node ID of the source device
+    /// * `virtual_name` - Name for the virtual microphone
+    /// * `input_channels` - Number of channels on the input device (1=mono, 2=stereo, etc.)
+    ///
+    /// TODO: Validate behavior with mono input devices (USB mics, built-in laptop mics)
+    /// TODO: Validate behavior with multichannel interfaces (>2 channels)
     pub fn create(
         state: Arc<AppState>,
         source_device_id: u32,
         virtual_name: &str,
+        input_channels: u32,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let processor = Arc::new(AudioProcessor::new(state.clone()));
 
@@ -180,14 +191,18 @@ impl VirtualMic {
 
         let source_node_name = Self::get_node_name(source_device_id)?;
 
-        let audio_pipeline =
-            match NativeAudioPipeline::start(processor.clone(), &source_node_name, &sink_name) {
-                Ok(pipeline) => Some(pipeline),
-                Err(e) => {
-                    eprintln!("Failed to create audio pipeline: {}", e);
-                    None
-                }
-            };
+        let audio_pipeline = match NativeAudioPipeline::start(
+            processor.clone(),
+            &source_node_name,
+            &sink_name,
+            input_channels,
+        ) {
+            Ok(pipeline) => Some(pipeline),
+            Err(e) => {
+                eprintln!("Failed to create audio pipeline: {}", e);
+                None
+            }
+        };
 
         Ok(Self {
             _source_name: source_name,
