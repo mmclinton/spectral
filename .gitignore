@@ -1,5 +1,5 @@
 /target
 /result
 diff.txt
+analysis_report.md
 rotate-daemon-log.sh
-CODE_REVIEW.md

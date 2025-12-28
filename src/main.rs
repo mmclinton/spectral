@@ -13,10 +13,11 @@ use std::rc::Rc;
 slint::include_modules!();
 
 fn start_daemon() -> Result<(), Box<dyn Error>> {
-    let daemon_path = std::env::current_exe()?
+    let current_exe = std::env::current_exe()?;
+    let daemon_dir = current_exe
         .parent()
-        .unwrap()
-        .join("spectral-daemon");
+        .ok_or("Failed to determine daemon directory (executable might be at root)")?;
+    let daemon_path = daemon_dir.join("spectral-daemon");
 
     let log_path = std::env::var("XDG_RUNTIME_DIR")
         .or_else(|_| std::env::var("HOME").map(|h| format!("{}/tmp", h)))
@@ -112,9 +113,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.set_slider_value(daemon_state.threshold);
 
     if let Some(device_id) = daemon_state.device_id
-        && let Some(idx) = filtered_devices.iter().position(|d| d.id == device_id) {
-            ui.set_selected_input_index(idx as i32);
-        }
+        && let Some(idx) = filtered_devices.iter().position(|d| d.id == device_id)
+    {
+        ui.set_selected_input_index(idx as i32);
+    }
 
     fn hex_to_color(hex: &str) -> slint::Color {
         let hex = hex.trim_start_matches('#');
@@ -271,9 +273,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.on_mic_name_text_changed(move |text| {
         let text_str = text.to_string();
         if text_str.len() > 21
-            && let Some(ui) = ui_weak_clone.upgrade() {
-                ui.set_mic_name_text(text_str.chars().take(21).collect::<String>().into());
-            }
+            && let Some(ui) = ui_weak_clone.upgrade()
+        {
+            ui.set_mic_name_text(text_str.chars().take(21).collect::<String>().into());
+        }
     });
 
     ui.on_refresh_devices_clicked({
