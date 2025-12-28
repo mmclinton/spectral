@@ -1,3 +1,4 @@
+use crate::audio_devices_linux;
 use crate::pipewire_filter::AudioPipeline;
 use crate::pulse_module::PulseContext;
 use crate::state::AppState;
@@ -13,20 +14,30 @@ const FRAME_SIZE: usize = 480; // RNNoise processes 10ms frames at 48kHz (480 sa
 // NOT the typical float32 PCM range of [-1.0, 1.0]
 // Conversion is handled in pipewire_filter.rs before/after RNNoise processing
 
+struct ProcessingContext {
+    denoiser: Box<DenoiseState<'static>>,
+    input_buffer: Vec<f32>,
+    vad_state: f32,
+    scratch_input: Vec<f32>,
+    scratch_output: Vec<f32>,
+}
+
 pub struct AudioProcessor {
     state: Arc<AppState>,
-    denoiser: Mutex<Box<DenoiseState<'static>>>,
-    input_buffer: Mutex<Vec<f32>>,
-    vad_state: Mutex<f32>,
+    context: Mutex<ProcessingContext>,
 }
 
 impl AudioProcessor {
     pub fn new(state: Arc<AppState>) -> Self {
         Self {
             state,
-            denoiser: Mutex::new(DenoiseState::new()),
-            input_buffer: Mutex::new(Vec::with_capacity(FRAME_SIZE * 2)),
-            vad_state: Mutex::new(0.0), // Start with no voice activity
+            context: Mutex::new(ProcessingContext {
+                denoiser: DenoiseState::new(),
+                input_buffer: Vec::with_capacity(FRAME_SIZE * 2),
+                vad_state: 0.0,
+                scratch_input: vec![0.0; FRAME_SIZE],
+                scratch_output: vec![0.0; FRAME_SIZE],
+            }),
         }
     }
 
@@ -40,37 +51,39 @@ impl AudioProcessor {
             as f32
             / 100.0;
 
-        let mut buffer = self
-            .input_buffer
+        let mut ctx_guard = self
+            .context
             .lock()
-            .expect("input_buffer mutex poisoned in audio processing");
-        buffer.extend_from_slice(input);
+            .expect("AudioProcessor context mutex poisoned");
+
+        let ProcessingContext {
+            denoiser,
+            input_buffer,
+            vad_state,
+            scratch_input,
+            scratch_output,
+        } = &mut *ctx_guard;
+
+        input_buffer.extend_from_slice(input);
 
         let mut out_idx = 0;
-        let mut denoiser = self
-            .denoiser
-            .lock()
-            .expect("denoiser mutex poisoned in audio processing");
-        let mut vad_state = self
-            .vad_state
-            .lock()
-            .expect("vad_state mutex poisoned in audio processing");
 
         // Process in FRAME_SIZE chunks (480 samples = 10ms at 48kHz)
-        while buffer.len() >= FRAME_SIZE {
-            let frame: Vec<f32> = buffer.drain(..FRAME_SIZE).collect();
-
-            let mut denoised_frame = vec![0.0f32; FRAME_SIZE];
+        while input_buffer.len() >= FRAME_SIZE {
+            // Move data to scratch_input without allocating a new Vec
+            for (i, sample) in input_buffer.drain(..FRAME_SIZE).enumerate() {
+                scratch_input[i] = sample;
+            }
 
             // Apply RNNoise - processes audio in i16 range [-32768.0, 32767.0]
             // Returns VAD probability (0.0-1.0) indicating voice presence confidence
-            let vad_probability = denoiser.process_frame(&mut denoised_frame[..], &frame[..]);
+            let vad_probability = denoiser.process_frame(scratch_output, scratch_input);
 
             static FRAME_COUNTER: AtomicU32 = AtomicU32::new(0);
             let count = FRAME_COUNTER.fetch_add(1, Ordering::Relaxed);
             if count % 100 == 0 {
                 let input_rms =
-                    (frame.iter().map(|&s| s * s).sum::<f32>() / FRAME_SIZE as f32).sqrt();
+                    (scratch_input.iter().map(|&s| s * s).sum::<f32>() / FRAME_SIZE as f32).sqrt();
                 println!(
                     "[RNNoise] VAD: {:.3}, Gate: {:.3}, Threshold: {:.0}%, Input RMS: {:.1}",
                     vad_probability,
@@ -112,7 +125,7 @@ impl AudioProcessor {
                 let gain = *vad_state;
 
                 // Apply the smooth gain to create gradual transitions
-                for &sample in denoised_frame.iter() {
+                for &sample in scratch_output.iter() {
                     if out_idx < output.len() {
                         output[out_idx] = sample * gain;
                         out_idx += 1;
@@ -120,7 +133,7 @@ impl AudioProcessor {
                 }
             } else {
                 // Low threshold: passthrough denoised audio without gating
-                for &sample in denoised_frame.iter() {
+                for &sample in scratch_output.iter() {
                     if out_idx < output.len() {
                         output[out_idx] = sample;
                         out_idx += 1;
@@ -221,9 +234,8 @@ impl VirtualMic {
         std::thread::sleep(std::time::Duration::from_millis(200));
 
         // Find the node ID for the virtual mic we just created
-        // wpctl requires numeric ID, not name
-        match Self::find_node_id_by_name(&source_name) {
-            Ok(id) => {
+        match audio_devices_linux::find_node_by_name(&source_name) {
+            Ok(Some(id)) => {
                 println!("[System] Found {} with node ID: {}", source_name, id);
 
                 let set_default_output = Command::new("wpctl")
@@ -276,8 +288,15 @@ impl VirtualMic {
                     }
                 }
             }
+            Ok(None) => {
+                eprintln!("[System] Could not find node ID for {}", source_name);
+                eprintln!(
+                    "[System] ℹ Virtual mic '{}' created but not set as default - select manually",
+                    virtual_name
+                );
+            }
             Err(e) => {
-                eprintln!("[System] Could not find node ID for {}: {}", source_name, e);
+                eprintln!("[System] Error finding node ID for {}: {}", source_name, e);
                 eprintln!(
                     "[System] ℹ Virtual mic '{}' created but not set as default - select manually",
                     virtual_name
@@ -349,64 +368,6 @@ impl VirtualMic {
         }
 
         Err(format!("Could not find node.name for node {}", node_id).into())
-    }
-
-    fn find_node_id_by_name(name: &str) -> Result<u32, Box<dyn std::error::Error>> {
-        let output = Command::new("wpctl").args(["status"]).output()?;
-
-        if !output.status.success() {
-            return Err("Failed to run wpctl status".into());
-        }
-
-        let output_str = String::from_utf8_lossy(&output.stdout);
-
-        // Virtual mics created via PulseAudio appear in the Filters section as [Audio/Source]
-        // Look for the Filters section first, then parse node IDs from there
-        let mut in_audio_section = false;
-        let mut in_filters_section = false;
-
-        for line in output_str.lines() {
-            let trimmed = line.trim();
-
-            // Track which section we're in
-            if line.starts_with("Audio") {
-                in_audio_section = true;
-                in_filters_section = false;
-                continue;
-            } else if line.starts_with("Video") || line.starts_with("Settings") {
-                in_audio_section = false;
-                in_filters_section = false;
-                continue;
-            }
-
-            // Check for subsection markers within Audio section
-            if in_audio_section {
-                if trimmed.starts_with("├─ Filters:") || trimmed.starts_with("└─ Filters:")
-                {
-                    in_filters_section = true;
-                    continue;
-                } else if trimmed.starts_with("├─") || trimmed.starts_with("└─") {
-                    // Different subsection (Sinks, Sources, Streams, etc.)
-                    in_filters_section = false;
-                    continue;
-                }
-            }
-
-            // Look for our node in the Filters section
-            // Format: "  *  114. Spectral-Mic                                                 [Audio/Source]"
-            if in_filters_section && line.contains(name) && line.contains("[Audio/Source]") {
-                // Extract the node ID (number before the dot)
-                let stripped = trimmed.trim_start_matches('*').trim();
-                if let Some(dot_pos) = stripped.find('.') {
-                    let id_str = stripped[..dot_pos].trim();
-                    if let Ok(id) = id_str.parse::<u32>() {
-                        return Ok(id);
-                    }
-                }
-            }
-        }
-
-        Err(format!("Could not find node ID for '{}' in Filters section", name).into())
     }
 
     pub fn stop(mut self) {
