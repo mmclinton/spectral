@@ -1,5 +1,5 @@
 use crate::audio_devices_linux;
-use crate::pipewire_filter::AudioPipeline;
+use crate::pipewire_native::NativeAudioPipeline;
 use crate::pulse_module::PulseContext;
 use crate::state::AppState;
 use nnnoiseless::DenoiseState;
@@ -12,7 +12,7 @@ const FRAME_SIZE: usize = 480; // RNNoise processes 10ms frames at 48kHz (480 sa
 
 // IMPORTANT: RNNoise expects samples in i16 range [-32768.0, 32767.0] as f32 values
 // NOT the typical float32 PCM range of [-1.0, 1.0]
-// Conversion is handled in pipewire_filter.rs before/after RNNoise processing
+// Conversion is handled in pipewire_native.rs before/after RNNoise processing
 
 struct ProcessingContext {
     denoiser: Box<DenoiseState<'static>>,
@@ -153,7 +153,7 @@ pub struct VirtualMic {
     _source_name: String,
     sink_module_id: Option<u32>,
     remap_module_id: Option<u32>,
-    audio_pipeline: Option<AudioPipeline>,
+    audio_pipeline: Option<NativeAudioPipeline>,
     _processor: Arc<AudioProcessor>,
 }
 
@@ -322,15 +322,15 @@ impl VirtualMic {
         );
 
         let audio_pipeline =
-            match AudioPipeline::start(processor.clone(), &source_node_name, &sink_name) {
+            match NativeAudioPipeline::start(processor.clone(), &source_node_name, &sink_name) {
                 Ok(pipeline) => {
                     println!();
-                    println!("✓ Audio pipeline created successfully");
-                    println!("[Status] 🎤 NOISE REDUCTION ACTIVE 🎤");
+                    println!("✓ Native audio pipeline created successfully");
+                    println!("[Status] 🎤 NOISE REDUCTION ACTIVE (Native PipeWire) 🎤");
                     Some(pipeline)
                 }
                 Err(e) => {
-                    eprintln!("✗ ERROR: Failed to create audio pipeline: {}", e);
+                    eprintln!("✗ ERROR: Failed to create native audio pipeline: {}", e);
                     eprintln!("  Falling back to passthrough mode");
                     None
                 }
