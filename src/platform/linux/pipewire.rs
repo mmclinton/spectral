@@ -253,6 +253,16 @@ fn run_pipeline(
 /// - Surround (5.1/7.1): May need weighted mixing for better voice capture
 #[inline]
 fn mix_to_mono(input: &[f32], channels: usize, output: &mut [f32]) {
+    if channels == 1 {
+        for (i, &sample) in input.iter().enumerate() {
+            if i >= output.len() {
+                break;
+            }
+            output[i] = sample * 32768.0;
+        }
+        return;
+    }
+
     let frame_count = input.len() / channels;
     let channel_divisor = channels as f32;
 
