@@ -15,119 +15,85 @@
       flake-utils,
       ...
     }:
-    flake-utils.lib.eachDefaultSystem (
-      system:
-      let
-        overlays = [ (import rust-overlay) ];
-        pkgs = import nixpkgs { inherit system overlays; };
+    let
+      # System-independent outputs
+      systemIndependentOutputs = {
+        # Overlay for adding spectral to pkgs
+        overlays.default = import ./nix/overlay.nix;
 
-        rustToolchain = pkgs.rust-bin.stable.latest.default.override {
-          extensions = [
-            "rust-analyzer"
-            "rust-src"
-            "rustfmt"
-            "clippy"
-          ];
-        };
+        # NixOS module for system-wide installation
+        nixosModules.default = import ./nix/module.nix;
+        nixosModules.spectral = import ./nix/module.nix;
+      };
 
-        pname = "spectral";
-        version = "0.1.0";
-        binaryName = "spectral";
+      # Per-system outputs
+      perSystemOutputs = flake-utils.lib.eachDefaultSystem (
+        system:
+        let
+          pkgs = import nixpkgs { inherit system; };
 
-        # Runtime libraries that need to be dynamically linked
-        runtimeLibs = with pkgs; [
-          # GUI/Graphics dependencies for Slint
-          libGL
-          libxkbcommon
-          wayland
-          xorg.libX11
-          xorg.libXcursor
-          xorg.libXi
-          xorg.libXrandr
-          fontconfig
-          freetype
+          # Package built from nix/package.nix
+          spectral = pkgs.callPackage ./nix/package.nix { };
 
-          # Audio dependencies
-          pipewire
-          libpulseaudio # Provides libpulse.so.0 for libpulse-binding
-        ];
-
-        # Runtime tools
-        runtimeTools = with pkgs; [
-        ];
-
-        spectral = pkgs.rustPlatform.buildRustPackage {
-          inherit pname version;
-
-          src = ./.;
-
-          cargoLock = {
-            lockFile = ./Cargo.lock;
+          # Development toolchain with rust-overlay
+          rustPkgs = import nixpkgs {
+            inherit system;
+            overlays = [ (import rust-overlay) ];
           };
 
-          # Environment variables for build
-          LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-
-          # Native build inputs (build-time tools)
-          nativeBuildInputs = with pkgs; [
-            pkg-config
-            clang # Required by bindgen for pipewire-sys FFI bindings
-            makeWrapper
-          ];
-
-          # Build inputs (libraries to link against)
-          buildInputs = runtimeLibs;
-
-          postInstall = ''
-            wrapProgram $out/bin/spectral \
-              --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath runtimeLibs}" \
-              --prefix PATH : "${pkgs.lib.makeBinPath runtimeTools}"
-
-            wrapProgram $out/bin/spectral-daemon \
-              --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath runtimeLibs}" \
-              --prefix PATH : "${pkgs.lib.makeBinPath runtimeTools}"
-          '';
-
-          meta = with pkgs.lib; {
-            description = "Real-time audio noise suppression application";
-            homepage = "https://codeberg.org/spectral";
-            license = licenses.mit;
-            maintainers = [ ];
-            mainProgram = binaryName;
-            platforms = platforms.linux;
+          rustToolchain = rustPkgs.rust-bin.stable.latest.default.override {
+            extensions = [
+              "rust-analyzer"
+              "rust-src"
+              "rustfmt"
+              "clippy"
+            ];
           };
-        };
-      in
-      {
-        packages.default = spectral;
-        packages.${pname} = spectral;
 
-        devShells.default = pkgs.mkShell {
-          buildInputs =
-            with pkgs;
-            [
+          # Runtime libraries needed for development
+          runtimeLibs = with pkgs; [
+            libGL
+            libxkbcommon
+            wayland
+            xorg.libX11
+            xorg.libXcursor
+            xorg.libXi
+            xorg.libXrandr
+            fontconfig
+            freetype
+            pipewire
+            libpulseaudio
+          ];
+        in
+        {
+          packages.default = spectral;
+          packages.spectral = spectral;
+
+          devShells.default = pkgs.mkShell {
+            buildInputs = [
               rustToolchain
-              pkg-config
-              clang # Required by bindgen for pipewire-sys FFI bindings
+              pkgs.pkg-config
+              pkgs.clang
             ]
-            ++ runtimeLibs
-            ++ runtimeTools;
+            ++ runtimeLibs;
 
-          NIX_ENFORCE_PURITY = "0";
-          RUST_BACKTRACE = "1";
+            LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath runtimeLibs;
+            RUST_BACKTRACE = "1";
+          };
 
-          # Environment variables for build tools
-          LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+          # Apps: Run with `nix run`
+          apps.default = {
+            type = "app";
+            program = "${spectral}/bin/spectral";
+          };
 
-          # Ensure libraries are found during cargo run
-          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath runtimeLibs;
-        };
-
-        # Apps: Run with `nix run`
-        apps.default = {
-          type = "app";
-          program = "${spectral}/bin/${binaryName}";
-        };
-      }
-    );
+          apps.daemon = {
+            type = "app";
+            program = "${spectral}/bin/spectral-daemon";
+          };
+        }
+      );
+    in
+    systemIndependentOutputs // perSystemOutputs;
 }

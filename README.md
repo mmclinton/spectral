@@ -18,11 +18,59 @@ A real-time audio noise suppression application powered by [RNNoise](https://arx
 - **spectral-daemon** - Background service that manages audio processing
 - IPC communication via Unix domain sockets
 
-## Requirements
+## Installation
 
-- Linux with PipeWire
-- PulseAudio compatibility layer (for module loading)
-- Rust 2024 edition
+### NixOS / Nix (Recommended)
+
+#### Option 1: Direct installation (try it out)
+
+```bash
+# Run directly without installing
+nix run git+https://codeberg.org/mmc/spectral
+
+# Or build and install to your profile
+nix profile add git+https://codeberg.org/mmc/spectral
+```
+
+#### Option 2: NixOS declarative installation
+
+Add to your `flake.nix` inputs:
+
+```nix
+{
+  inputs = {
+    spectral.url = "git+https://codeberg.org/mmc/spectral";
+  };
+}
+```
+
+Then in your NixOS configuration:
+
+```nix
+{ inputs, ... }:
+{
+  imports = [ inputs.spectral.nixosModules.default ];
+
+  # Apply the overlay to make pkgs.spectral available
+  nixpkgs.overlays = [ inputs.spectral.overlays.default ];
+
+  # Enable Spectral
+  programs.spectral.enable = true;
+}
+```
+
+#### Option 3: Using the overlay only
+
+If you prefer manual control over installation:
+
+```nix
+{
+  nixpkgs.overlays = [ inputs.spectral.overlays.default ];
+
+  # Then use pkgs.spectral anywhere
+  environment.systemPackages = [ pkgs.spectral ];
+}
+```
 
 ## Development
 

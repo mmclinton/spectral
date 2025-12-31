@@ -1,7 +1,2 @@
 /target
 /result
-
-# Licensed fonts (not distributed - see fonts/README.md)
-/fonts/*.ttf
-/fonts/*.otf
-/fonts/*.ttc

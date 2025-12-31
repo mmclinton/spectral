@@ -8,12 +8,10 @@ import {
 import { SectionHeader } from "section-headers.slint";
 import { ClickableLink } from "links.slint";
 
-// Custom font import - this line is replaced at build time by build.rs
-// @FONT_IMPORT_PLACEHOLDER@
-
 export component MainWindow inherits Window {
     title: "Spectral";
-    default-font-family: "Berkeley Mono";
+    // JetBrains Mono is provided via fontconfig wrapper in Nix builds
+    default-font-family: "JetBrains Mono";
     min-width: 920px;
     min-height: 800px;
     background: #0D1117;
@@ -37,6 +35,7 @@ export component MainWindow inherits Window {
     callback disable_clicked();
     callback mic_name_text_changed(string);
     callback refresh_devices_clicked();
+    callback open_url(string);
 
     Rectangle {
         width: parent.width;
@@ -54,7 +53,7 @@ export component MainWindow inherits Window {
                 y: 20px;
                 text: "Source Code";
                 clicked => {
-                    debug("Open Source Code");
+                    root.open_url("https://codeberg.org/mmc/spectral");
                 }
             }
 
@@ -63,7 +62,7 @@ export component MainWindow inherits Window {
                 y: 40px;
                 text: "License";
                 clicked => {
-                    debug("Open License");
+                    root.open_url("https://codeberg.org/mmc/spectral/src/commit/HEAD/LICENSE");
                 }
             }
 

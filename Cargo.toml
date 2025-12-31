@@ -2,6 +2,10 @@
 name = "spectral"
 version = "0.1.0"
 edition = "2024"
+license = "GPL-3.0-only"
+authors = ["mmc <codeberg.wilder850@simplelogin.com>"]
+repository = "https://codeberg.org/mmc/spectral"
+description = "Real-time audio noise suppression application"
 
 [lib]
 name = "spectral_lib"

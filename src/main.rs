@@ -77,6 +77,8 @@ fn start_daemon() -> Result<(), Box<dyn Error>> {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let _ = slint::set_xdg_app_id("spectral");
+
     let mut daemon_client = match DaemonClient::connect() {
         Ok(client) => client,
         Err(_) => {
@@ -386,6 +388,19 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
             }
+        }
+    });
+
+    ui.on_open_url(|url| {
+        let url_str = url.to_string();
+        if let Err(e) = Command::new("xdg-open")
+            .arg(&url_str)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+        {
+            eprintln!("Failed to open URL '{}': {}", url_str, e);
         }
     });
 
