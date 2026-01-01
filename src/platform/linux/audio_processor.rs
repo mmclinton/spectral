@@ -77,8 +77,8 @@ impl AudioProcessor {
                     0.0
                 };
 
-                // Smooth gate transitions: attack=0.80 (~40ms ramp), release=0.96 (~250ms decay)
-                let attack_coef = 0.80;
+                // Smooth gate transitions: attack=0.50 (~20ms ramp), release=0.96 (~250ms decay)
+                let attack_coef = 0.50;
                 let release_coef = 0.96;
 
                 if target_gate > 0.5 {

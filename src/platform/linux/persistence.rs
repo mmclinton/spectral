@@ -22,26 +22,20 @@ impl Default for PersistedState {
     }
 }
 
-/// Returns a safe base config directory, validating against path traversal.
-/// Uses XDG_CONFIG_HOME if set and valid, otherwise falls back to ~/.config.
 fn get_safe_config_base() -> Result<PathBuf, io::Error> {
-    // Try XDG_CONFIG_HOME first
     if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
         let path = PathBuf::from(&xdg_config);
-        // Validate: must be absolute and not contain path traversal
         if path.is_absolute() && !xdg_config.contains("..") {
             return Ok(path);
         }
-        // Invalid XDG_CONFIG_HOME, fall through to HOME-based default
         eprintln!(
             "Warning: XDG_CONFIG_HOME contains invalid path '{}', using fallback",
             xdg_config
         );
     }
 
-    // Fall back to HOME/.config
     let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE")) // Windows compatibility
+        .or_else(|_| std::env::var("USERPROFILE"))
         .map_err(|_| io::Error::new(ErrorKind::NotFound, "Neither HOME nor USERPROFILE is set"))?;
 
     let home_path = PathBuf::from(&home);
@@ -80,7 +74,6 @@ pub fn get_recordings_dir() -> PathBuf {
         .join("spectral")
         .join("recordings");
 
-    // Ensure the directory exists
     if let Err(e) = fs::create_dir_all(&recordings_dir) {
         eprintln!("Failed to create recordings directory: {}", e);
     }

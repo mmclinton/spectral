@@ -4,7 +4,6 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 
-/// PID file management for single-instance daemon
 mod pid_file {
     use std::fs;
     use std::io::{self, Read, Write};
@@ -27,7 +26,6 @@ mod pid_file {
     }
 
     pub fn is_process_running(pid: u32) -> bool {
-        // On Linux, check if /proc/<pid> exists
         Path::new(&format!("/proc/{}", pid)).exists()
     }
 
@@ -142,26 +140,20 @@ impl DaemonServer {
                     format!("Another daemon is already running (PID {})", existing_pid),
                 ));
             }
-            // Stale PID file, clean it up
             pid_file::cleanup(&pid_file_path);
         }
 
-        // Try to bind, handle stale socket files
         let listener = match UnixListener::bind(&socket_path) {
             Ok(listener) => listener,
             Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-                // Socket file exists but no daemon running (we checked PID above)
-                // Safe to remove the stale socket
                 std::fs::remove_file(&socket_path)?;
                 UnixListener::bind(&socket_path)?
             }
             Err(e) => return Err(e),
         };
 
-        // Write our PID file
         pid_file::write_pid(&pid_file_path)?;
 
-        // Set non-blocking mode for graceful shutdown
         listener.set_nonblocking(true)?;
 
         Ok(Self {
@@ -178,9 +170,7 @@ impl DaemonServer {
 
 impl Drop for DaemonServer {
     fn drop(&mut self) {
-        // Clean up PID file on shutdown
         pid_file::cleanup(&self._pid_file_path);
-        // Clean up socket file
         let _ = std::fs::remove_file(get_socket_path());
     }
 }
@@ -193,7 +183,6 @@ impl DaemonConnection {
     pub fn read_command(&mut self) -> Result<DaemonCommand, std::io::Error> {
         use std::time::Duration;
 
-        // Set read timeout to prevent indefinite blocking
         self.stream
             .set_read_timeout(Some(Duration::from_secs(30)))?;
 

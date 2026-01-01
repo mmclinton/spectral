@@ -2,11 +2,6 @@
 //!
 //! This module provides a native PipeWire client for audio capture and playback,
 //! using direct stream connections for low-latency noise reduction.
-//!
-//! Benefits of native implementation:
-//! - Lower latency: Direct buffer access without inter-process piping
-//! - Better reliability: No dependency on external CLI tools being installed
-//! - Precise control: Direct buffer sizing and format negotiation
 
 use super::audio_processor::AudioProcessor;
 use pipewire::spa::{
@@ -26,18 +21,15 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 
-/// Audio sample rate in Hz (48kHz is standard for PipeWire/PulseAudio)
+/// Audio sample rate in Hz (48kHz is standard for PipeWire)
 pub const SAMPLE_RATE: u32 = 48000;
 
-/// Output channel count (mono after noise reduction processing)
 pub const OUTPUT_CHANNELS: u32 = 1;
 
-/// Frame size in samples for RNNoise processing.
 /// RNNoise requires exactly 480 samples (10ms at 48kHz) per frame.
 /// This constant MUST match the FRAME_SIZE in audio_processor.rs.
 pub const RNNOISE_FRAME_SIZE: usize = 480;
 
-/// Maximum supported input channels.
 /// Channels beyond this will be clamped.
 /// TODO: Validate behavior with devices that have more than 8 channels
 pub const MAX_INPUT_CHANNELS: u32 = 8;

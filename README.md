@@ -20,7 +20,10 @@ A real-time audio noise suppression application powered by [RNNoise](https://arx
 
 ## Installation
 
-### NixOS / Nix (Recommended)
+> **Nix is the only officially supported installation method.**  
+> Spectral depends on PipeWire, PulseAudio (libpulse), and WirePlumber being correctly configured. The Nix package handles this automatically. Manual builds may work but are unsupported. I am currently working on broadening support.
+
+### NixOS / Nix
 
 #### Option 1: Direct installation (try it out)
 

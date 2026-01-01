@@ -20,7 +20,6 @@ fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// Convert a path to a string, returning an error if the path contains non-UTF8 characters.
 fn path_to_str(path: &Path) -> Result<String, std::io::Error> {
     path.to_str().map(|s| s.to_owned()).ok_or_else(|| {
         std::io::Error::new(
@@ -52,15 +51,12 @@ fn main() {
     ])
     .expect("Failed to register signal handlers");
 
-    // Get a handle to close the signal iterator later
     let signal_handle = signals.handle();
 
     let signal_thread = thread::spawn(move || {
-        // Wait for a signal to arrive, then signal main thread to stop
         if signals.forever().next().is_some() {
             r.store(false, Ordering::SeqCst);
         }
-        // Drain remaining signals to allow clean exit
         drop(signal_rx);
     });
 
@@ -105,7 +101,6 @@ fn main() {
 
         client_threads.retain(|handle| !handle.is_finished());
 
-        // Non-blocking accept with polling
         match server.accept() {
             Ok(mut conn) => {
                 let state = state.clone();
@@ -161,9 +156,7 @@ fn main() {
         let _ = handle.join();
     }
 
-    // Signal the signal handler thread to wake up and exit
     drop(signal_tx);
-    // Close the signal pipe - this allows the signal thread to exit
     signal_handle.close();
 
     let _ = signal_thread.join();
@@ -431,7 +424,7 @@ fn handle_client(
                                         *guard = None;
                                         false
                                     }
-                                    Ok(None) => true, // Still running
+                                    Ok(None) => true,
                                     Err(_) => {
                                         *guard = None;
                                         false

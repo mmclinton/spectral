@@ -91,7 +91,7 @@ pub fn get_device_channels(device_id: u32) -> u32 {
             .find(|d| d.id == device_id)
             .map(|d| d.channels)
             .unwrap_or(2),
-        Err(_) => 2, // Default to stereo on error
+        Err(_) => 2,
     }
 }
 

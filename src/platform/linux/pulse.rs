@@ -1,6 +1,3 @@
-// PulseAudio module management using libpulse-binding
-// This replaces pactl shell commands with native Rust API calls
-
 use libpulse_binding as pulse;
 use libpulse_binding::context::{Context, FlagSet as ContextFlagSet};
 use libpulse_binding::mainloop::threaded::Mainloop;
