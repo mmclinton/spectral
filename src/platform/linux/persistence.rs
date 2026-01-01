@@ -34,6 +34,32 @@ pub fn get_config_path() -> PathBuf {
     config_dir.join("state.toml")
 }
 
+pub fn get_recordings_dir() -> PathBuf {
+    let config_dir = std::env::var("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").expect("HOME not set");
+            PathBuf::from(home).join(".config")
+        })
+        .join("spectral")
+        .join("recordings");
+
+    // Ensure the directory exists
+    if let Err(e) = fs::create_dir_all(&config_dir) {
+        eprintln!("Failed to create recordings directory: {}", e);
+    }
+
+    config_dir
+}
+
+pub fn get_original_recording_path() -> PathBuf {
+    get_recordings_dir().join("original_output.wav")
+}
+
+pub fn get_filtered_recording_path() -> PathBuf {
+    get_recordings_dir().join("filtered_output.wav")
+}
+
 pub fn load_state() -> Result<PersistedState, io::Error> {
     let path = get_config_path();
 

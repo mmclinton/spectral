@@ -404,6 +404,82 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
+    ui.on_start_recording(|| {
+        if let Ok(ref mut c) = DaemonClient::connect() {
+            match c.send_command(DaemonCommand::StartRecording) {
+                Ok(DaemonResponse::Ok) => {}
+                Ok(DaemonResponse::Error(e)) => eprintln!("Failed to start recording: {}", e),
+                _ => eprintln!("Unexpected response from daemon"),
+            }
+        }
+    });
+
+    ui.on_stop_recording(|| {
+        if let Ok(ref mut c) = DaemonClient::connect() {
+            match c.send_command(DaemonCommand::StopRecording) {
+                Ok(DaemonResponse::Ok) => {}
+                Ok(DaemonResponse::Error(e)) => eprintln!("Failed to stop recording: {}", e),
+                _ => eprintln!("Unexpected response from daemon"),
+            }
+        }
+    });
+
+    ui.on_play_original(|| {
+        if let Ok(ref mut c) = DaemonClient::connect() {
+            match c.send_command(DaemonCommand::PlayOriginal) {
+                Ok(DaemonResponse::Ok) => {}
+                Ok(DaemonResponse::Error(e)) => eprintln!("Failed to play original: {}", e),
+                _ => eprintln!("Unexpected response from daemon"),
+            }
+        }
+    });
+
+    ui.on_stop_original(|| {
+        if let Ok(ref mut c) = DaemonClient::connect() {
+            match c.send_command(DaemonCommand::StopOriginal) {
+                Ok(DaemonResponse::Ok) => {}
+                Ok(DaemonResponse::Error(e)) => eprintln!("Failed to stop original: {}", e),
+                _ => eprintln!("Unexpected response from daemon"),
+            }
+        }
+    });
+
+    ui.on_play_filtered(|| {
+        if let Ok(ref mut c) = DaemonClient::connect() {
+            match c.send_command(DaemonCommand::PlayFiltered) {
+                Ok(DaemonResponse::Ok) => {}
+                Ok(DaemonResponse::Error(e)) => eprintln!("Failed to play filtered: {}", e),
+                _ => eprintln!("Unexpected response from daemon"),
+            }
+        }
+    });
+
+    ui.on_stop_filtered(|| {
+        if let Ok(ref mut c) = DaemonClient::connect() {
+            match c.send_command(DaemonCommand::StopFiltered) {
+                Ok(DaemonResponse::Ok) => {}
+                Ok(DaemonResponse::Error(e)) => eprintln!("Failed to stop filtered: {}", e),
+                _ => eprintln!("Unexpected response from daemon"),
+            }
+        }
+    });
+
+    ui.on_poll_playback_status({
+        let ui_weak = ui_weak.clone();
+        move || {
+            if let Some(ui) = ui_weak.upgrade() {
+                if let Ok(ref mut c) = DaemonClient::connect() {
+                    if let Ok(DaemonResponse::State(state)) =
+                        c.send_command(DaemonCommand::GetState)
+                    {
+                        ui.set_is_playing_original(state.is_playing_original);
+                        ui.set_is_playing_filtered(state.is_playing_filtered);
+                    }
+                }
+            }
+        }
+    });
+
     ui.run()?;
 
     Ok(())

@@ -16,6 +16,7 @@
   freetype,
   pipewire,
   libpulseaudio,
+  wireplumber,
   llvmPackages,
   copyDesktopItems,
   makeDesktopItem,
@@ -99,7 +100,13 @@ rustPlatform.buildRustPackage {
       --set SLINT_BACKEND "winit"
 
     wrapProgram $out/bin/spectral-daemon \
-      --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath runtimeLibs}"
+      --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath runtimeLibs}" \
+      --prefix PATH : "${
+        lib.makeBinPath [
+          pipewire
+          wireplumber
+        ]
+      }"
   '';
 
   meta = with lib; {

@@ -16,26 +16,20 @@
       ...
     }:
     let
-      # System-independent outputs
       systemIndependentOutputs = {
-        # Overlay for adding spectral to pkgs
         overlays.default = import ./nix/overlay.nix;
 
-        # NixOS module for system-wide installation
         nixosModules.default = import ./nix/module.nix;
         nixosModules.spectral = import ./nix/module.nix;
       };
 
-      # Per-system outputs
       perSystemOutputs = flake-utils.lib.eachDefaultSystem (
         system:
         let
           pkgs = import nixpkgs { inherit system; };
 
-          # Package built from nix/package.nix
           spectral = pkgs.callPackage ./nix/package.nix { };
 
-          # Development toolchain with rust-overlay
           rustPkgs = import nixpkgs {
             inherit system;
             overlays = [ (import rust-overlay) ];
@@ -50,7 +44,6 @@
             ];
           };
 
-          # Runtime libraries needed for development
           runtimeLibs = with pkgs; [
             libGL
             libxkbcommon
@@ -82,7 +75,6 @@
             RUST_BACKTRACE = "1";
           };
 
-          # Apps: Run with `nix run`
           apps.default = {
             type = "app";
             program = "${spectral}/bin/spectral";

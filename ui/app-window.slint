@@ -23,7 +23,9 @@ export component MainWindow inherits Window {
     in-out property <int> slider_value: 80;
     in-out property <bool> is_recording: false;
     in-out property <bool> has_recording: false;
-    in-out property <bool> is_playing: false;
+    in-out property <bool> is_playing_original: false;
+    in-out property <bool> is_playing_filtered: false;
+    in-out property <int> recording_countdown: 0;
     in-out property <string> status_text: "Status: Inactive";
     in-out property <color> status_color: #FF0000;
 
@@ -36,6 +38,22 @@ export component MainWindow inherits Window {
     callback mic_name_text_changed(string);
     callback refresh_devices_clicked();
     callback open_url(string);
+    callback start_recording();
+    callback stop_recording();
+    callback play_original();
+    callback stop_original();
+    callback play_filtered();
+    callback stop_filtered();
+    callback poll_playback_status();
+
+    // Timer to poll playback status when playing
+    Timer {
+        interval: 250ms;
+        running: root.is_playing_original || root.is_playing_filtered;
+        triggered => {
+            root.poll_playback_status();
+        }
+    }
 
     Rectangle {
         width: parent.width;
@@ -332,58 +350,250 @@ export component MainWindow inherits Window {
                     width: 360px;
                     height: 60px;
                     horizontal-stretch: 0;
+                    spacing: 10px;
 
-                    VerticalLayout {
-                        vertical-stretch: 0;
-                        spacing: 2px;
-                        padding-right: 10px;
+                    // Record button
+                    Button {
+                        width: 100px;
+                        height: 58px;
+                        text: root.is_recording ? "Stop" : "Record";
+                        enabled: root.status_color != #FF0000;
+                        clicked => {
+                            if (root.is_playing_original) {
+                                root.is_playing_original = false;
+                                root.stop_original();
+                            }
+                            if (root.is_playing_filtered) {
+                                root.is_playing_filtered = false;
+                                root.stop_filtered();
+                            }
+                            root.is_recording = !root.is_recording;
 
-                        // Record button
-                        Button {
-                            width: 100px;
-                            height: 28px;
-                            text: root.is_recording ? "Stop" : "Record";
-                            clicked => {
-                                if (root.is_playing) {
-                                    root.is_playing = false;
-                                    debug("Stopped playback before starting new recording");
-                                }
-                                root.is_recording = !root.is_recording;
+                            if (root.is_recording) {
+                                root.recording_countdown = 0;
+                                root.has_recording = false;
+                                root.start_recording();
+                            } else {
+                                root.has_recording = true;
+                                root.stop_recording();
+                            }
+                        }
+                    }
 
-                                if (root.is_recording) {
-                                    debug("Start recording");
-                                    root.has_recording = false;
+                    // Recording countdown indicator
+                    if root.is_recording: Rectangle {
+                        width: 240px;
+                        height: 58px;
+                        background: #30363D;
+                        border-color: #FF4444;
+                        border-width: 2px;
+                        border-radius: 4px;
+
+                        // Timer
+                        Timer {
+                            interval: 1s;
+                            running: root.is_recording;
+                            triggered => {
+                                if (root.recording_countdown < 15) {
+                                    root.recording_countdown = root.recording_countdown + 1;
                                 } else {
-                                    debug("Stop recording");
+                                    root.is_recording = false;
                                     root.has_recording = true;
+                                    root.stop_recording();
                                 }
                             }
                         }
 
-                        // Play button
-                        Button {
-                            width: 100px;
-                            height: 28px;
-                            text: root.is_playing ? "Stop" : "Play";
-                            enabled: root.has_recording && !root.is_recording;
-                            clicked => {
-                                if (root.is_playing) {
-                                    root.is_playing = false;
-                                    debug("Stop playback");
-                                } else {
-                                    root.is_playing = true;
-                                    debug("Play recording");
+                        VerticalLayout {
+                            alignment: center;
+
+                            HorizontalLayout {
+                                alignment: center;
+                                spacing: 10px;
+
+                                Rectangle {
+                                    width: 40px;
+                                    height: 40px;
+                                    border-radius: 20px;
+                                    background: #FF4444;
+
+                                    Text {
+                                        width: 100%;
+                                        height: 100%;
+                                        text: root.recording_countdown;
+                                        font-size: 18px;
+                                        font-weight: 700;
+                                        color: white;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                Text {
+                                    text: "Recording...";
+                                    font-size: 16px;
+                                    font-weight: 700;
+                                    color: #FF4444;
+                                    vertical-alignment: center;
                                 }
                             }
                         }
                     }
 
-                    Rectangle {
-                        width: 250px;
-                        height: 60px;
+                    // Playback options
+                    if !root.is_recording && root.has_recording: Rectangle {
+                        width: 240px;
+                        height: 58px;
                         background: #30363D;
                         border-color: #30363D;
                         border-width: 1px;
+                        border-radius: 4px;
+
+                        VerticalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            spacing: 4px;
+                            alignment: center;
+
+                            // Original output row
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+
+                                // Play/Stop button for original
+                                Rectangle {
+                                    width: 20px;
+                                    height: 20px;
+                                    background: root.is_playing_original ? #FF4444 : #0085FC;
+                                    border-radius: 3px;
+
+                                    Text {
+                                        width: 100%;
+                                        height: 100%;
+                                        text: root.is_playing_original ? "■" : "▶";
+                                        font-size: 12px;
+                                        color: white;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+
+                                    TouchArea {
+                                        width: 100%;
+                                        height: 100%;
+                                        clicked => {
+                                            if (root.is_playing_original) {
+                                                root.is_playing_original = false;
+                                                root.stop_original();
+                                            } else {
+                                                // Stop filtered if playing
+                                                if (root.is_playing_filtered) {
+                                                    root.is_playing_filtered = false;
+                                                    root.stop_filtered();
+                                                }
+                                                root.is_playing_original = true;
+                                                root.play_original();
+                                            }
+                                        }
+                                    }
+                                }
+
+                                ClickableLink {
+                                    text: "original_output.wav";
+                                    clicked => {
+                                        if (root.is_playing_original) {
+                                            root.is_playing_original = false;
+                                            root.stop_original();
+                                        } else {
+                                            if (root.is_playing_filtered) {
+                                                root.is_playing_filtered = false;
+                                                root.stop_filtered();
+                                            }
+                                            root.is_playing_original = true;
+                                            root.play_original();
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Filtered output row
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+
+                                // Play/Stop button for filtered
+                                Rectangle {
+                                    width: 20px;
+                                    height: 20px;
+                                    background: root.is_playing_filtered ? #FF4444 : #0085FC;
+                                    border-radius: 3px;
+
+                                    Text {
+                                        width: 100%;
+                                        height: 100%;
+                                        text: root.is_playing_filtered ? "■" : "▶";
+                                        font-size: 12px;
+                                        color: white;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+
+                                    TouchArea {
+                                        width: 100%;
+                                        height: 100%;
+                                        clicked => {
+                                            if (root.is_playing_filtered) {
+                                                root.is_playing_filtered = false;
+                                                root.stop_filtered();
+                                            } else {
+                                                if (root.is_playing_original) {
+                                                    root.is_playing_original = false;
+                                                    root.stop_original();
+                                                }
+                                                root.is_playing_filtered = true;
+                                                root.play_filtered();
+                                            }
+                                        }
+                                    }
+                                }
+
+                                ClickableLink {
+                                    text: "filtered_output.wav";
+                                    clicked => {
+                                        if (root.is_playing_filtered) {
+                                            root.is_playing_filtered = false;
+                                            root.stop_filtered();
+                                        } else {
+                                            if (root.is_playing_original) {
+                                                root.is_playing_original = false;
+                                                root.stop_original();
+                                            }
+                                            root.is_playing_filtered = true;
+                                            root.play_filtered();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Empty placeholder when no recording yet and not recording
+                    if !root.is_recording && !root.has_recording: Rectangle {
+                        width: 240px;
+                        height: 58px;
+                        background: #30363D;
+                        border-color: #30363D;
+                        border-width: 1px;
+                        border-radius: 4px;
+
+                        Text {
+                            width: 100%;
+                            height: 100%;
+                            text: root.status_color == #FF0000 ? "Enable mic to record" : "Press Record to start";
+                            font-size: 12px;
+                            color: #8B949E;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
                     }
                 }
             }

@@ -1,8 +1,12 @@
 use spectral_lib::audio_devices::get_device_channels;
 use spectral_lib::audio_processor::VirtualMic;
 use spectral_lib::ipc::{DaemonCommand, DaemonResponse, DaemonServer, DaemonState};
-use spectral_lib::persistence::{PersistedState, load_state, save_state};
+use spectral_lib::persistence::{
+    PersistedState, get_filtered_recording_path, get_original_recording_path, load_state,
+    save_state,
+};
 use spectral_lib::state::{AppState, Status};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -11,6 +15,12 @@ use std::time::Duration;
 fn main() {
     let state = Arc::new(AppState::new());
     let virtual_mic: Arc<Mutex<Option<VirtualMic>>> = Arc::new(Mutex::new(None));
+
+    let recording_original: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
+    let recording_filtered: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
+
+    let playback_original: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
+    let playback_filtered: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
 
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
@@ -84,10 +94,21 @@ fn main() {
             Ok(mut conn) => {
                 let state = state.clone();
                 let virtual_mic = virtual_mic.clone();
+                let recording_original = recording_original.clone();
+                let recording_filtered = recording_filtered.clone();
+                let playback_original = playback_original.clone();
+                let playback_filtered = playback_filtered.clone();
 
                 let handle = thread::spawn(move || {
-                    if let Err(e) = handle_client(&mut conn, state, virtual_mic) {
-                        // Ignore errors after shutdown initiated
+                    if let Err(e) = handle_client(
+                        &mut conn,
+                        state,
+                        virtual_mic,
+                        recording_original,
+                        recording_filtered,
+                        playback_original,
+                        playback_filtered,
+                    ) {
                         if e.kind() != std::io::ErrorKind::WouldBlock
                             && e.kind() != std::io::ErrorKind::TimedOut
                         {
@@ -147,6 +168,10 @@ fn handle_client(
     conn: &mut spectral_lib::ipc::DaemonConnection,
     state: Arc<AppState>,
     virtual_mic: Arc<Mutex<Option<VirtualMic>>>,
+    recording_original: Arc<Mutex<Option<Child>>>,
+    recording_filtered: Arc<Mutex<Option<Child>>>,
+    playback_original: Arc<Mutex<Option<Child>>>,
+    playback_filtered: Arc<Mutex<Option<Child>>>,
 ) -> Result<(), std::io::Error> {
     // LOCK ORDERING CONVENTION:
     // To prevent deadlocks, always acquire locks in this order:
@@ -157,7 +182,13 @@ fn handle_client(
     // 5. state.mic_name
     // 6. state.selected_device_id
     // 7. state.status
-    // 8. virtual_mic
+    // 8. state.is_recording
+    // 9. state.has_recording
+    // 10. virtual_mic
+    // 11. recording_original
+    // 12. recording_filtered
+    // 13. playback_original
+    // 14. playback_filtered
     //
     // Important: Release locks as soon as possible by limiting scope.
     // Never hold multiple locks longer than necessary.
@@ -219,7 +250,12 @@ fn handle_client(
 
                         // TODO: Validate channel detection for dynamically connected devices
                         let channels = get_device_channels(final_device_id);
-                        match VirtualMic::create(state.clone(), final_device_id, &final_mic_name, channels) {
+                        match VirtualMic::create(
+                            state.clone(),
+                            final_device_id,
+                            &final_mic_name,
+                            channels,
+                        ) {
                             Ok(mic) => {
                                 *mic_guard = Some(mic);
                                 state.update_status(Status::Active);
@@ -248,15 +284,12 @@ fn handle_client(
                             .lock()
                             .expect("threshold_val mutex poisoned");
 
-                        // Check if this matches the currently applied value
                         if threshold == applied_threshold {
-                            // UI value matches applied - clear pending
                             *state
                                 .pending_threshold
                                 .lock()
                                 .expect("pending_threshold mutex poisoned") = None;
 
-                            // Check if all pending values are None
                             let has_pending_device = state
                                 .pending_device_id
                                 .lock()
@@ -275,7 +308,6 @@ fn handle_client(
                                 }
                             }
                         } else {
-                            // UI value differs from applied - mark as pending
                             *state
                                 .pending_threshold
                                 .lock()
@@ -375,6 +407,57 @@ fn handle_client(
                     }
                     DaemonCommand::GetState => {
                         let status = *state.status.lock().expect("status mutex poisoned");
+                        let is_recording = *state
+                            .is_recording
+                            .lock()
+                            .expect("is_recording mutex poisoned");
+                        let has_recording = *state
+                            .has_recording
+                            .lock()
+                            .expect("has_recording mutex poisoned");
+
+                        let is_playing_original = {
+                            let mut guard = playback_original
+                                .lock()
+                                .expect("playback_original mutex poisoned");
+                            if let Some(ref mut proc) = *guard {
+                                match proc.try_wait() {
+                                    Ok(Some(_)) => {
+                                        *guard = None;
+                                        false
+                                    }
+                                    Ok(None) => true, // Still running
+                                    Err(_) => {
+                                        *guard = None;
+                                        false
+                                    }
+                                }
+                            } else {
+                                false
+                            }
+                        };
+
+                        let is_playing_filtered = {
+                            let mut guard = playback_filtered
+                                .lock()
+                                .expect("playback_filtered mutex poisoned");
+                            if let Some(ref mut proc) = *guard {
+                                match proc.try_wait() {
+                                    Ok(Some(_)) => {
+                                        *guard = None;
+                                        false
+                                    }
+                                    Ok(None) => true,
+                                    Err(_) => {
+                                        *guard = None;
+                                        false
+                                    }
+                                }
+                            } else {
+                                false
+                            }
+                        };
+
                         let daemon_state = DaemonState {
                             status,
                             device_id: *state
@@ -390,8 +473,312 @@ fn handle_client(
                                 .threshold_val
                                 .lock()
                                 .expect("threshold_val mutex poisoned"),
+                            is_recording,
+                            has_recording,
+                            is_playing_original,
+                            is_playing_filtered,
                         };
                         DaemonResponse::State(daemon_state)
+                    }
+                    DaemonCommand::StartRecording => {
+                        let device_id = *state
+                            .selected_device_id
+                            .lock()
+                            .expect("selected_device_id mutex poisoned");
+                        let mic_name = state
+                            .mic_name
+                            .lock()
+                            .expect("mic_name mutex poisoned")
+                            .clone();
+                        let sink_name = format!("{}_sink", mic_name.replace(" ", "_"));
+
+                        eprintln!(
+                            "[Recording] device_id: {:?}, mic_name: {}, sink_name: {}",
+                            device_id, mic_name, sink_name
+                        );
+
+                        if device_id.is_none() {
+                            eprintln!("[Recording] ERROR: No device selected");
+                            return Ok(());
+                        }
+
+                        let source_node = match get_source_name(device_id.unwrap()) {
+                            Ok(name) => {
+                                eprintln!("[Recording] source_node: {}", name);
+                                name
+                            }
+                            Err(e) => {
+                                eprintln!("[Recording] Failed to get source name: {}", e);
+                                *state
+                                    .is_recording
+                                    .lock()
+                                    .expect("is_recording mutex poisoned") = false;
+                                conn.send_response(DaemonResponse::Error(format!(
+                                    "Failed to get source: {}",
+                                    e
+                                )))?;
+                                continue;
+                            }
+                        };
+
+                        let original_path = get_original_recording_path();
+                        let filtered_path = get_filtered_recording_path();
+
+                        eprintln!("[Recording] original_path: {:?}", original_path);
+                        eprintln!("[Recording] filtered_path: {:?}", filtered_path);
+
+                        // Start recording original input (from the physical mic)
+                        // pw-record uses --target for the source node name
+                        eprintln!(
+                            "[Recording] Starting pw-record for original with target: {}",
+                            source_node
+                        );
+                        let original_proc = Command::new("pw-record")
+                            .args([
+                                "--target",
+                                &source_node,
+                                "--rate",
+                                "48000",
+                                "--channels",
+                                "1",
+                                "--format",
+                                "f32",
+                                original_path.to_str().unwrap(),
+                            ])
+                            .stdin(Stdio::null())
+                            .stdout(Stdio::inherit())
+                            .stderr(Stdio::inherit())
+                            .spawn();
+
+                        let monitor_source = format!("{}.monitor", sink_name);
+                        eprintln!(
+                            "[Recording] Starting pw-record for filtered with target: {}",
+                            monitor_source
+                        );
+                        let filtered_proc = Command::new("pw-record")
+                            .args([
+                                "--target",
+                                &monitor_source,
+                                "--rate",
+                                "48000",
+                                "--channels",
+                                "1",
+                                "--format",
+                                "f32",
+                                filtered_path.to_str().unwrap(),
+                            ])
+                            .stdin(Stdio::null())
+                            .stdout(Stdio::inherit())
+                            .stderr(Stdio::inherit())
+                            .spawn();
+
+                        match (original_proc, filtered_proc) {
+                            (Ok(orig), Ok(filt)) => {
+                                eprintln!(
+                                    "[Recording] Both pw-record processes started successfully"
+                                );
+                                *recording_original
+                                    .lock()
+                                    .expect("recording_original mutex poisoned") = Some(orig);
+                                *recording_filtered
+                                    .lock()
+                                    .expect("recording_filtered mutex poisoned") = Some(filt);
+                                *state
+                                    .is_recording
+                                    .lock()
+                                    .expect("is_recording mutex poisoned") = true;
+                                *state
+                                    .has_recording
+                                    .lock()
+                                    .expect("has_recording mutex poisoned") = false;
+                                DaemonResponse::Ok
+                            }
+                            (Err(e), _) => {
+                                eprintln!("[Recording] Failed to start original pw-record: {}", e);
+                                if let Some(mut p) =
+                                    recording_original.lock().expect("mutex").take()
+                                {
+                                    let _ = p.kill();
+                                }
+                                if let Some(mut p) =
+                                    recording_filtered.lock().expect("mutex").take()
+                                {
+                                    let _ = p.kill();
+                                }
+                                DaemonResponse::Error(format!("Failed to start recording: {}", e))
+                            }
+                            (_, Err(e)) => {
+                                eprintln!("[Recording] Failed to start filtered pw-record: {}", e);
+                                if let Some(mut p) =
+                                    recording_original.lock().expect("mutex").take()
+                                {
+                                    let _ = p.kill();
+                                }
+                                if let Some(mut p) =
+                                    recording_filtered.lock().expect("mutex").take()
+                                {
+                                    let _ = p.kill();
+                                }
+                                DaemonResponse::Error(format!("Failed to start recording: {}", e))
+                            }
+                        }
+                    }
+                    DaemonCommand::StopRecording => {
+                        eprintln!("[Recording] StopRecording command received");
+                        if let Some(mut proc) = recording_original
+                            .lock()
+                            .expect("recording_original mutex poisoned")
+                            .take()
+                        {
+                            eprintln!("[Recording] Killing original recording process");
+                            let _ = proc.kill();
+                            let exit_status = proc.wait();
+                            eprintln!(
+                                "[Recording] Original process exit status: {:?}",
+                                exit_status
+                            );
+                        } else {
+                            eprintln!("[Recording] No original recording process found");
+                        }
+                        if let Some(mut proc) = recording_filtered
+                            .lock()
+                            .expect("recording_filtered mutex poisoned")
+                            .take()
+                        {
+                            eprintln!("[Recording] Killing filtered recording process");
+                            let _ = proc.kill();
+                            let exit_status = proc.wait();
+                            eprintln!(
+                                "[Recording] Filtered process exit status: {:?}",
+                                exit_status
+                            );
+                        } else {
+                            eprintln!("[Recording] No filtered recording process found");
+                        }
+
+                        let original_path = get_original_recording_path();
+                        let filtered_path = get_filtered_recording_path();
+                        eprintln!(
+                            "[Recording] original_path exists: {}, size: {:?}",
+                            original_path.exists(),
+                            std::fs::metadata(&original_path).map(|m| m.len()).ok()
+                        );
+                        eprintln!(
+                            "[Recording] filtered_path exists: {}, size: {:?}",
+                            filtered_path.exists(),
+                            std::fs::metadata(&filtered_path).map(|m| m.len()).ok()
+                        );
+
+                        *state
+                            .is_recording
+                            .lock()
+                            .expect("is_recording mutex poisoned") = false;
+                        *state
+                            .has_recording
+                            .lock()
+                            .expect("has_recording mutex poisoned") = true;
+                        DaemonResponse::Ok
+                    }
+                    DaemonCommand::PlayOriginal => {
+                        if let Some(mut proc) = playback_original
+                            .lock()
+                            .expect("playback_original mutex poisoned")
+                            .take()
+                        {
+                            let _ = proc.kill();
+                            let _ = proc.wait();
+                        }
+                        if let Some(mut proc) = playback_filtered
+                            .lock()
+                            .expect("playback_filtered mutex poisoned")
+                            .take()
+                        {
+                            let _ = proc.kill();
+                            let _ = proc.wait();
+                        }
+
+                        let original_path = get_original_recording_path();
+                        if !original_path.exists() {
+                            DaemonResponse::Error("No recording found".to_string())
+                        } else {
+                            match Command::new("pw-play")
+                                .arg(original_path.to_str().unwrap())
+                                .stdin(Stdio::null())
+                                .stdout(Stdio::null())
+                                .stderr(Stdio::null())
+                                .spawn()
+                            {
+                                Ok(proc) => {
+                                    *playback_original
+                                        .lock()
+                                        .expect("playback_original mutex poisoned") = Some(proc);
+                                    DaemonResponse::Ok
+                                }
+                                Err(e) => DaemonResponse::Error(format!("Failed to play: {}", e)),
+                            }
+                        }
+                    }
+                    DaemonCommand::StopOriginal => {
+                        if let Some(mut proc) = playback_original
+                            .lock()
+                            .expect("playback_original mutex poisoned")
+                            .take()
+                        {
+                            let _ = proc.kill();
+                            let _ = proc.wait();
+                        }
+                        DaemonResponse::Ok
+                    }
+                    DaemonCommand::PlayFiltered => {
+                        // Stop any existing playback first
+                        if let Some(mut proc) = playback_original
+                            .lock()
+                            .expect("playback_original mutex poisoned")
+                            .take()
+                        {
+                            let _ = proc.kill();
+                            let _ = proc.wait();
+                        }
+                        if let Some(mut proc) = playback_filtered
+                            .lock()
+                            .expect("playback_filtered mutex poisoned")
+                            .take()
+                        {
+                            let _ = proc.kill();
+                            let _ = proc.wait();
+                        }
+
+                        let filtered_path = get_filtered_recording_path();
+                        if !filtered_path.exists() {
+                            DaemonResponse::Error("No recording found".to_string())
+                        } else {
+                            match Command::new("pw-play")
+                                .arg(filtered_path.to_str().unwrap())
+                                .stdin(Stdio::null())
+                                .stdout(Stdio::null())
+                                .stderr(Stdio::null())
+                                .spawn()
+                            {
+                                Ok(proc) => {
+                                    *playback_filtered
+                                        .lock()
+                                        .expect("playback_filtered mutex poisoned") = Some(proc);
+                                    DaemonResponse::Ok
+                                }
+                                Err(e) => DaemonResponse::Error(format!("Failed to play: {}", e)),
+                            }
+                        }
+                    }
+                    DaemonCommand::StopFiltered => {
+                        if let Some(mut proc) = playback_filtered
+                            .lock()
+                            .expect("playback_filtered mutex poisoned")
+                            .take()
+                        {
+                            let _ = proc.kill();
+                            let _ = proc.wait();
+                        }
+                        DaemonResponse::Ok
                     }
                     DaemonCommand::Shutdown => {
                         let mut mic_guard = virtual_mic.lock().expect("virtual_mic mutex poisoned");
@@ -434,4 +821,26 @@ fn handle_client(
     }
 
     Ok(())
+}
+
+fn get_source_name(node_id: u32) -> Result<String, Box<dyn std::error::Error>> {
+    let output = Command::new("wpctl")
+        .args(["inspect", &node_id.to_string()])
+        .output()?;
+
+    if !output.status.success() {
+        return Err(format!("Failed to inspect node {}", node_id).into());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+
+    for line in output_str.lines() {
+        if line.contains("node.name") {
+            if let Some(name_part) = line.split('"').nth(1) {
+                return Ok(name_part.to_string());
+            }
+        }
+    }
+
+    Err(format!("Could not find node.name for node {}", node_id).into())
 }

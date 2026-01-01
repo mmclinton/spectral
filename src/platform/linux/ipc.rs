@@ -17,6 +17,12 @@ pub enum DaemonCommand {
     UpdateDevice(u32),
     GetState,
     Shutdown,
+    StartRecording,
+    StopRecording,
+    PlayOriginal,
+    StopOriginal,
+    PlayFiltered,
+    StopFiltered,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -25,6 +31,10 @@ pub struct DaemonState {
     pub device_id: Option<u32>,
     pub mic_name: String,
     pub threshold: i32,
+    pub is_recording: bool,
+    pub has_recording: bool,
+    pub is_playing_original: bool,
+    pub is_playing_filtered: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
