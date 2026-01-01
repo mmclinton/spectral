@@ -111,9 +111,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let ui_weak = ui.as_weak();
 
     let input_devices = audio_devices::get_input_devices()?;
-    let filtered_devices = filter_devices(&input_devices, &daemon_state.mic_name);
+    let filtered_devices = Rc::new(std::cell::RefCell::new(filter_devices(
+        &input_devices,
+        &daemon_state.mic_name,
+    )));
 
     let mut input_devices_vec: Vec<StandardListViewItem> = filtered_devices
+        .borrow()
         .iter()
         .map(|device| {
             let mut item = StandardListViewItem::default();
@@ -136,7 +140,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.set_slider_value(daemon_state.threshold);
 
     if let Some(device_id) = daemon_state.device_id
-        && let Some(idx) = filtered_devices.iter().position(|d| d.id == device_id)
+        && let Some(idx) = filtered_devices
+            .borrow()
+            .iter()
+            .position(|d| d.id == device_id)
     {
         ui.set_selected_input_index(idx as i32);
     }
@@ -157,6 +164,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let applied_mic_name = applied_mic_name.clone();
         let current_status = current_status.clone();
         move |idx: i32| {
+            let devices = devices.borrow();
             if idx >= 0
                 && (idx as usize) < devices.len()
                 && let Some(ui) = ui_weak.upgrade()
@@ -188,6 +196,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let applied_mic_name = applied_mic_name.clone();
         let current_status = current_status.clone();
         move |val| {
+            let devices = devices.borrow();
             if let Some(ui) = ui_weak.upgrade() {
                 let threshold_matches = val == applied_threshold.get();
                 let mic_matches =
@@ -220,6 +229,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let applied_device_id = applied_device_id.clone();
         let current_status = current_status.clone();
         move |new_name| {
+            let devices = devices.borrow();
             if let Some(ui) = ui_weak.upgrade() {
                 let new_name_str = new_name.to_string();
                 let mic_matches = new_name_str == *applied_mic_name.borrow();
@@ -252,6 +262,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let applied_device_id = applied_device_id.clone();
         let current_status = current_status.clone();
         move |default_name| {
+            let devices = devices.borrow();
             if let Some(ui) = ui_weak.upgrade() {
                 let default_name_str = default_name.to_string();
                 let mic_matches = default_name_str == *applied_mic_name.borrow();
@@ -284,6 +295,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let applied_mic_name = applied_mic_name.clone();
         let current_status = current_status.clone();
         move || {
+            let devices = devices.borrow();
             if let Some(ui) = ui_weak.upgrade() {
                 let idx = ui.get_selected_input_index();
                 let threshold = ui.get_slider_value();
@@ -345,6 +357,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     ui.on_refresh_devices_clicked({
         let ui_weak = ui_weak.clone();
+        let devices = filtered_devices.clone();
         move || {
             if let Some(ui) = ui_weak.upgrade() {
                 match audio_devices::get_input_devices() {
@@ -382,6 +395,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                         } else {
                             ui.set_selected_input_index(-1);
                         }
+
+                        *devices.borrow_mut() = filtered;
                     }
                     Err(e) => {
                         eprintln!("Failed to refresh devices: {}", e);
