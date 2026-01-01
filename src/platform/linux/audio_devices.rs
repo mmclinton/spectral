@@ -4,6 +4,7 @@ use pw::core::PW_ID_CORE;
 use pw::spa::utils::result::AsyncSeq;
 use pw::{context::ContextRc, main_loop::MainLoopRc, types::ObjectType};
 use std::error::Error;
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 
 pub fn get_input_devices() -> Result<Vec<AudioDevice>, Box<dyn Error>> {
@@ -92,4 +93,36 @@ pub fn get_device_channels(device_id: u32) -> u32 {
             .unwrap_or(2),
         Err(_) => 2, // Default to stereo on error
     }
+}
+
+/// Get the PipeWire node name for a device by its ID.
+///
+/// This queries WirePlumber via `wpctl inspect` to get the node.name property,
+/// which is needed for targeting streams to specific devices.
+///
+/// # Errors
+/// Returns an error if:
+/// - The `wpctl` command fails to execute
+/// - The node ID doesn't exist
+/// - The node.name property cannot be found in the output
+pub fn get_node_name(node_id: u32) -> Result<String, Box<dyn Error>> {
+    let output = Command::new("wpctl")
+        .args(["inspect", &node_id.to_string()])
+        .output()?;
+
+    if !output.status.success() {
+        return Err(format!("Failed to inspect node {}", node_id).into());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+
+    for line in output_str.lines() {
+        if line.contains("node.name")
+            && let Some(name_part) = line.split('"').nth(1)
+        {
+            return Ok(name_part.to_string());
+        }
+    }
+
+    Err(format!("Could not find node.name for node {}", node_id).into())
 }

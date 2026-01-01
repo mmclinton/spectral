@@ -26,13 +26,25 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 
-const SAMPLE_RATE: u32 = 48000;
-const OUTPUT_CHANNELS: u32 = 1; // Mono output after processing
-const BUFFER_SIZE: usize = 480; // 10ms buffer at 48kHz - MUST match RNNoise FRAME_SIZE
+/// Audio sample rate in Hz (48kHz is standard for PipeWire/PulseAudio)
+pub const SAMPLE_RATE: u32 = 48000;
 
-/// Maximum supported input channels
+/// Output channel count (mono after noise reduction processing)
+pub const OUTPUT_CHANNELS: u32 = 1;
+
+/// Frame size in samples for RNNoise processing.
+/// RNNoise requires exactly 480 samples (10ms at 48kHz) per frame.
+/// This constant MUST match the FRAME_SIZE in audio_processor.rs.
+pub const RNNOISE_FRAME_SIZE: usize = 480;
+
+/// Maximum supported input channels.
+/// Channels beyond this will be clamped.
 /// TODO: Validate behavior with devices that have more than 8 channels
-const MAX_INPUT_CHANNELS: u32 = 8;
+pub const MAX_INPUT_CHANNELS: u32 = 8;
+
+/// Scaling factor for converting f32 PCM [-1.0, 1.0] to RNNoise's expected i16 range.
+/// RNNoise expects samples in the range [-32768.0, 32767.0] as f32 values.
+pub const RNNOISE_SCALE_FACTOR: f32 = 32768.0;
 
 struct PipelineData {
     processor: Arc<AudioProcessor>,
@@ -48,8 +60,8 @@ impl PipelineData {
         let channels = input_channels.clamp(1, MAX_INPUT_CHANNELS);
         Self {
             processor,
-            input_buffer: Vec::with_capacity(BUFFER_SIZE * channels as usize * 4),
-            output_buffer: Vec::with_capacity(BUFFER_SIZE * 4),
+            input_buffer: Vec::with_capacity(RNNOISE_FRAME_SIZE * channels as usize * 4),
+            output_buffer: Vec::with_capacity(RNNOISE_FRAME_SIZE * 4),
             input_channels: channels,
         }
     }
@@ -258,7 +270,7 @@ fn mix_to_mono(input: &[f32], channels: usize, output: &mut [f32]) {
             if i >= output.len() {
                 break;
             }
-            output[i] = sample * 32768.0;
+            output[i] = sample * RNNOISE_SCALE_FACTOR;
         }
         return;
     }
@@ -280,7 +292,7 @@ fn mix_to_mono(input: &[f32], channels: usize, output: &mut [f32]) {
             .sum();
 
         // Scale to i16 range for RNNoise
-        output[i] = (sum / channel_divisor) * 32768.0;
+        output[i] = (sum / channel_divisor) * RNNOISE_SCALE_FACTOR;
     }
 }
 
@@ -316,22 +328,22 @@ fn process_capture_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCe
             }
 
             // Process complete frames (480 samples per channel)
-            let frame_size = BUFFER_SIZE * input_channels;
+            let frame_size = RNNOISE_FRAME_SIZE * input_channels;
             while pipeline_data.input_buffer.len() >= frame_size {
                 let frame: Vec<f32> = pipeline_data.input_buffer.drain(..frame_size).collect();
 
                 // Convert N channels to mono and scale to i16 range for RNNoise
-                let mut mono_samples = vec![0f32; BUFFER_SIZE];
+                let mut mono_samples = vec![0f32; RNNOISE_FRAME_SIZE];
                 mix_to_mono(&frame, input_channels, &mut mono_samples);
 
-                let mut processed_samples = vec![0f32; BUFFER_SIZE];
+                let mut processed_samples = vec![0f32; RNNOISE_FRAME_SIZE];
                 pipeline_data
                     .processor
                     .process_audio_buffer(&mono_samples, &mut processed_samples);
 
                 // Scale back to f32 PCM range [-1.0, 1.0]
                 for sample in &mut processed_samples {
-                    *sample /= 32768.0;
+                    *sample /= RNNOISE_SCALE_FACTOR;
                 }
 
                 pipeline_data
@@ -366,14 +378,8 @@ fn process_playback_buffer(
                     let bytes = sample.to_le_bytes();
                     let offset = i * 4;
                     if offset + 4 <= slice.len() {
-                        // SAFETY: bounds checked above
-                        unsafe {
-                            std::ptr::copy_nonoverlapping(
-                                bytes.as_ptr(),
-                                slice.as_ptr().add(offset) as *mut u8,
-                                4,
-                            );
-                        }
+                        // Use safe slice copy instead of unsafe ptr operations
+                        slice[offset..offset + 4].copy_from_slice(&bytes);
                     }
                 }
                 available * 4

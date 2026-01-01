@@ -4567,7 +4567,6 @@ dependencies = [
 name = "spectral"
 version = "0.1.0"
 dependencies = [
- "hound",
  "libpulse-binding",
  "nnnoiseless",
  "pipewire",

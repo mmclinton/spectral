@@ -1,13 +1,9 @@
-use super::pipewire::NativeAudioPipeline;
+use super::audio_devices::get_node_name;
+use super::pipewire::{NativeAudioPipeline, RNNOISE_FRAME_SIZE};
 use super::pulse::PulseContext;
 use crate::state::AppState;
 use nnnoiseless::DenoiseState;
-use std::process::Command;
 use std::sync::{Arc, Mutex};
-
-// RNNoise expects samples in i16 range [-32768.0, 32767.0] as f32 values,
-// NOT the typical float32 PCM range of [-1.0, 1.0]
-const FRAME_SIZE: usize = 480; // 10ms at 48kHz
 
 struct ProcessingContext {
     denoiser: Box<DenoiseState<'static>>,
@@ -28,10 +24,10 @@ impl AudioProcessor {
             state,
             context: Mutex::new(ProcessingContext {
                 denoiser: DenoiseState::new(),
-                input_buffer: Vec::with_capacity(FRAME_SIZE * 2),
+                input_buffer: Vec::with_capacity(RNNOISE_FRAME_SIZE * 2),
                 vad_state: 0.0,
-                scratch_input: vec![0.0; FRAME_SIZE],
-                scratch_output: vec![0.0; FRAME_SIZE],
+                scratch_input: vec![0.0; RNNOISE_FRAME_SIZE],
+                scratch_output: vec![0.0; RNNOISE_FRAME_SIZE],
             }),
         }
     }
@@ -62,8 +58,8 @@ impl AudioProcessor {
 
         let mut out_idx = 0;
 
-        while input_buffer.len() >= FRAME_SIZE {
-            for (i, sample) in input_buffer.drain(..FRAME_SIZE).enumerate() {
+        while input_buffer.len() >= RNNOISE_FRAME_SIZE {
+            for (i, sample) in input_buffer.drain(..RNNOISE_FRAME_SIZE).enumerate() {
                 scratch_input[i] = sample;
             }
 
@@ -189,7 +185,7 @@ impl VirtualMic {
 
         std::thread::sleep(std::time::Duration::from_millis(100));
 
-        let source_node_name = Self::get_node_name(source_device_id)?;
+        let source_node_name = get_node_name(source_device_id)?;
 
         let audio_pipeline = match NativeAudioPipeline::start(
             processor.clone(),
@@ -211,30 +207,6 @@ impl VirtualMic {
             audio_pipeline,
             _processor: processor,
         })
-    }
-
-    //TODO: find an alternative
-    fn get_node_name(node_id: u32) -> Result<String, Box<dyn std::error::Error>> {
-        let output = Command::new("wpctl")
-            .args(["inspect", &node_id.to_string()])
-            .output()?;
-
-        if !output.status.success() {
-            return Err(format!("Failed to inspect node {}", node_id).into());
-        }
-
-        let output_str = String::from_utf8_lossy(&output.stdout);
-
-        for line in output_str.lines() {
-            if line.contains("node.name") {
-                // Line format: "    node.name = "alsa_input.usb-...""
-                if let Some(name_part) = line.split('"').nth(1) {
-                    return Ok(name_part.to_string());
-                }
-            }
-        }
-
-        Err(format!("Could not find node.name for node {}", node_id).into())
     }
 
     pub fn stop(mut self) {

@@ -2,9 +2,8 @@ use std::env;
 use std::path::Path;
 
 fn main() {
-    unsafe { env::set_var("SLINT_STYLE", "fluent-dark") };
-
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+    let manifest_dir =
+        env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set by Cargo");
 
     let config = slint_build::CompilerConfiguration::new()
         .with_style("fluent-dark".into())

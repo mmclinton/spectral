@@ -482,15 +482,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.on_poll_playback_status({
         let ui_weak = ui_weak.clone();
         move || {
-            if let Some(ui) = ui_weak.upgrade() {
-                if let Ok(ref mut c) = DaemonClient::connect() {
-                    if let Ok(DaemonResponse::State(state)) =
-                        c.send_command(DaemonCommand::GetState)
-                    {
-                        ui.set_is_playing_original(state.is_playing_original);
-                        ui.set_is_playing_filtered(state.is_playing_filtered);
-                    }
-                }
+            if let Some(ui) = ui_weak.upgrade()
+                && let Ok(ref mut c) = DaemonClient::connect()
+                && let Ok(DaemonResponse::State(state)) =
+                    c.send_command(DaemonCommand::GetState)
+            {
+                ui.set_is_playing_original(state.is_playing_original);
+                ui.set_is_playing_filtered(state.is_playing_filtered);
             }
         }
     });
