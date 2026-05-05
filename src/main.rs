@@ -1,6 +1,6 @@
 use spectral_lib::audio_devices;
 use spectral_lib::ipc::{DaemonClient, DaemonCommand, DaemonResponse};
-use spectral_lib::state::{AudioDevice, Status};
+use spectral_lib::state::{AudioDevice, MIC_NAME_MAX_LEN, Status};
 
 use slint::ModelRc;
 use slint::StandardListViewItem;
@@ -12,6 +12,13 @@ use std::process::{Command, Stdio};
 use std::rc::Rc;
 
 slint::include_modules!();
+
+fn is_valid_mic_name_input(text: &str) -> bool {
+    text.chars().count() <= MIC_NAME_MAX_LEN
+        && text
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
 
 fn filter_devices(devices: &[AudioDevice], mic_name: &str) -> Vec<AudioDevice> {
     let mic_name_hyphen = mic_name.replace(" ", "-");
@@ -196,6 +203,8 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     ui.set_mic_name_text(daemon_state.mic_name.clone().into());
     ui.set_slider_value(daemon_state.threshold);
 
+    let last_valid_mic_name = Rc::new(std::cell::RefCell::new(daemon_state.mic_name.clone()));
+
     if let Some(device_id) = daemon_state.device_id
         && let Some(idx) = filtered_devices
             .borrow()
@@ -318,10 +327,12 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let applied_threshold = applied_threshold.clone();
         let applied_device_id = applied_device_id.clone();
         let current_status = current_status.clone();
+        let last_valid = last_valid_mic_name.clone();
         move |default_name| {
             let devices = devices.borrow();
             if let Some(ui) = ui_weak.upgrade() {
                 let default_name_str = default_name.to_string();
+                *last_valid.borrow_mut() = default_name_str.clone();
                 let mic_matches = default_name_str == *applied_mic_name.borrow();
                 let threshold_matches = ui.get_slider_value() == applied_threshold.get();
                 let idx = ui.get_selected_input_index();
@@ -357,6 +368,10 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                 let idx = ui.get_selected_input_index();
                 let threshold = ui.get_slider_value();
                 let mic_name = ui.get_mic_name_text().to_string();
+                if mic_name.is_empty() {
+                    eprintln!("Cannot enable: mic name is empty");
+                    return;
+                }
 
                 if idx >= 0
                     && (idx as usize) < devices.len()
@@ -403,13 +418,21 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     });
 
     let ui_weak_clone = ui_weak.clone();
+    let last_valid = last_valid_mic_name.clone();
     ui.on_mic_name_text_changed(move |text| {
-        let text_str = text.to_string();
-        if text_str.len() > 21
-            && let Some(ui) = ui_weak_clone.upgrade()
-        {
-            ui.set_mic_name_text(text_str.chars().take(21).collect::<String>().into());
+        if is_valid_mic_name_input(&text) {
+            *last_valid.borrow_mut() = text.to_string();
+            return;
         }
+        let revert_to = last_valid.borrow().clone();
+        let ui_weak = ui_weak_clone.clone();
+        slint::invoke_from_event_loop(move || {
+            if let Some(ui) = ui_weak.upgrade() {
+                ui.set_mic_name_text(revert_to.into());
+                ui.set_mic_name_invalid_flash(true);
+            }
+        })
+        .ok();
     });
 
     ui.on_refresh_devices_clicked({

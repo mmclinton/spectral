@@ -30,6 +30,7 @@ export component MainWindow inherits Window {
     in-out property <color> status_color: #FF0000;
     in-out property <bool> show_device_help_popup: false;
     in-out property <bool> show_help_popup: false;
+    in-out property <bool> mic_name_invalid_flash: false;
 
     callback selected_input_index_change(int);
     callback threshold_change(int);
@@ -275,9 +276,17 @@ export component MainWindow inherits Window {
                     width: 360px;
                     height: 30px;
                     background: #30363D;
-                    border-color: #30363D;
-                    border-width: 1px;
+                    border-color: root.mic_name_invalid_flash ? #FF4444 : #30363D;
+                    border-width: root.mic_name_invalid_flash ? 2px : 1px;
                     border-radius: 5px;
+
+                    Timer {
+                        interval: 400ms;
+                        running: root.mic_name_invalid_flash;
+                        triggered => {
+                            root.mic_name_invalid_flash = false;
+                        }
+                    }
 
                     mic_name := TextInput {
                         x: 15px;

@@ -1,7 +1,7 @@
 use super::audio_devices::get_node_name;
 use super::pipewire::{NativeAudioPipeline, RNNOISE_FRAME_SIZE};
 use super::pulse::PulseContext;
-use crate::state::AppState;
+use crate::state::{AppState, is_valid_mic_name};
 use nnnoiseless::DenoiseState;
 use std::sync::{Arc, Mutex};
 
@@ -136,11 +136,14 @@ impl VirtualMic {
         virtual_name: &str,
         input_channels: u32,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        if !is_valid_mic_name(virtual_name) {
+            return Err(format!("Invalid mic name: {:?}", virtual_name).into());
+        }
         let processor = Arc::new(AudioProcessor::new(state.clone()));
 
-        let source_name = virtual_name.replace(" ", "_");
+        let source_name = virtual_name.to_string();
         let sink_name = format!("{}_sink", source_name);
-        let display_name = virtual_name.replace(" ", "-");
+        let display_name = virtual_name.to_string();
 
         let mut pulse_ctx = PulseContext::new("spectral")?;
 

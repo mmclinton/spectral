@@ -5,7 +5,7 @@ use spectral_lib::persistence::{
     PersistedState, get_filtered_recording_path, get_original_recording_path, load_state,
     save_state,
 };
-use spectral_lib::state::{AppState, Status};
+use spectral_lib::state::{AppState, Status, is_valid_mic_name};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -60,7 +60,14 @@ fn main() {
         drop(signal_rx);
     });
 
-    let persisted = load_state().unwrap_or_default();
+    let mut persisted = load_state().unwrap_or_default();
+    if !is_valid_mic_name(&persisted.mic_name) {
+        eprintln!(
+            "Persisted mic_name {:?} is invalid, resetting to default",
+            persisted.mic_name
+        );
+        persisted.mic_name = "Spectral-Mic".to_string();
+    }
     {
         *lock_or_recover(&state.threshold_val) = persisted.threshold;
         *lock_or_recover(&state.mic_name) = persisted.mic_name.clone();
@@ -200,6 +207,13 @@ fn handle_client(
                         mic_name,
                         threshold,
                     } => {
+                        if !is_valid_mic_name(&mic_name) {
+                            conn.send_response(DaemonResponse::Error(
+                                "Invalid mic name: only [A-Za-z0-9_-] allowed, 1-21 chars"
+                                    .to_string(),
+                            ))?;
+                            continue;
+                        }
                         let final_threshold = state
                             .pending_threshold
                             .lock()
@@ -319,6 +333,13 @@ fn handle_client(
                         DaemonResponse::Ok
                     }
                     DaemonCommand::UpdateMicName(mic_name) => {
+                        if !is_valid_mic_name(&mic_name) {
+                            conn.send_response(DaemonResponse::Error(
+                                "Invalid mic name: only [A-Za-z0-9_-] allowed, 1-21 chars"
+                                    .to_string(),
+                            ))?;
+                            continue;
+                        }
                         let applied_name = state
                             .mic_name
                             .lock()

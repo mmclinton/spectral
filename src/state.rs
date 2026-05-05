@@ -62,3 +62,21 @@ impl AppState {
             .expect("status mutex poisoned in update_status") = new_status;
     }
 }
+
+pub const MIC_NAME_MAX_LEN: usize = 21;
+
+pub fn is_valid_mic_name(name: &str) -> bool {
+    let len = name.chars().count();
+    len > 0
+        && len <= MIC_NAME_MAX_LEN
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+pub fn sanitize_mic_name(name: &str) -> String {
+    name.chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+        .take(MIC_NAME_MAX_LEN)
+        .collect()
+}
