@@ -92,12 +92,10 @@ rustPlatform.buildRustPackage {
     # Install icon
     install -Dm644 assets/spectral.png $out/share/icons/hicolor/512x512/apps/spectral.png
 
-    # Wrap binaries with runtime library paths and fallback font
-    # Use winit backend (not Qt) to ensure set_xdg_app_id works for dock icon
+    # Wrap binaries with runtime library paths and fallback font.
     wrapProgram $out/bin/spectral \
       --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath runtimeLibs}" \
-      --set FONTCONFIG_FILE "${makeFontsConf { fontDirectories = [ jetbrains-mono ]; }}" \
-      --set SLINT_BACKEND "winit"
+      --set FONTCONFIG_FILE "${makeFontsConf { fontDirectories = [ jetbrains-mono ]; }}"
 
     wrapProgram $out/bin/spectral-daemon \
       --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath runtimeLibs}" \

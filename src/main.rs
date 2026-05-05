@@ -76,7 +76,64 @@ fn start_daemon() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+const RENDERER_FALLBACKS: &[&str] = &["femtovg", "software"];
+
+const RENDERER_ATTEMPT_ENV: &str = "SPECTRAL_RENDERER_ATTEMPT";
+
+fn select_renderer() -> Option<&'static str> {
+    if std::env::var_os("SLINT_BACKEND").is_some() {
+        return None;
+    }
+
+    let attempt: usize = std::env::var(RENDERER_ATTEMPT_ENV)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+
+    let renderer = RENDERER_FALLBACKS.get(attempt).copied()?;
+    unsafe { std::env::set_var("SLINT_BACKEND", format!("winit-{renderer}")) };
+    Some(renderer)
+}
+
+fn reexec_with_next_renderer(current_attempt: usize) -> Result<(), Box<dyn Error>> {
+    use std::os::unix::process::CommandExt;
+
+    let next = current_attempt + 1;
+    if next >= RENDERER_FALLBACKS.len() {
+        return Err("no more renderer fallbacks available".into());
+    }
+
+    let exe = std::env::current_exe()?;
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let err = Command::new(exe)
+        .args(&args)
+        .env(RENDERER_ATTEMPT_ENV, next.to_string())
+        .env_remove("SLINT_BACKEND")
+        .exec();
+    Err(Box::new(err))
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
+    let attempted_renderer = select_renderer();
+
+    if let Err(err) = run_app() {
+        if let Some(renderer) = attempted_renderer {
+            let attempt = RENDERER_FALLBACKS
+                .iter()
+                .position(|r| *r == renderer)
+                .unwrap_or(0);
+            eprintln!(
+                "Renderer '{}' failed: {}. Falling back to next renderer...",
+                renderer, err
+            );
+            reexec_with_next_renderer(attempt)?;
+        }
+        return Err(err);
+    }
+    Ok(())
+}
+
+fn run_app() -> Result<(), Box<dyn Error>> {
     let _ = slint::set_xdg_app_id("spectral");
 
     let mut daemon_client = match DaemonClient::connect() {
