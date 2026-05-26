@@ -106,3 +106,20 @@ cargo run
 4. Adjust the noise suppression threshold as needed
 5. Click "Enable" to create the virtual microphone
 6. Select "Spectral-Mic" (or your custom name) as the input in other applications
+
+## Rendering
+
+Spectral forces Slint to the `winit` backend with the `software` renderer,
+and this is the only renderer compiled into the binary. This combination
+has the broadest coverage: it has no GPU, EGL, Vulkan, GBM, or libdrm
+dependency and therefore survives broken or mismatched Mesa/driver
+stacks, headless sessions, and most container/sandbox setups. Spectral's
+UI is small and static, so CPU rasterization is not noticeable in
+practice.
+
+`SLINT_BACKEND` is set unconditionally at startup, so the environment
+variable cannot be used to switch renderers. If you want a different
+combination, you must rebuild Spectral with the matching
+`slint/renderer-...` feature enabled and remove the override in
+`src/main.rs`.
+

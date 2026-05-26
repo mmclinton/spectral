@@ -2,13 +2,12 @@
 # Can be used with callPackage or imported directly
 {
   lib,
-  stdenv,
   rustPlatform,
   pkg-config,
   clang,
+  llvmPackages,
   makeWrapper,
   makeFontsConf,
-  libGL,
   libxkbcommon,
   wayland,
   xorg,
@@ -17,7 +16,6 @@
   pipewire,
   libpulseaudio,
   wireplumber,
-  llvmPackages,
   copyDesktopItems,
   makeDesktopItem,
   jetbrains-mono,
@@ -27,8 +25,6 @@ let
   version = "0.1.0";
 
   runtimeLibs = [
-    # GUI/Graphics dependencies for Slint
-    libGL
     libxkbcommon
     wayland
     xorg.libX11
@@ -37,7 +33,6 @@ let
     xorg.libXrandr
     fontconfig
     freetype
-    # Audio dependencies
     pipewire
     libpulseaudio
   ];
@@ -51,8 +46,6 @@ rustPlatform.buildRustPackage {
     lockFile = ./../Cargo.lock;
   };
 
-  LIBCLANG_PATH = "${llvmPackages.libclang.lib}/lib";
-
   nativeBuildInputs = [
     pkg-config
     clang
@@ -61,6 +54,8 @@ rustPlatform.buildRustPackage {
   ];
 
   buildInputs = runtimeLibs;
+
+  LIBCLANG_PATH = "${llvmPackages.libclang.lib}/lib";
 
   desktopItems = [
     (makeDesktopItem {
@@ -89,7 +84,6 @@ rustPlatform.buildRustPackage {
   ];
 
   postInstall = ''
-    # Install icon
     install -Dm644 assets/spectral.png $out/share/icons/hicolor/512x512/apps/spectral.png
 
     # Wrap binaries with runtime library paths and fallback font.
