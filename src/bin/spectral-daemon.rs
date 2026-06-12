@@ -74,23 +74,6 @@ fn main() {
         *lock_or_recover(&state.selected_device_id) = persisted.device_id;
     }
 
-    if persisted.is_active
-        && let Some(device_id) = persisted.device_id
-    {
-        // TODO: Validate that get_device_channels returns accurate info for restored sessions
-        // (device may have been unplugged/changed since last run)
-        let channels = get_device_channels(device_id);
-        match VirtualMic::create(state.clone(), device_id, &persisted.mic_name, channels) {
-            Ok(mic) => {
-                *lock_or_recover(&virtual_mic) = Some(mic);
-                state.update_status(Status::Active);
-            }
-            Err(e) => {
-                eprintln!("Failed to restore virtual mic: {}", e);
-            }
-        }
-    }
-
     let server = match DaemonServer::bind() {
         Ok(s) => s,
         Err(e) => {
@@ -150,14 +133,6 @@ fn main() {
     if let Some(mic) = lock_or_recover(&virtual_mic).take() {
         mic.stop();
     }
-
-    let persisted = PersistedState {
-        is_active: false,
-        device_id: *lock_or_recover(&state.selected_device_id),
-        mic_name: lock_or_recover(&state.mic_name).clone(),
-        threshold: *lock_or_recover(&state.threshold_val),
-    };
-    let _ = save_state(&persisted);
 
     for handle in client_threads {
         let _ = handle.join();
@@ -220,6 +195,14 @@ fn handle_client(
                             .selected_device_id
                             .lock()
                             .expect("selected_device_id mutex poisoned") = Some(device_id);
+
+                        if let Err(e) = save_state(&PersistedState {
+                            device_id: Some(device_id),
+                            mic_name: mic_name.clone(),
+                            threshold,
+                        }) {
+                            eprintln!("Failed to persist settings: {}", e);
+                        }
 
                         let mut mic_guard = lock_or_recover(&virtual_mic);
                         if let Some(mic) = mic_guard.take() {
@@ -591,14 +574,6 @@ fn handle_client(
                         if let Some(mic) = mic_guard.take() {
                             mic.stop();
                         }
-
-                        let persisted = PersistedState {
-                            is_active: false,
-                            device_id: *lock_or_recover(&state.selected_device_id),
-                            mic_name: lock_or_recover(&state.mic_name).clone(),
-                            threshold: *lock_or_recover(&state.threshold_val),
-                        };
-                        let _ = save_state(&persisted);
 
                         conn.send_response(DaemonResponse::Ok)?;
                         std::process::exit(0);
