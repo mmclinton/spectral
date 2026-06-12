@@ -5,20 +5,13 @@ use spectral_lib::persistence::{
     PersistedState, get_filtered_recording_path, get_original_recording_path, load_state,
     save_state,
 };
-use spectral_lib::state::{AppState, Status, is_valid_mic_name};
+use spectral_lib::state::{AppState, Status, is_valid_mic_name, lock_or_recover};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-
-/// Helper to recover from poisoned mutexes.
-/// In a daemon context, we prefer to continue operation with potentially stale data
-/// rather than crash entirely, since the data is typically not critically inconsistent.
-fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
-}
 
 fn path_to_str(path: &Path) -> Result<String, std::io::Error> {
     path.to_str().map(|s| s.to_owned()).ok_or_else(|| {
@@ -186,15 +179,9 @@ fn handle_client(
                             ))?;
                             continue;
                         }
-                        *state
-                            .threshold_val
-                            .lock()
-                            .expect("threshold_val mutex poisoned") = threshold;
-                        *state.mic_name.lock().expect("mic_name mutex poisoned") = mic_name.clone();
-                        *state
-                            .selected_device_id
-                            .lock()
-                            .expect("selected_device_id mutex poisoned") = Some(device_id);
+                        *lock_or_recover(&state.threshold_val) = threshold;
+                        *lock_or_recover(&state.mic_name) = mic_name.clone();
+                        *lock_or_recover(&state.selected_device_id) = Some(device_id);
 
                         if let Err(e) = save_state(&PersistedState {
                             device_id: Some(device_id),
@@ -235,20 +222,12 @@ fn handle_client(
                         DaemonResponse::Ok
                     }
                     DaemonCommand::GetState => {
-                        let status = *state.status.lock().expect("status mutex poisoned");
-                        let is_recording = *state
-                            .is_recording
-                            .lock()
-                            .expect("is_recording mutex poisoned");
-                        let has_recording = *state
-                            .has_recording
-                            .lock()
-                            .expect("has_recording mutex poisoned");
+                        let status = *lock_or_recover(&state.status);
+                        let is_recording = *lock_or_recover(&state.is_recording);
+                        let has_recording = *lock_or_recover(&state.has_recording);
 
                         let is_playing_original = {
-                            let mut guard = playback_original
-                                .lock()
-                                .expect("playback_original mutex poisoned");
+                            let mut guard = lock_or_recover(&playback_original);
                             if let Some(ref mut proc) = *guard {
                                 match proc.try_wait() {
                                     Ok(Some(_)) => {
@@ -267,9 +246,7 @@ fn handle_client(
                         };
 
                         let is_playing_filtered = {
-                            let mut guard = playback_filtered
-                                .lock()
-                                .expect("playback_filtered mutex poisoned");
+                            let mut guard = lock_or_recover(&playback_filtered);
                             if let Some(ref mut proc) = *guard {
                                 match proc.try_wait() {
                                     Ok(Some(_)) => {
@@ -289,19 +266,9 @@ fn handle_client(
 
                         let daemon_state = DaemonState {
                             status,
-                            device_id: *state
-                                .selected_device_id
-                                .lock()
-                                .expect("selected_device_id mutex poisoned"),
-                            mic_name: state
-                                .mic_name
-                                .lock()
-                                .expect("mic_name mutex poisoned")
-                                .clone(),
-                            threshold: *state
-                                .threshold_val
-                                .lock()
-                                .expect("threshold_val mutex poisoned"),
+                            device_id: *lock_or_recover(&state.selected_device_id),
+                            mic_name: lock_or_recover(&state.mic_name).clone(),
+                            threshold: *lock_or_recover(&state.threshold_val),
                             is_recording,
                             has_recording,
                             is_playing_original,
@@ -310,15 +277,8 @@ fn handle_client(
                         DaemonResponse::State(daemon_state)
                     }
                     DaemonCommand::StartRecording => {
-                        let device_id = *state
-                            .selected_device_id
-                            .lock()
-                            .expect("selected_device_id mutex poisoned");
-                        let mic_name = state
-                            .mic_name
-                            .lock()
-                            .expect("mic_name mutex poisoned")
-                            .clone();
+                        let device_id = *lock_or_recover(&state.selected_device_id);
+                        let mic_name = lock_or_recover(&state.mic_name).clone();
                         let sink_name = format!("{}_sink", mic_name.replace(" ", "_"));
 
                         if device_id.is_none() {
@@ -329,10 +289,7 @@ fn handle_client(
                             Ok(name) => name,
                             Err(e) => {
                                 eprintln!("[Recording] Failed to get source name: {}", e);
-                                *state
-                                    .is_recording
-                                    .lock()
-                                    .expect("is_recording mutex poisoned") = false;
+                                *lock_or_recover(&state.is_recording) = false;
                                 conn.send_response(DaemonResponse::Error(format!(
                                     "Failed to get source: {}",
                                     e
@@ -382,20 +339,10 @@ fn handle_client(
 
                         match (original_proc, filtered_proc) {
                             (Ok(orig), Ok(filt)) => {
-                                *recording_original
-                                    .lock()
-                                    .expect("recording_original mutex poisoned") = Some(orig);
-                                *recording_filtered
-                                    .lock()
-                                    .expect("recording_filtered mutex poisoned") = Some(filt);
-                                *state
-                                    .is_recording
-                                    .lock()
-                                    .expect("is_recording mutex poisoned") = true;
-                                *state
-                                    .has_recording
-                                    .lock()
-                                    .expect("has_recording mutex poisoned") = false;
+                                *lock_or_recover(&recording_original) = Some(orig);
+                                *lock_or_recover(&recording_filtered) = Some(filt);
+                                *lock_or_recover(&state.is_recording) = true;
+                                *lock_or_recover(&state.has_recording) = false;
                                 DaemonResponse::Ok
                             }
                             (Err(e), _) => {
@@ -421,47 +368,25 @@ fn handle_client(
                         }
                     }
                     DaemonCommand::StopRecording => {
-                        if let Some(mut proc) = recording_original
-                            .lock()
-                            .expect("recording_original mutex poisoned")
-                            .take()
-                        {
+                        if let Some(mut proc) = lock_or_recover(&recording_original).take() {
                             let _ = proc.kill();
                             let _ = proc.wait();
                         }
-                        if let Some(mut proc) = recording_filtered
-                            .lock()
-                            .expect("recording_filtered mutex poisoned")
-                            .take()
-                        {
+                        if let Some(mut proc) = lock_or_recover(&recording_filtered).take() {
                             let _ = proc.kill();
                             let _ = proc.wait();
                         }
 
-                        *state
-                            .is_recording
-                            .lock()
-                            .expect("is_recording mutex poisoned") = false;
-                        *state
-                            .has_recording
-                            .lock()
-                            .expect("has_recording mutex poisoned") = true;
+                        *lock_or_recover(&state.is_recording) = false;
+                        *lock_or_recover(&state.has_recording) = true;
                         DaemonResponse::Ok
                     }
                     DaemonCommand::PlayOriginal => {
-                        if let Some(mut proc) = playback_original
-                            .lock()
-                            .expect("playback_original mutex poisoned")
-                            .take()
-                        {
+                        if let Some(mut proc) = lock_or_recover(&playback_original).take() {
                             let _ = proc.kill();
                             let _ = proc.wait();
                         }
-                        if let Some(mut proc) = playback_filtered
-                            .lock()
-                            .expect("playback_filtered mutex poisoned")
-                            .take()
-                        {
+                        if let Some(mut proc) = lock_or_recover(&playback_filtered).take() {
                             let _ = proc.kill();
                             let _ = proc.wait();
                         }
@@ -488,9 +413,7 @@ fn handle_client(
                                 .spawn()
                             {
                                 Ok(proc) => {
-                                    *playback_original
-                                        .lock()
-                                        .expect("playback_original mutex poisoned") = Some(proc);
+                                    *lock_or_recover(&playback_original) = Some(proc);
                                     DaemonResponse::Ok
                                 }
                                 Err(e) => DaemonResponse::Error(format!("Failed to play: {}", e)),
@@ -498,11 +421,7 @@ fn handle_client(
                         }
                     }
                     DaemonCommand::StopOriginal => {
-                        if let Some(mut proc) = playback_original
-                            .lock()
-                            .expect("playback_original mutex poisoned")
-                            .take()
-                        {
+                        if let Some(mut proc) = lock_or_recover(&playback_original).take() {
                             let _ = proc.kill();
                             let _ = proc.wait();
                         }
@@ -510,19 +429,11 @@ fn handle_client(
                     }
                     DaemonCommand::PlayFiltered => {
                         // Stop any existing playback first
-                        if let Some(mut proc) = playback_original
-                            .lock()
-                            .expect("playback_original mutex poisoned")
-                            .take()
-                        {
+                        if let Some(mut proc) = lock_or_recover(&playback_original).take() {
                             let _ = proc.kill();
                             let _ = proc.wait();
                         }
-                        if let Some(mut proc) = playback_filtered
-                            .lock()
-                            .expect("playback_filtered mutex poisoned")
-                            .take()
-                        {
+                        if let Some(mut proc) = lock_or_recover(&playback_filtered).take() {
                             let _ = proc.kill();
                             let _ = proc.wait();
                         }
@@ -549,9 +460,7 @@ fn handle_client(
                                 .spawn()
                             {
                                 Ok(proc) => {
-                                    *playback_filtered
-                                        .lock()
-                                        .expect("playback_filtered mutex poisoned") = Some(proc);
+                                    *lock_or_recover(&playback_filtered) = Some(proc);
                                     DaemonResponse::Ok
                                 }
                                 Err(e) => DaemonResponse::Error(format!("Failed to play: {}", e)),
@@ -559,11 +468,7 @@ fn handle_client(
                         }
                     }
                     DaemonCommand::StopFiltered => {
-                        if let Some(mut proc) = playback_filtered
-                            .lock()
-                            .expect("playback_filtered mutex poisoned")
-                            .take()
-                        {
+                        if let Some(mut proc) = lock_or_recover(&playback_filtered).take() {
                             let _ = proc.kill();
                             let _ = proc.wait();
                         }

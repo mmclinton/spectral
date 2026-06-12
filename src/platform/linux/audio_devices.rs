@@ -1,4 +1,4 @@
-use crate::state::AudioDevice;
+use crate::state::{AudioDevice, lock_or_recover};
 use pipewire as pw;
 use pw::core::PW_ID_CORE;
 use pw::spa::utils::result::AsyncSeq;
@@ -42,7 +42,7 @@ pub fn get_input_devices() -> Result<Vec<AudioDevice>, Box<dyn Error>> {
                     .unwrap_or(2);
 
                 if !nick.to_lowercase().contains("monitor") {
-                    devices_clone.lock().unwrap().push(AudioDevice {
+                    lock_or_recover(&devices_clone).push(AudioDevice {
                         id: global.id,
                         name: nick,
                         channels,
@@ -60,7 +60,7 @@ pub fn get_input_devices() -> Result<Vec<AudioDevice>, Box<dyn Error>> {
         .add_listener_local()
         .done(move |id, seq| {
             if id == PW_ID_CORE {
-                let mut p = pending_clone.lock().unwrap();
+                let mut p = lock_or_recover(&pending_clone);
                 if let Some(val) = *p
                     && val == seq
                 {
@@ -72,11 +72,11 @@ pub fn get_input_devices() -> Result<Vec<AudioDevice>, Box<dyn Error>> {
         .register();
 
     let seq = core.sync(0)?;
-    *pending.lock().unwrap() = Some(seq);
+    *lock_or_recover(&pending) = Some(seq);
 
     mainloop.run();
 
-    let input_devices = devices.lock().unwrap().clone();
+    let input_devices = lock_or_recover(&devices).clone();
     Ok(input_devices)
 }
 

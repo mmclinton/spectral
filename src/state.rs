@@ -1,5 +1,15 @@
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+
+/// The process-wide locking policy: recover from poisoned mutexes instead of
+/// panicking. The long-lived daemon prefers potentially stale data over a
+/// crash (or an abort when the panic would cross the PipeWire FFI boundary),
+/// and every guarded value here is a single whole value with no cross-field
+/// invariants, so recovery can never observe a torn write. The original panic
+/// that poisoned the lock is still reported by the panic hook.
+pub fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AudioDevice {
@@ -50,10 +60,7 @@ impl AppState {
     }
 
     pub fn update_status(&self, new_status: Status) {
-        *self
-            .status
-            .lock()
-            .expect("status mutex poisoned in update_status") = new_status;
+        *lock_or_recover(&self.status) = new_status;
     }
 }
 

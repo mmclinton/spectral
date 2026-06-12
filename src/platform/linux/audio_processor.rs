@@ -1,7 +1,7 @@
 use super::audio_devices::get_node_name;
 use super::pipewire::{NativeAudioPipeline, RNNOISE_FRAME_SIZE};
 use super::pulse::PulseContext;
-use crate::state::{AppState, is_valid_mic_name};
+use crate::state::{AppState, is_valid_mic_name, lock_or_recover};
 use nnnoiseless::DenoiseState;
 use std::sync::{Arc, Mutex};
 
@@ -33,18 +33,9 @@ impl AudioProcessor {
     }
 
     pub fn process_audio_buffer(&self, input: &[f32], output: &mut [f32]) {
-        let threshold = *self
-            .state
-            .threshold_val
-            .lock()
-            .expect("threshold_val mutex poisoned in audio processing")
-            as f32
-            / 100.0;
+        let threshold = *lock_or_recover(&self.state.threshold_val) as f32 / 100.0;
 
-        let mut ctx_guard = self
-            .context
-            .lock()
-            .expect("AudioProcessor context mutex poisoned");
+        let mut ctx_guard = lock_or_recover(&self.context);
 
         let ProcessingContext {
             denoiser,

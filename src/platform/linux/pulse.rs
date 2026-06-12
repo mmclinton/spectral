@@ -1,9 +1,10 @@
+use crate::state::lock_or_recover;
 use libpulse_binding as pulse;
 use libpulse_binding::context::{Context, FlagSet as ContextFlagSet};
 use libpulse_binding::mainloop::threaded::Mainloop;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 
 pub struct PulseContext {
     mainloop: Mainloop,
@@ -79,7 +80,7 @@ impl PulseContext {
             let mut introspect = self.context.borrow().introspect();
             introspect.load_module(name, argument, move |index| {
                 let (lock, cvar) = &*result_clone;
-                let mut result = lock.lock().unwrap();
+                let mut result = lock_or_recover(lock);
                 *result = Some(index);
                 cvar.notify_one();
             });
@@ -90,8 +91,8 @@ impl PulseContext {
         let (lock, cvar) = &*result;
         let timeout = std::time::Duration::from_secs(5);
         let wait_result = cvar
-            .wait_timeout_while(lock.lock().unwrap(), timeout, |result| result.is_none())
-            .unwrap();
+            .wait_timeout_while(lock_or_recover(lock), timeout, |result| result.is_none())
+            .unwrap_or_else(PoisonError::into_inner);
 
         if wait_result.1.timed_out() {
             return Err("Timeout loading module".to_string());
@@ -115,7 +116,7 @@ impl PulseContext {
             .borrow_mut()
             .set_default_source(source_name, move |success| {
                 let (lock, cvar) = &*result_clone;
-                let mut result = lock.lock().unwrap();
+                let mut result = lock_or_recover(lock);
                 *result = Some(success);
                 cvar.notify_one();
             });
@@ -125,8 +126,8 @@ impl PulseContext {
         let (lock, cvar) = &*result;
         let timeout = std::time::Duration::from_secs(5);
         let wait_result = cvar
-            .wait_timeout_while(lock.lock().unwrap(), timeout, |result| result.is_none())
-            .unwrap();
+            .wait_timeout_while(lock_or_recover(lock), timeout, |result| result.is_none())
+            .unwrap_or_else(PoisonError::into_inner);
 
         if wait_result.1.timed_out() {
             return Err("Timeout setting default source".to_string());
@@ -150,7 +151,7 @@ impl PulseContext {
             let mut introspect = self.context.borrow_mut().introspect();
             introspect.unload_module(index, move |success| {
                 let (lock, cvar) = &*result_clone;
-                let mut result = lock.lock().unwrap();
+                let mut result = lock_or_recover(lock);
                 *result = Some(success);
                 cvar.notify_one();
             });
@@ -161,8 +162,8 @@ impl PulseContext {
         let (lock, cvar) = &*result;
         let timeout = std::time::Duration::from_secs(5);
         let wait_result = cvar
-            .wait_timeout_while(lock.lock().unwrap(), timeout, |result| result.is_none())
-            .unwrap();
+            .wait_timeout_while(lock_or_recover(lock), timeout, |result| result.is_none())
+            .unwrap_or_else(PoisonError::into_inner);
 
         if wait_result.1.timed_out() {
             return Err("Timeout unloading module".to_string());
