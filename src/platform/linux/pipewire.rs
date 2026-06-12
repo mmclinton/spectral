@@ -17,9 +17,10 @@ use pipewire::{
 };
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, mpsc};
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
 /// Audio sample rate in Hz (48kHz is standard for PipeWire)
 pub const SAMPLE_RATE: u32 = 48000;
@@ -37,6 +38,9 @@ pub const MAX_INPUT_CHANNELS: u32 = 8;
 /// Scaling factor for converting f32 PCM [-1.0, 1.0] to RNNoise's expected i16 range.
 /// RNNoise expects samples in the range [-32768.0, 32767.0] as f32 values.
 pub const RNNOISE_SCALE_FACTOR: f32 = 32768.0;
+
+/// Maximum time to wait for the pipeline thread to finish its PipeWire setup.
+const PIPELINE_READY_TIMEOUT: Duration = Duration::from_secs(5);
 
 struct PipelineData {
     processor: Arc<AudioProcessor>,
@@ -85,6 +89,7 @@ impl NativeAudioPipeline {
         let running_clone = running.clone();
         let source_node = source_node.to_string();
         let sink_node = sink_node.to_string();
+        let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
 
         let pipeline_thread = thread::spawn(move || {
             if let Err(e) = run_pipeline(
@@ -93,15 +98,32 @@ impl NativeAudioPipeline {
                 &sink_node,
                 running_clone,
                 input_channels,
+                &ready_tx,
             ) {
+                let _ = ready_tx.send(Err(e.to_string()));
                 eprintln!("[Native Pipeline] ✗ Pipeline error: {}", e);
             }
         });
 
-        Ok(Self {
-            running,
-            pipeline_thread: Some(pipeline_thread),
-        })
+        match ready_rx.recv_timeout(PIPELINE_READY_TIMEOUT) {
+            Ok(Ok(())) => Ok(Self {
+                running,
+                pipeline_thread: Some(pipeline_thread),
+            }),
+            Ok(Err(e)) => {
+                let _ = pipeline_thread.join();
+                Err(format!("Pipeline setup failed: {}", e).into())
+            }
+            Err(_) => {
+                // Don't join: a wedged setup thread would hang the daemon.
+                running.store(false, Ordering::SeqCst);
+                Err(format!(
+                    "Pipeline did not become ready within {:?}",
+                    PIPELINE_READY_TIMEOUT
+                )
+                .into())
+            }
+        }
     }
 
     pub fn stop(&mut self) {
@@ -154,6 +176,7 @@ fn run_pipeline(
     sink_node: &str,
     running: Arc<AtomicBool>,
     input_channels: u32,
+    ready_tx: &mpsc::Sender<Result<(), String>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     pipewire::init();
 
@@ -234,6 +257,8 @@ fn run_pipeline(
         Some(std::time::Duration::from_millis(100)),
         Some(std::time::Duration::from_millis(100)),
     );
+
+    let _ = ready_tx.send(Ok(()));
 
     while running.load(Ordering::SeqCst) {
         let _ = mainloop

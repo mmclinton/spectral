@@ -198,8 +198,13 @@ impl VirtualMic {
         ) {
             Ok(pipeline) => Some(pipeline),
             Err(e) => {
-                eprintln!("Failed to create audio pipeline: {}", e);
-                None
+                if let Some(remap_id) = remap_module_id {
+                    let _ = pulse_ctx.unload_module(remap_id);
+                }
+                if let Some(sink_id) = sink_module_id {
+                    let _ = pulse_ctx.unload_module(sink_id);
+                }
+                return Err(format!("Failed to start audio pipeline: {}", e).into());
             }
         };
 
