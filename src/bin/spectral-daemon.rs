@@ -281,11 +281,14 @@ fn handle_client(
                         let mic_name = lock_or_recover(&state.mic_name).clone();
                         let sink_name = format!("{}_sink", mic_name.replace(" ", "_"));
 
-                        if device_id.is_none() {
-                            return Ok(());
-                        }
+                        let Some(device_id) = device_id else {
+                            conn.send_response(DaemonResponse::Error(
+                                "No device selected".to_string(),
+                            ))?;
+                            continue;
+                        };
 
-                        let source_node = match get_source_name(device_id.unwrap()) {
+                        let source_node = match get_source_name(device_id) {
                             Ok(name) => name,
                             Err(e) => {
                                 eprintln!("[Recording] Failed to get source name: {}", e);
