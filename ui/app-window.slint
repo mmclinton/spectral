@@ -144,7 +144,7 @@ export component MainWindow inherits Window {
                 maximum: 100;
                 changed(value) => {
                     root.slider_value = value;
-                    // Don't auto-apply - just notify daemon of pending change
+                    // Don't auto-apply - the GUI recomputes its local pending status
                     root.threshold_change(value)
                 }
             }

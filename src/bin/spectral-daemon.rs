@@ -180,20 +180,17 @@ fn handle_client(
 ) -> Result<(), std::io::Error> {
     // LOCK ORDERING CONVENTION:
     // To prevent deadlocks, always acquire locks in this order:
-    // 1. state.pending_threshold
-    // 2. state.pending_device_id
-    // 3. state.pending_mic_name
-    // 4. state.threshold_val
-    // 5. state.mic_name
-    // 6. state.selected_device_id
-    // 7. state.status
-    // 8. state.is_recording
-    // 9. state.has_recording
-    // 10. virtual_mic
-    // 11. recording_original
-    // 12. recording_filtered
-    // 13. playback_original
-    // 14. playback_filtered
+    // 1. state.threshold_val
+    // 2. state.mic_name
+    // 3. state.selected_device_id
+    // 4. state.status
+    // 5. state.is_recording
+    // 6. state.has_recording
+    // 7. virtual_mic
+    // 8. recording_original
+    // 9. recording_filtered
+    // 10. playback_original
+    // 11. playback_filtered
     //
     // Important: Release locks as soon as possible by limiting scope.
     // Never hold multiple locks longer than necessary.
@@ -214,46 +211,15 @@ fn handle_client(
                             ))?;
                             continue;
                         }
-                        let final_threshold = state
-                            .pending_threshold
-                            .lock()
-                            .expect("pending_threshold mutex poisoned")
-                            .unwrap_or(threshold);
-                        let final_device_id = state
-                            .pending_device_id
-                            .lock()
-                            .expect("pending_device_id mutex poisoned")
-                            .unwrap_or(device_id);
-                        let final_mic_name = state
-                            .pending_mic_name
-                            .lock()
-                            .expect("pending_mic_name mutex poisoned")
-                            .clone()
-                            .unwrap_or(mic_name.clone());
-
                         *state
                             .threshold_val
                             .lock()
-                            .expect("threshold_val mutex poisoned") = final_threshold;
-                        *state.mic_name.lock().expect("mic_name mutex poisoned") =
-                            final_mic_name.clone();
+                            .expect("threshold_val mutex poisoned") = threshold;
+                        *state.mic_name.lock().expect("mic_name mutex poisoned") = mic_name.clone();
                         *state
                             .selected_device_id
                             .lock()
-                            .expect("selected_device_id mutex poisoned") = Some(final_device_id);
-
-                        *state
-                            .pending_threshold
-                            .lock()
-                            .expect("pending_threshold mutex poisoned") = None;
-                        *state
-                            .pending_device_id
-                            .lock()
-                            .expect("pending_device_id mutex poisoned") = None;
-                        *state
-                            .pending_mic_name
-                            .lock()
-                            .expect("pending_mic_name mutex poisoned") = None;
+                            .expect("selected_device_id mutex poisoned") = Some(device_id);
 
                         let mut mic_guard = lock_or_recover(&virtual_mic);
                         if let Some(mic) = mic_guard.take() {
@@ -261,13 +227,8 @@ fn handle_client(
                         }
 
                         // TODO: Validate channel detection for dynamically connected devices
-                        let channels = get_device_channels(final_device_id);
-                        match VirtualMic::create(
-                            state.clone(),
-                            final_device_id,
-                            &final_mic_name,
-                            channels,
-                        ) {
+                        let channels = get_device_channels(device_id);
+                        match VirtualMic::create(state.clone(), device_id, &mic_name, channels) {
                             Ok(mic) => {
                                 *mic_guard = Some(mic);
                                 state.update_status(Status::Active);
@@ -288,140 +249,6 @@ fn handle_client(
                             mic.stop();
                         }
                         state.update_status(Status::Inactive);
-                        DaemonResponse::Ok
-                    }
-                    DaemonCommand::UpdateThreshold(threshold) => {
-                        let applied_threshold = *state
-                            .threshold_val
-                            .lock()
-                            .expect("threshold_val mutex poisoned");
-
-                        if threshold == applied_threshold {
-                            *state
-                                .pending_threshold
-                                .lock()
-                                .expect("pending_threshold mutex poisoned") = None;
-
-                            let has_pending_device = state
-                                .pending_device_id
-                                .lock()
-                                .expect("pending_device_id mutex poisoned")
-                                .is_some();
-                            let has_pending_name = state
-                                .pending_mic_name
-                                .lock()
-                                .expect("pending_mic_name mutex poisoned")
-                                .is_some();
-
-                            if !has_pending_device && !has_pending_name {
-                                let status = *state.status.lock().expect("status mutex poisoned");
-                                if let Status::Pending = status {
-                                    state.update_status(Status::Active);
-                                }
-                            }
-                        } else {
-                            *state
-                                .pending_threshold
-                                .lock()
-                                .expect("pending_threshold mutex poisoned") = Some(threshold);
-
-                            let status = *state.status.lock().expect("status mutex poisoned");
-                            if let Status::Active = status {
-                                state.update_status(Status::Pending);
-                            }
-                        }
-                        DaemonResponse::Ok
-                    }
-                    DaemonCommand::UpdateMicName(mic_name) => {
-                        if !is_valid_mic_name(&mic_name) {
-                            conn.send_response(DaemonResponse::Error(
-                                "Invalid mic name: only [A-Za-z0-9_-] allowed, 1-21 chars"
-                                    .to_string(),
-                            ))?;
-                            continue;
-                        }
-                        let applied_name = state
-                            .mic_name
-                            .lock()
-                            .expect("mic_name mutex poisoned")
-                            .clone();
-
-                        if mic_name == applied_name {
-                            *state
-                                .pending_mic_name
-                                .lock()
-                                .expect("pending_mic_name mutex poisoned") = None;
-
-                            let has_pending_threshold = state
-                                .pending_threshold
-                                .lock()
-                                .expect("pending_threshold mutex poisoned")
-                                .is_some();
-                            let has_pending_device = state
-                                .pending_device_id
-                                .lock()
-                                .expect("pending_device_id mutex poisoned")
-                                .is_some();
-
-                            if !has_pending_threshold && !has_pending_device {
-                                let status = *state.status.lock().expect("status mutex poisoned");
-                                if let Status::Pending = status {
-                                    state.update_status(Status::Active);
-                                }
-                            }
-                        } else {
-                            *state
-                                .pending_mic_name
-                                .lock()
-                                .expect("pending_mic_name mutex poisoned") = Some(mic_name);
-
-                            let status = *state.status.lock().expect("status mutex poisoned");
-                            if let Status::Active = status {
-                                state.update_status(Status::Pending);
-                            }
-                        }
-                        DaemonResponse::Ok
-                    }
-                    DaemonCommand::UpdateDevice(device_id) => {
-                        let applied_device = *state
-                            .selected_device_id
-                            .lock()
-                            .expect("selected_device_id mutex poisoned");
-
-                        if Some(device_id) == applied_device {
-                            *state
-                                .pending_device_id
-                                .lock()
-                                .expect("pending_device_id mutex poisoned") = None;
-
-                            let has_pending_threshold = state
-                                .pending_threshold
-                                .lock()
-                                .expect("pending_threshold mutex poisoned")
-                                .is_some();
-                            let has_pending_name = state
-                                .pending_mic_name
-                                .lock()
-                                .expect("pending_mic_name mutex poisoned")
-                                .is_some();
-
-                            if !has_pending_threshold && !has_pending_name {
-                                let status = *state.status.lock().expect("status mutex poisoned");
-                                if let Status::Pending = status {
-                                    state.update_status(Status::Active);
-                                }
-                            }
-                        } else {
-                            *state
-                                .pending_device_id
-                                .lock()
-                                .expect("pending_device_id mutex poisoned") = Some(device_id);
-
-                            let status = *state.status.lock().expect("status mutex poisoned");
-                            if let Status::Active = status {
-                                state.update_status(Status::Pending);
-                            }
-                        }
                         DaemonResponse::Ok
                     }
                     DaemonCommand::GetState => {

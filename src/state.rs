@@ -27,9 +27,6 @@ pub struct AppState {
     pub selected_device_id: Arc<Mutex<Option<u32>>>,
     pub threshold_val: Arc<Mutex<i32>>,
     pub mic_name: Arc<Mutex<String>>,
-    pub pending_threshold: Arc<Mutex<Option<i32>>>,
-    pub pending_device_id: Arc<Mutex<Option<u32>>>,
-    pub pending_mic_name: Arc<Mutex<Option<String>>>,
     pub is_recording: Arc<Mutex<bool>>,
     pub has_recording: Arc<Mutex<bool>>,
 }
@@ -47,9 +44,6 @@ impl AppState {
             selected_device_id: Arc::new(Mutex::new(None)),
             threshold_val: Arc::new(Mutex::new(80)),
             mic_name: Arc::new(Mutex::new("Spectral-Mic".to_string())),
-            pending_threshold: Arc::new(Mutex::new(None)),
-            pending_device_id: Arc::new(Mutex::new(None)),
-            pending_mic_name: Arc::new(Mutex::new(None)),
             is_recording: Arc::new(Mutex::new(false)),
             has_recording: Arc::new(Mutex::new(false)),
         }
