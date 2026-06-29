@@ -48,6 +48,42 @@ fn update_ui_status(ui_weak: &Weak<MainWindow>, status: Status) {
     }
 }
 
+/// Whether the device at `idx` in the filtered list equals the applied device,
+/// treating an out-of-range index as "no device" (matches only when none is
+/// applied). The settings-change callbacks share this comparison.
+fn device_matches_applied(
+    idx: i32,
+    devices: &[AudioDevice],
+    applied_device_id: &std::cell::Cell<Option<u32>>,
+) -> bool {
+    if idx >= 0 && (idx as usize) < devices.len() {
+        Some(devices[idx as usize].id) == applied_device_id.get()
+    } else {
+        applied_device_id.get().is_none()
+    }
+}
+
+/// Drive the Active↔Pending transition shared by the settings-change callbacks:
+/// an applied (Active) mic drifts to Pending when settings diverge, and back to
+/// Active when they realign. Any other state is left untouched.
+fn apply_pending_transition(
+    current_status: &std::cell::Cell<Status>,
+    ui_weak: &Weak<MainWindow>,
+    all_match: bool,
+) {
+    match current_status.get() {
+        Status::Active if !all_match => {
+            current_status.set(Status::Pending);
+            update_ui_status(ui_weak, Status::Pending);
+        }
+        Status::Pending if all_match => {
+            current_status.set(Status::Active);
+            update_ui_status(ui_weak, Status::Active);
+        }
+        _ => {}
+    }
+}
+
 fn start_daemon() -> Result<(), Box<dyn Error>> {
     let current_exe = std::env::current_exe()?;
     let daemon_dir = current_exe
@@ -177,21 +213,13 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                 && (idx as usize) < devices.len()
                 && let Some(ui) = ui_weak.upgrade()
             {
-                let selected_device = devices[idx as usize].id;
-                let device_matches = Some(selected_device) == applied_device_id.get();
+                let device_matches = device_matches_applied(idx, &devices, &applied_device_id);
                 let threshold_matches = ui.get_slider_value() == applied_threshold.get();
                 let mic_matches =
                     ui.get_mic_name_text().as_str() == applied_mic_name.borrow().as_str();
 
                 let all_match = device_matches && threshold_matches && mic_matches;
-
-                if current_status.get() == Status::Active && !all_match {
-                    current_status.set(Status::Pending);
-                    update_ui_status(&ui_weak, Status::Pending);
-                } else if current_status.get() == Status::Pending && all_match {
-                    current_status.set(Status::Active);
-                    update_ui_status(&ui_weak, Status::Active);
-                }
+                apply_pending_transition(&current_status, &ui_weak, all_match);
             }
         }
     });
@@ -210,21 +238,10 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                 let mic_matches =
                     ui.get_mic_name_text().as_str() == applied_mic_name.borrow().as_str();
                 let idx = ui.get_selected_input_index();
-                let device_matches = if idx >= 0 && (idx as usize) < devices.len() {
-                    Some(devices[idx as usize].id) == applied_device_id.get()
-                } else {
-                    applied_device_id.get().is_none()
-                };
+                let device_matches = device_matches_applied(idx, &devices, &applied_device_id);
 
                 let all_match = device_matches && threshold_matches && mic_matches;
-
-                if current_status.get() == Status::Active && !all_match {
-                    current_status.set(Status::Pending);
-                    update_ui_status(&ui_weak, Status::Pending);
-                } else if current_status.get() == Status::Pending && all_match {
-                    current_status.set(Status::Active);
-                    update_ui_status(&ui_weak, Status::Active);
-                }
+                apply_pending_transition(&current_status, &ui_weak, all_match);
             }
         }
     });
@@ -243,21 +260,10 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                 let mic_matches = new_name_str == *applied_mic_name.borrow();
                 let threshold_matches = ui.get_slider_value() == applied_threshold.get();
                 let idx = ui.get_selected_input_index();
-                let device_matches = if idx >= 0 && (idx as usize) < devices.len() {
-                    Some(devices[idx as usize].id) == applied_device_id.get()
-                } else {
-                    applied_device_id.get().is_none()
-                };
+                let device_matches = device_matches_applied(idx, &devices, &applied_device_id);
 
                 let all_match = device_matches && threshold_matches && mic_matches;
-
-                if current_status.get() == Status::Active && !all_match {
-                    current_status.set(Status::Pending);
-                    update_ui_status(&ui_weak, Status::Pending);
-                } else if current_status.get() == Status::Pending && all_match {
-                    current_status.set(Status::Active);
-                    update_ui_status(&ui_weak, Status::Active);
-                }
+                apply_pending_transition(&current_status, &ui_weak, all_match);
             }
         }
     });
@@ -278,21 +284,10 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                 let mic_matches = default_name_str == *applied_mic_name.borrow();
                 let threshold_matches = ui.get_slider_value() == applied_threshold.get();
                 let idx = ui.get_selected_input_index();
-                let device_matches = if idx >= 0 && (idx as usize) < devices.len() {
-                    Some(devices[idx as usize].id) == applied_device_id.get()
-                } else {
-                    applied_device_id.get().is_none()
-                };
+                let device_matches = device_matches_applied(idx, &devices, &applied_device_id);
 
                 let all_match = device_matches && threshold_matches && mic_matches;
-
-                if current_status.get() == Status::Active && !all_match {
-                    current_status.set(Status::Pending);
-                    update_ui_status(&ui_weak, Status::Pending);
-                } else if current_status.get() == Status::Pending && all_match {
-                    current_status.set(Status::Active);
-                    update_ui_status(&ui_weak, Status::Active);
-                }
+                apply_pending_transition(&current_status, &ui_weak, all_match);
             }
         }
     });
