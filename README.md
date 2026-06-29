@@ -75,37 +75,13 @@ If you prefer manual control over installation:
 }
 ```
 
-## Development
-
-Enter the development environment:
-```bash
-nix develop
-```
-
-Build the project:
-```bash
-nix build
-```
-
-Run the project:
-```bash
-nix run
-```
-
-Or use standard Cargo commands:
-```bash
-cargo build
-cargo run
-```
-
 ## Usage
 
-1. Start the daemon: `spectral-daemon`
-2. Launch the GUI: `spectral`
-3. Select your input device from the dropdown
-4. Adjust the noise suppression threshold as needed
-5. Click "Enable" to create the virtual microphone
-6. Select "Spectral-Mic" (or your custom name) as the input in other applications
+1. Launch the GUI: `spectral`
+2. Select your input device from the dropdown
+3. Adjust the noise suppression threshold as needed
+4. Click "Enable" to create the virtual microphone
+5. Select "Spectral-Mic" (or your custom name) as the input in other applications
 
 ## Rendering
 
@@ -122,4 +98,3 @@ variable cannot be used to switch renderers. If you want a different
 combination, you must rebuild Spectral with the matching
 `slint/renderer-...` feature enabled and remove the override in
 `src/main.rs`.
-
