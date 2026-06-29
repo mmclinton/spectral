@@ -255,3 +255,10 @@ impl Drop for VirtualMic {
         }
     }
 }
+
+/// Connect to PulseAudio and unload any Spectral virtual-mic modules orphaned by
+/// a previous daemon instance (crash/SIGKILL bypasses Drop). Best-effort cleanup
+/// keyed on the modules' own properties; returns the number unloaded.
+pub fn reap_leaked_modules() -> Result<usize, String> {
+    PulseContext::new("spectral-reap")?.reap_spectral_modules()
+}

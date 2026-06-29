@@ -1,5 +1,6 @@
 use crate::state::lock_or_recover;
 use libpulse_binding as pulse;
+use libpulse_binding::callbacks::ListResult;
 use libpulse_binding::context::{Context, FlagSet as ContextFlagSet};
 use libpulse_binding::mainloop::threaded::Mainloop;
 use std::cell::RefCell;
@@ -159,6 +160,135 @@ impl PulseContext {
 
         Ok(())
     }
+
+    /// Run an introspection list operation under the mainloop lock and collect
+    /// the items the per-item callback pushes, blocking until end-of-list with a
+    /// 5 s timeout. `register` invokes the list call with a callback that pushes
+    /// onto `state.0` and signals `state.1` on `End`/`Error`.
+    fn collect_list<T: Send + 'static>(
+        &mut self,
+        timeout_label: &str,
+        register: impl FnOnce(Arc<(Mutex<ListAccum<T>>, Condvar)>),
+    ) -> Result<Vec<T>, String> {
+        let state = Arc::new((Mutex::new(ListAccum::<T>::new()), Condvar::new()));
+
+        self.mainloop.lock();
+        register(state.clone());
+        self.mainloop.unlock();
+
+        let (lock, cvar) = &*state;
+        let timeout = std::time::Duration::from_secs(5);
+        let (mut guard, wait) = cvar
+            .wait_timeout_while(lock_or_recover(lock), timeout, |accum| !accum.finished)
+            .unwrap_or_else(PoisonError::into_inner);
+
+        if wait.timed_out() {
+            return Err(format!("Timeout {timeout_label}"));
+        }
+        if guard.error {
+            return Err(format!("Error {timeout_label}"));
+        }
+
+        Ok(std::mem::take(&mut guard.items))
+    }
+
+    /// Unload Spectral virtual-mic modules left loaded by a previous daemon
+    /// instance (a crash or SIGKILL bypasses Drop, leaving the server-side
+    /// modules behind). Sinks are matched by their constant `device.description`;
+    /// the paired remap source by name (the sink name without its `_sink`
+    /// suffix). Returns the number of modules unloaded.
+    pub fn reap_spectral_modules(&mut self) -> Result<usize, String> {
+        const SINK_DESCRIPTION: &str = "Spectral-DoNotUse";
+        const SINK_SUFFIX: &str = "_sink";
+
+        let context = self.context.clone();
+        let sinks: Vec<(Option<u32>, String)> =
+            self.collect_list("listing sinks", move |state| {
+                context
+                    .borrow()
+                    .introspect()
+                    .get_sink_info_list(move |result| match result {
+                        ListResult::Item(info) => {
+                            if info.proplist.get_str("device.description").as_deref()
+                                == Some(SINK_DESCRIPTION)
+                            {
+                                let name = info
+                                    .name
+                                    .as_ref()
+                                    .map(|n| n.to_string())
+                                    .unwrap_or_default();
+                                lock_or_recover(&state.0)
+                                    .items
+                                    .push((info.owner_module, name));
+                            }
+                        }
+                        ListResult::End => {
+                            lock_or_recover(&state.0).finished = true;
+                            state.1.notify_one();
+                        }
+                        ListResult::Error => {
+                            let mut accum = lock_or_recover(&state.0);
+                            accum.error = true;
+                            accum.finished = true;
+                            state.1.notify_one();
+                        }
+                    });
+            })?;
+
+        let source_names: std::collections::HashSet<String> = sinks
+            .iter()
+            .filter_map(|(_, name)| name.strip_suffix(SINK_SUFFIX).map(str::to_string))
+            .collect();
+
+        let mut modules: Vec<u32> = sinks.into_iter().filter_map(|(module, _)| module).collect();
+
+        if !source_names.is_empty() {
+            let context = self.context.clone();
+            let sources: Vec<u32> = self.collect_list("listing sources", move |state| {
+                context
+                    .borrow()
+                    .introspect()
+                    .get_source_info_list(move |result| match result {
+                        ListResult::Item(info) => {
+                            let name = info
+                                .name
+                                .as_ref()
+                                .map(|n| n.to_string())
+                                .unwrap_or_default();
+                            if source_names.contains(&name)
+                                && let Some(module) = info.owner_module
+                            {
+                                lock_or_recover(&state.0).items.push(module);
+                            }
+                        }
+                        ListResult::End => {
+                            lock_or_recover(&state.0).finished = true;
+                            state.1.notify_one();
+                        }
+                        ListResult::Error => {
+                            let mut accum = lock_or_recover(&state.0);
+                            accum.error = true;
+                            accum.finished = true;
+                            state.1.notify_one();
+                        }
+                    });
+            })?;
+            modules.extend(sources);
+        }
+
+        modules.sort_unstable();
+        modules.dedup();
+
+        let mut count = 0;
+        for index in modules {
+            match self.unload_module(index) {
+                Ok(()) => count += 1,
+                Err(e) => eprintln!("[reap] failed to unload module {index}: {e}"),
+            }
+        }
+
+        Ok(count)
+    }
 }
 
 impl Drop for PulseContext {
@@ -167,5 +297,21 @@ impl Drop for PulseContext {
         self.context.borrow_mut().disconnect();
         self.mainloop.unlock();
         self.mainloop.stop();
+    }
+}
+
+struct ListAccum<T> {
+    items: Vec<T>,
+    finished: bool,
+    error: bool,
+}
+
+impl<T> ListAccum<T> {
+    fn new() -> Self {
+        Self {
+            items: Vec::new(),
+            finished: false,
+            error: false,
+        }
     }
 }
