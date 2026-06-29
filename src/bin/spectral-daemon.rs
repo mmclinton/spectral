@@ -1,4 +1,4 @@
-use spectral_lib::audio_devices::get_device_channels;
+use spectral_lib::audio_devices::{get_device_channels, get_node_name};
 use spectral_lib::audio_processor::VirtualMic;
 use spectral_lib::ipc::{DaemonCommand, DaemonResponse, DaemonServer, DaemonState};
 use spectral_lib::persistence::{
@@ -288,7 +288,7 @@ fn handle_client(
                             continue;
                         };
 
-                        let source_node = match get_source_name(device_id) {
+                        let source_node = match get_node_name(device_id) {
                             Ok(name) => name,
                             Err(e) => {
                                 eprintln!("[Recording] Failed to get source name: {}", e);
@@ -500,26 +500,4 @@ fn handle_client(
     }
 
     Ok(())
-}
-
-fn get_source_name(node_id: u32) -> Result<String, Box<dyn std::error::Error>> {
-    let output = Command::new("wpctl")
-        .args(["inspect", &node_id.to_string()])
-        .output()?;
-
-    if !output.status.success() {
-        return Err(format!("Failed to inspect node {}", node_id).into());
-    }
-
-    let output_str = String::from_utf8_lossy(&output.stdout);
-
-    for line in output_str.lines() {
-        if line.contains("node.name")
-            && let Some(name_part) = line.split('"').nth(1)
-        {
-            return Ok(name_part.to_string());
-        }
-    }
-
-    Err(format!("Could not find node.name for node {}", node_id).into())
 }
