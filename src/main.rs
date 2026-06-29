@@ -21,16 +21,9 @@ fn is_valid_mic_name_input(text: &str) -> bool {
 }
 
 fn filter_devices(devices: &[AudioDevice], mic_name: &str) -> Vec<AudioDevice> {
-    let mic_name_hyphen = mic_name.replace(" ", "-");
-    let mic_name_underscore = mic_name.replace(" ", "_");
-
     devices
         .iter()
-        .filter(|device| {
-            device.name != mic_name
-                && device.name != mic_name_hyphen
-                && device.name != mic_name_underscore
-        })
+        .filter(|device| device.name != mic_name)
         .cloned()
         .collect()
 }

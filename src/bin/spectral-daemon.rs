@@ -5,7 +5,7 @@ use spectral_lib::persistence::{
     PersistedState, get_filtered_recording_path, get_original_recording_path, load_state,
     save_state,
 };
-use spectral_lib::state::{AppState, Status, is_valid_mic_name, lock_or_recover};
+use spectral_lib::state::{AppState, Status, is_valid_mic_name, lock_or_recover, monitor_name};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -279,7 +279,6 @@ fn handle_client(
                     DaemonCommand::StartRecording => {
                         let device_id = *lock_or_recover(&state.selected_device_id);
                         let mic_name = lock_or_recover(&state.mic_name).clone();
-                        let sink_name = format!("{}_sink", mic_name.replace(" ", "_"));
 
                         let Some(device_id) = device_id else {
                             conn.send_response(DaemonResponse::Error(
@@ -321,7 +320,7 @@ fn handle_client(
                             .stderr(Stdio::inherit())
                             .spawn();
 
-                        let monitor_source = format!("{}.monitor", sink_name);
+                        let monitor_source = monitor_name(&mic_name);
                         let filtered_path_str = path_to_str(&filtered_path)?;
                         let filtered_proc = Command::new("pw-record")
                             .args([

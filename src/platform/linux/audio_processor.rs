@@ -1,7 +1,7 @@
 use super::audio_devices::get_node_name;
 use super::pipewire::{NativeAudioPipeline, RNNOISE_FRAME_SIZE};
 use super::pulse::PulseContext;
-use crate::state::{AppState, is_valid_mic_name, lock_or_recover};
+use crate::state::{AppState, is_valid_mic_name, lock_or_recover, monitor_name, sink_name};
 use nnnoiseless::DenoiseState;
 use std::sync::{Arc, Mutex};
 
@@ -133,14 +133,14 @@ impl VirtualMic {
         let processor = Arc::new(AudioProcessor::new(state.clone()));
 
         let source_name = virtual_name.to_string();
-        let sink_name = format!("{}_sink", source_name);
+        let sink = sink_name(&source_name);
         let display_name = virtual_name.to_string();
 
         let mut pulse_ctx = PulseContext::new("spectral")?;
 
         let sink_args = format!(
             "sink_name={} sink_properties=device.description=Spectral-DoNotUse rate=48000 channels=1 format=float32le",
-            sink_name
+            sink
         );
 
         let sink_module_id = match pulse_ctx.load_module("module-null-sink", &sink_args) {
@@ -150,7 +150,7 @@ impl VirtualMic {
             }
         };
 
-        let monitor_name = format!("{}.monitor", sink_name);
+        let monitor = monitor_name(&source_name);
         let source_properties = format!(
             "device.description={} node.description={} device.icon_name=audio-input-microphone",
             display_name, display_name
@@ -158,7 +158,7 @@ impl VirtualMic {
 
         let remap_args = format!(
             "source_name={} master={} source_properties={} channels=1",
-            source_name, monitor_name, source_properties
+            source_name, monitor, source_properties
         );
 
         let remap_module_id = match pulse_ctx.load_module("module-remap-source", &remap_args) {
@@ -184,7 +184,7 @@ impl VirtualMic {
         let audio_pipeline = match NativeAudioPipeline::start(
             processor.clone(),
             &source_node_name,
-            &sink_name,
+            &sink,
             input_channels,
         ) {
             Ok(pipeline) => Some(pipeline),
