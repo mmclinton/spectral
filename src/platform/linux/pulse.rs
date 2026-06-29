@@ -70,35 +70,50 @@ impl PulseContext {
         Ok(PulseContext { mainloop, context })
     }
 
-    pub fn load_module(&mut self, name: &str, argument: &str) -> Result<u32, String> {
+    /// Run a PulseAudio operation under the mainloop lock and block until its
+    /// completion callback fires, with a 5 s timeout. `register` receives the
+    /// shared result slot and must invoke the operation with a callback that
+    /// stores `Some(value)` and notifies. The three module operations differ
+    /// only in the call and the post-validation each does on the returned value.
+    fn wait_for_callback<T: Send + 'static>(
+        &mut self,
+        timeout_label: &str,
+        register: impl FnOnce(Arc<(Mutex<Option<T>>, Condvar)>),
+    ) -> Result<T, String> {
         let result = Arc::new((Mutex::new(None), Condvar::new()));
-        let result_clone = result.clone();
 
         self.mainloop.lock();
-
-        {
-            let mut introspect = self.context.borrow().introspect();
-            introspect.load_module(name, argument, move |index| {
-                let (lock, cvar) = &*result_clone;
-                let mut result = lock_or_recover(lock);
-                *result = Some(index);
-                cvar.notify_one();
-            });
-        }
-
+        register(result.clone());
         self.mainloop.unlock();
 
         let (lock, cvar) = &*result;
         let timeout = std::time::Duration::from_secs(5);
-        let wait_result = cvar
-            .wait_timeout_while(lock_or_recover(lock), timeout, |result| result.is_none())
+        let (mut slot, wait) = cvar
+            .wait_timeout_while(lock_or_recover(lock), timeout, |slot| slot.is_none())
             .unwrap_or_else(PoisonError::into_inner);
 
-        if wait_result.1.timed_out() {
-            return Err("Timeout loading module".to_string());
+        if wait.timed_out() {
+            return Err(format!("Timeout {timeout_label}"));
         }
 
-        let index = wait_result.0.unwrap();
+        Ok(slot
+            .take()
+            .expect("PulseAudio signaled completion without a result"))
+    }
+
+    pub fn load_module(&mut self, name: &str, argument: &str) -> Result<u32, String> {
+        let context = self.context.clone();
+        let index = self.wait_for_callback("loading module", move |result| {
+            context
+                .borrow()
+                .introspect()
+                .load_module(name, argument, move |index| {
+                    let (lock, cvar) = &*result;
+                    *lock_or_recover(lock) = Some(index);
+                    cvar.notify_one();
+                });
+        })?;
+
         if index == pulse::def::INVALID_INDEX {
             return Err("Failed to load module (invalid index returned)".to_string());
         }
@@ -107,33 +122,17 @@ impl PulseContext {
     }
 
     pub fn set_default_source(&mut self, source_name: &str) -> Result<(), String> {
-        let result = Arc::new((Mutex::new(None), Condvar::new()));
-        let result_clone = result.clone();
+        let context = self.context.clone();
+        let success = self.wait_for_callback("setting default source", move |result| {
+            context
+                .borrow_mut()
+                .set_default_source(source_name, move |success| {
+                    let (lock, cvar) = &*result;
+                    *lock_or_recover(lock) = Some(success);
+                    cvar.notify_one();
+                });
+        })?;
 
-        self.mainloop.lock();
-
-        self.context
-            .borrow_mut()
-            .set_default_source(source_name, move |success| {
-                let (lock, cvar) = &*result_clone;
-                let mut result = lock_or_recover(lock);
-                *result = Some(success);
-                cvar.notify_one();
-            });
-
-        self.mainloop.unlock();
-
-        let (lock, cvar) = &*result;
-        let timeout = std::time::Duration::from_secs(5);
-        let wait_result = cvar
-            .wait_timeout_while(lock_or_recover(lock), timeout, |result| result.is_none())
-            .unwrap_or_else(PoisonError::into_inner);
-
-        if wait_result.1.timed_out() {
-            return Err("Timeout setting default source".to_string());
-        }
-
-        let success = wait_result.0.unwrap();
         if !success {
             return Err("Failed to set default source".to_string());
         }
@@ -142,34 +141,18 @@ impl PulseContext {
     }
 
     pub fn unload_module(&mut self, index: u32) -> Result<(), String> {
-        let result = Arc::new((Mutex::new(None), Condvar::new()));
-        let result_clone = result.clone();
+        let context = self.context.clone();
+        let success = self.wait_for_callback("unloading module", move |result| {
+            context
+                .borrow_mut()
+                .introspect()
+                .unload_module(index, move |success| {
+                    let (lock, cvar) = &*result;
+                    *lock_or_recover(lock) = Some(success);
+                    cvar.notify_one();
+                });
+        })?;
 
-        self.mainloop.lock();
-
-        {
-            let mut introspect = self.context.borrow_mut().introspect();
-            introspect.unload_module(index, move |success| {
-                let (lock, cvar) = &*result_clone;
-                let mut result = lock_or_recover(lock);
-                *result = Some(success);
-                cvar.notify_one();
-            });
-        }
-
-        self.mainloop.unlock();
-
-        let (lock, cvar) = &*result;
-        let timeout = std::time::Duration::from_secs(5);
-        let wait_result = cvar
-            .wait_timeout_while(lock_or_recover(lock), timeout, |result| result.is_none())
-            .unwrap_or_else(PoisonError::into_inner);
-
-        if wait_result.1.timed_out() {
-            return Err("Timeout unloading module".to_string());
-        }
-
-        let success = wait_result.0.unwrap();
         if !success {
             return Err("Failed to unload module".to_string());
         }
