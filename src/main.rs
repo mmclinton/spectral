@@ -114,7 +114,6 @@ fn start_daemon() -> Result<(), Box<dyn Error>> {
 
 fn main() -> Result<(), Box<dyn Error>> {
     unsafe { std::env::set_var("SLINT_BACKEND", "winit-software") };
-    unsafe { std::env::remove_var("SPECTRAL_RENDERER_ATTEMPT") };
 
     run_app()
 }
