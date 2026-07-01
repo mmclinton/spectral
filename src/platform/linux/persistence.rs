@@ -117,7 +117,8 @@ mod tests {
 
     #[test]
     fn old_state_format_with_is_active_still_loads() {
-        let old_format = "is_active = true\ndevice_id = 42\nmic_name = \"My-Mic\"\nthreshold = 65\n";
+        let old_format =
+            "is_active = true\ndevice_id = 42\nmic_name = \"My-Mic\"\nthreshold = 65\n";
         let state: PersistedState = toml::from_str(old_format).expect("old format must load");
         assert_eq!(state.device_id, Some(42));
         assert_eq!(state.mic_name, "My-Mic");
