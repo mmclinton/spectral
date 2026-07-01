@@ -59,11 +59,11 @@ rustPlatform.buildRustPackage {
 
   desktopItems = [
     (makeDesktopItem {
-      name = "spectral";
+      name = "page.codeberg.mmc.Spectral";
       desktopName = "Spectral";
       comment = "Real-time audio noise suppression";
       exec = "spectral";
-      icon = "spectral";
+      icon = "page.codeberg.mmc.Spectral";
       terminal = false;
       type = "Application";
       categories = [
@@ -79,12 +79,12 @@ rustPlatform.buildRustPackage {
         "rnnoise"
       ];
       startupNotify = true;
-      startupWMClass = "spectral";
+      startupWMClass = "page.codeberg.mmc.Spectral";
     })
   ];
 
   postInstall = ''
-    install -Dm644 assets/spectral.png $out/share/icons/hicolor/512x512/apps/spectral.png
+    install -Dm644 assets/spectral.png $out/share/icons/hicolor/512x512/apps/page.codeberg.mmc.Spectral.png
 
     # Wrap binaries with runtime library paths and fallback font.
     wrapProgram $out/bin/spectral \

@@ -119,8 +119,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn run_app() -> Result<(), Box<dyn Error>> {
-    let _ = slint::set_xdg_app_id("spectral");
-
     let mut daemon_client = match DaemonClient::connect() {
         Ok(client) => client,
         Err(_) => {
@@ -150,6 +148,12 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     };
 
     let ui = MainWindow::new()?;
+    // Must come after MainWindow::new(): until the Slint platform context exists,
+    // set_xdg_app_id returns Err and stores nothing, leaving the Wayland surface
+    // without an app_id so the desktop file (and taskbar icon) can't be matched.
+    if let Err(e) = slint::set_xdg_app_id("page.codeberg.mmc.Spectral") {
+        eprintln!("warning: failed to set xdg app id (taskbar icon may be generic): {e}");
+    }
     let ui_weak = ui.as_weak();
 
     let input_devices = audio_devices::get_input_devices()?;
