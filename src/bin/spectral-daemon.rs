@@ -166,13 +166,11 @@ fn handle_client(
     // 2. state.mic_name
     // 3. state.selected_device_id
     // 4. state.status
-    // 5. state.is_recording
-    // 6. state.has_recording
-    // 7. virtual_mic
-    // 8. recording_original
-    // 9. recording_filtered
-    // 10. playback_original
-    // 11. playback_filtered
+    // 5. virtual_mic
+    // 6. recording_original
+    // 7. recording_filtered
+    // 8. playback_original
+    // 9. playback_filtered
     //
     // Important: Release locks as soon as possible by limiting scope.
     // Never hold multiple locks longer than necessary.
@@ -242,8 +240,6 @@ fn handle_client(
                     }
                     DaemonCommand::GetState => {
                         let status = *lock_or_recover(&state.status);
-                        let is_recording = *lock_or_recover(&state.is_recording);
-                        let has_recording = *lock_or_recover(&state.has_recording);
 
                         let is_playing_original = {
                             let mut guard = lock_or_recover(&playback_original);
@@ -288,8 +284,6 @@ fn handle_client(
                             device_id: *lock_or_recover(&state.selected_device_id),
                             mic_name: lock_or_recover(&state.mic_name).clone(),
                             threshold: *lock_or_recover(&state.threshold_val),
-                            is_recording,
-                            has_recording,
                             is_playing_original,
                             is_playing_filtered,
                         };
@@ -310,7 +304,6 @@ fn handle_client(
                             Ok(name) => name,
                             Err(e) => {
                                 eprintln!("[Recording] Failed to get source name: {}", e);
-                                *lock_or_recover(&state.is_recording) = false;
                                 conn.send_response(DaemonResponse::Error(format!(
                                     "Failed to get source: {}",
                                     e
@@ -362,8 +355,6 @@ fn handle_client(
                             (Ok(orig), Ok(filt)) => {
                                 *lock_or_recover(&recording_original) = Some(orig);
                                 *lock_or_recover(&recording_filtered) = Some(filt);
-                                *lock_or_recover(&state.is_recording) = true;
-                                *lock_or_recover(&state.has_recording) = false;
                                 DaemonResponse::Ok
                             }
                             (Err(e), _) => {
@@ -398,8 +389,6 @@ fn handle_client(
                             let _ = proc.wait();
                         }
 
-                        *lock_or_recover(&state.is_recording) = false;
-                        *lock_or_recover(&state.has_recording) = true;
                         DaemonResponse::Ok
                     }
                     DaemonCommand::PlayOriginal => {

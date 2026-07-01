@@ -37,8 +37,6 @@ pub struct AppState {
     pub selected_device_id: Arc<Mutex<Option<u32>>>,
     pub threshold_val: Arc<Mutex<i32>>,
     pub mic_name: Arc<Mutex<String>>,
-    pub is_recording: Arc<Mutex<bool>>,
-    pub has_recording: Arc<Mutex<bool>>,
 }
 
 impl Default for AppState {
@@ -54,8 +52,6 @@ impl AppState {
             selected_device_id: Arc::new(Mutex::new(None)),
             threshold_val: Arc::new(Mutex::new(80)),
             mic_name: Arc::new(Mutex::new("Spectral-Mic".to_string())),
-            is_recording: Arc::new(Mutex::new(false)),
-            has_recording: Arc::new(Mutex::new(false)),
         }
     }
 
