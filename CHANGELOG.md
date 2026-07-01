@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-06-30
+
+### Fixed
+- The running application window now shows the Spectral icon in the Wayland taskbar/dock
+  instead of GNOME's generic fallback glyph. The XDG app id is now set after the window's
+  platform context is initialized — previously the call ran before any Slint context
+  existed, silently failed, and never reached the compositor, so GNOME could not match the
+  live window to its desktop file. The app id, desktop file, `Icon=`, and `StartupWMClass`
+  now use the reverse-DNS name `page.codeberg.mmc.Spectral`. (#1)
+
 ## [0.2.1] - 2026-06-30
 
 ### Changed
@@ -69,7 +79,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nix is the only officially supported installation method
 - Requires PipeWire (with the PulseAudio compatibility layer) and WirePlumber
 
-[Unreleased]: https://codeberg.org/mmc/spectral/compare/v0.2.1...HEAD
+[Unreleased]: https://codeberg.org/mmc/spectral/compare/v0.2.2...HEAD
+[0.2.2]: https://codeberg.org/mmc/spectral/compare/v0.2.1...v0.2.2
 [0.2.1]: https://codeberg.org/mmc/spectral/compare/v0.2.0...v0.2.1
 [0.2.0]: https://codeberg.org/mmc/spectral/compare/v0.1.0...v0.2.0
 [0.1.0]: https://codeberg.org/mmc/spectral/releases/tag/v0.1.0
