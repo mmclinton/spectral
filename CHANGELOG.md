@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-06-30
+
+### Changed
+- Updated the project icon.
+
+### Internal
+- Removed dead code left over from earlier feature removals: the inert signal-handler mpsc
+  channel, the uncalled `sanitize_mic_name` helper, a no-op `SPECTRAL_RENDERER_ATTEMPT`
+  environment cleanup, and the unread `is_recording`/`has_recording` fields from the daemon
+  IPC state.
+- Removed the placeholder `macos`/`windows` platform module declarations (Spectral is
+  Linux-only), which restores the `cargo fmt --check` gate.
+
 ## [0.2.0] - 2026-06-29
 
 ### Added
@@ -56,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nix is the only officially supported installation method
 - Requires PipeWire (with the PulseAudio compatibility layer) and WirePlumber
 
-[Unreleased]: https://codeberg.org/mmc/spectral/compare/v0.2.0...HEAD
+[Unreleased]: https://codeberg.org/mmc/spectral/compare/v0.2.1...HEAD
+[0.2.1]: https://codeberg.org/mmc/spectral/compare/v0.2.0...v0.2.1
 [0.2.0]: https://codeberg.org/mmc/spectral/compare/v0.1.0...v0.2.0
 [0.1.0]: https://codeberg.org/mmc/spectral/releases/tag/v0.1.0
