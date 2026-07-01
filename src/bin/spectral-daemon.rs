@@ -46,9 +46,6 @@ fn main() {
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
 
-    // Use a pipe to signal the signal handler thread to exit cleanly
-    let (signal_tx, signal_rx) = std::sync::mpsc::channel::<()>();
-
     let mut signals = signal_hook::iterator::Signals::new([
         signal_hook::consts::SIGTERM,
         signal_hook::consts::SIGINT,
@@ -61,7 +58,6 @@ fn main() {
         if signals.forever().next().is_some() {
             r.store(false, Ordering::SeqCst);
         }
-        drop(signal_rx);
     });
 
     let mut persisted = load_state().unwrap_or_default();
@@ -150,7 +146,6 @@ fn main() {
         let _ = handle.join();
     }
 
-    drop(signal_tx);
     signal_handle.close();
 
     let _ = signal_thread.join();
