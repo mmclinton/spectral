@@ -75,13 +75,6 @@ pub fn is_valid_mic_name(name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
-pub fn sanitize_mic_name(name: &str) -> String {
-    name.chars()
-        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
-        .take(MIC_NAME_MAX_LEN)
-        .collect()
-}
-
 /// PulseAudio node names derived from a mic name. `VirtualMic::create` owns this
 /// scheme; every other consumer (e.g. filtered recording) derives names through
 /// these helpers so the sink and its monitor can never drift out of sync.
