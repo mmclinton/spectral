@@ -1,5 +1,5 @@
 use spectral_lib::audio_devices;
-use spectral_lib::ipc::{DaemonClient, DaemonCommand, DaemonResponse};
+use spectral_lib::ipc::{DaemonClient, DaemonCommand, DaemonResponse, wait_for_daemon_exit};
 use spectral_lib::state::{AudioDevice, MIC_NAME_MAX_LEN, Status};
 
 use slint::ModelRc;
@@ -108,7 +108,6 @@ fn start_daemon() -> Result<(), Box<dyn Error>> {
         .stderr(log)
         .spawn()?;
 
-    std::thread::sleep(std::time::Duration::from_millis(500));
     Ok(())
 }
 
@@ -123,7 +122,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         Ok(client) => client,
         Err(_) => {
             start_daemon()?;
-            DaemonClient::connect()?
+            DaemonClient::connect_with_retry()?
         }
     };
 
@@ -136,10 +135,10 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                 e
             );
             let _ = daemon_client.send_command(DaemonCommand::Shutdown);
-            std::thread::sleep(std::time::Duration::from_millis(300));
+            wait_for_daemon_exit()?;
             start_daemon()?;
 
-            let mut new_client = DaemonClient::connect()?;
+            let mut new_client = DaemonClient::connect_with_retry()?;
             match new_client.send_command(DaemonCommand::GetState) {
                 Ok(DaemonResponse::State(state)) => state,
                 _ => return Err("Failed to get daemon state after restart".into()),

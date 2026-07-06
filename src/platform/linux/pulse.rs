@@ -192,6 +192,51 @@ impl PulseContext {
         Ok(std::mem::take(&mut guard.items))
     }
 
+    /// Poll until a source with the given name is visible in the server.
+    /// A module load completing does not guarantee its source node is
+    /// registered yet; callers that immediately address the source by name
+    /// need this positive check.
+    pub fn wait_for_source(&mut self, name: &str) -> Result<(), String> {
+        const SOURCE_READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+        const SOURCE_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(50);
+
+        let deadline = std::time::Instant::now() + SOURCE_READY_TIMEOUT;
+        loop {
+            let context = self.context.clone();
+            let name_owned = name.to_string();
+            let found = self.collect_list("querying source", move |state| {
+                context
+                    .borrow()
+                    .introspect()
+                    .get_source_info_by_name(&name_owned, move |result| match result {
+                        ListResult::Item(_) => lock_or_recover(&state.0).items.push(()),
+                        ListResult::End => {
+                            lock_or_recover(&state.0).finished = true;
+                            state.1.notify_one();
+                        }
+                        ListResult::Error => {
+                            let mut accum = lock_or_recover(&state.0);
+                            accum.error = true;
+                            accum.finished = true;
+                            state.1.notify_one();
+                        }
+                    });
+            });
+
+            // A source that does not exist yet reports ListResult::Error, so
+            // within the deadline both Err and an empty list mean "not yet".
+            match found {
+                Ok(items) if !items.is_empty() => return Ok(()),
+                _ if std::time::Instant::now() >= deadline => {
+                    return Err(format!(
+                        "source {name} did not appear within {SOURCE_READY_TIMEOUT:?}"
+                    ));
+                }
+                _ => std::thread::sleep(SOURCE_POLL_INTERVAL),
+            }
+        }
+    }
+
     /// Unload Spectral virtual-mic modules left loaded by a previous daemon
     /// instance (a crash or SIGKILL bypasses Drop, leaving the server-side
     /// modules behind). Sinks are matched by their constant `device.description`;

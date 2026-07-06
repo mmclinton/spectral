@@ -171,13 +171,19 @@ impl VirtualMic {
             }
         };
 
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        if let Err(e) = pulse_ctx.wait_for_source(&source_name) {
+            if let Some(remap_id) = remap_module_id {
+                let _ = pulse_ctx.unload_module(remap_id);
+            }
+            if let Some(sink_id) = sink_module_id {
+                let _ = pulse_ctx.unload_module(sink_id);
+            }
+            return Err(format!("Remapped source did not become ready: {}", e).into());
+        }
 
         if let Err(e) = pulse_ctx.set_default_source(&source_name) {
             eprintln!("Warning: Failed to set default source: {}", e);
         }
-
-        std::thread::sleep(std::time::Duration::from_millis(100));
 
         let source_node_name = get_node_name(source_device_id)?;
 

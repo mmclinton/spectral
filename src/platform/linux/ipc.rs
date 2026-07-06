@@ -3,6 +3,11 @@ use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+const DAEMON_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const DAEMON_EXIT_TIMEOUT: Duration = Duration::from_secs(5);
+const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 mod pid_file {
     use std::fs;
@@ -88,6 +93,26 @@ fn get_pid_file_path() -> Result<PathBuf, std::io::Error> {
     Ok(runtime_dir()?.join("spectral-daemon.pid"))
 }
 
+/// Wait for a previously running daemon to exit. Shutdown terminates the
+/// process without running Drop, so the socket file lingers; the pid file's
+/// process going away — the same condition `bind` checks — is the signal.
+pub fn wait_for_daemon_exit() -> Result<(), std::io::Error> {
+    let Some(pid) = pid_file::read_pid(&get_pid_file_path()?) else {
+        return Ok(());
+    };
+    let deadline = Instant::now() + DAEMON_EXIT_TIMEOUT;
+    while pid_file::is_process_running(pid) {
+        if Instant::now() >= deadline {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("daemon (pid {pid}) did not exit within {DAEMON_EXIT_TIMEOUT:?}"),
+            ));
+        }
+        std::thread::sleep(POLL_INTERVAL);
+    }
+    Ok(())
+}
+
 pub struct DaemonClient {
     stream: UnixStream,
 }
@@ -97,6 +122,20 @@ impl DaemonClient {
         let socket_path = get_socket_path()?;
         let stream = UnixStream::connect(socket_path)?;
         Ok(Self { stream })
+    }
+
+    /// Connect, retrying while a freshly spawned daemon starts up; ENOENT
+    /// (socket not yet bound) and ECONNREFUSED (stale socket file) are both
+    /// normal in that window.
+    pub fn connect_with_retry() -> Result<Self, std::io::Error> {
+        let deadline = Instant::now() + DAEMON_CONNECT_TIMEOUT;
+        loop {
+            match Self::connect() {
+                Ok(client) => return Ok(client),
+                Err(e) if Instant::now() >= deadline => return Err(e),
+                Err(_) => std::thread::sleep(POLL_INTERVAL),
+            }
+        }
     }
 
     pub fn send_command(
@@ -177,8 +216,6 @@ pub struct DaemonConnection {
 
 impl DaemonConnection {
     pub fn read_command(&mut self) -> Result<DaemonCommand, std::io::Error> {
-        use std::time::Duration;
-
         self.stream
             .set_read_timeout(Some(Duration::from_secs(30)))?;
 
