@@ -162,6 +162,44 @@
             RUST_BACKTRACE = "1";
           };
 
+          # The pre-commit gate: `nix flake check` builds the package (whose
+          # default checkPhase already runs `cargo test`), clippy with warnings
+          # denied, and rustfmt. Lints use the nixpkgs toolchain — the one that
+          # builds the package — which can drift from the dev shell's pinned
+          # rust-overlay toolchain.
+          checks = {
+            build = spectral;
+
+            clippy = spectral.overrideAttrs (old: {
+              pname = "spectral-clippy";
+              nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.clippy ];
+              buildPhase = ''
+                runHook preBuild
+                cargo clippy --all-targets --locked -- --deny warnings
+                runHook postBuild
+              '';
+              doCheck = false;
+              # Deliberately no install hooks: the package's postInstall wraps
+              # binaries that a lint-only derivation never produces.
+              installPhase = "touch $out";
+            });
+
+            fmt =
+              pkgs.runCommand "spectral-fmt"
+                {
+                  nativeBuildInputs = [
+                    pkgs.cargo
+                    pkgs.rustfmt
+                  ];
+                }
+                ''
+                  cd ${self}
+                  export CARGO_HOME="$TMPDIR/cargo"
+                  cargo fmt --check
+                  touch $out
+                '';
+          };
+
           apps.default = {
             type = "app";
             program = "${spectral}/bin/spectral";
