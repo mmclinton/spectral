@@ -28,7 +28,6 @@ pub const SAMPLE_RATE: u32 = 48000;
 pub const OUTPUT_CHANNELS: u32 = 1;
 
 /// RNNoise requires exactly 480 samples (10ms at 48kHz) per frame.
-/// This constant MUST match the FRAME_SIZE in audio_processor.rs.
 pub const RNNOISE_FRAME_SIZE: usize = 480;
 
 /// Channels beyond this will be clamped.
