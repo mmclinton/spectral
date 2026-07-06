@@ -143,18 +143,6 @@
             end
           '';
 
-          runtimeLibs = with pkgs; [
-            libxkbcommon
-            wayland
-            xorg.libX11
-            xorg.libXcursor
-            xorg.libXi
-            xorg.libXrandr
-            fontconfig
-            freetype
-            pipewire
-            libpulseaudio
-          ];
         in
         {
           packages.default = spectral;
@@ -167,10 +155,10 @@
               pkgs.clang
               spectral-teardown
             ]
-            ++ runtimeLibs;
+            ++ spectral.passthru.runtimeLibs;
 
             LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath runtimeLibs;
+            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath spectral.passthru.runtimeLibs;
             RUST_BACKTRACE = "1";
           };
 

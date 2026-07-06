@@ -55,6 +55,9 @@ rustPlatform.buildRustPackage {
 
   buildInputs = runtimeLibs;
 
+  # Consumed by the dev shell so the library list lives only here.
+  passthru = { inherit runtimeLibs; };
+
   LIBCLANG_PATH = "${llvmPackages.libclang.lib}/lib";
 
   desktopItems = [
