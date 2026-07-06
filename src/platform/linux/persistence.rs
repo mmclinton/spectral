@@ -33,8 +33,7 @@ fn get_safe_config_base() -> Result<PathBuf, io::Error> {
     }
 
     let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .map_err(|_| io::Error::new(ErrorKind::NotFound, "Neither HOME nor USERPROFILE is set"))?;
+        .map_err(|_| io::Error::new(ErrorKind::NotFound, "HOME is not set"))?;
 
     let home_path = PathBuf::from(&home);
     if !home_path.is_absolute() || home.contains("..") {
