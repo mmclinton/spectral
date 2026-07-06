@@ -3,7 +3,7 @@ use spectral_lib::audio_processor::{VirtualMic, reap_leaked_modules};
 use spectral_lib::ipc::{DaemonCommand, DaemonResponse, DaemonServer, DaemonState};
 use spectral_lib::persistence::{
     PersistedState, get_filtered_recording_path, get_original_recording_path, load_state,
-    save_state,
+    remove_legacy_recordings, save_state,
 };
 use spectral_lib::state::{AppState, Status, is_valid_mic_name, lock_or_recover, monitor_name};
 use std::path::Path;
@@ -89,6 +89,8 @@ fn main() {
         Ok(n) => eprintln!("[startup] reaped {n} leaked virtual-mic module(s)"),
         Err(e) => eprintln!("[startup] module reap skipped: {e}"),
     }
+
+    remove_legacy_recordings();
 
     let mut client_threads: Vec<thread::JoinHandle<()>> = Vec::new();
 
