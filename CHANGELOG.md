@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-07-06
+
 ### Changed
 - Locating the daemon socket now requires `XDG_RUNTIME_DIR` and fails with a clear
   error when it is unset. The previous `/tmp/runtime-$USER` fallback pointed at a
@@ -105,7 +107,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nix is the only officially supported installation method
 - Requires PipeWire (with the PulseAudio compatibility layer) and WirePlumber
 
-[Unreleased]: https://codeberg.org/mmc/spectral/compare/v0.2.2...HEAD
+[Unreleased]: https://codeberg.org/mmc/spectral/compare/v0.2.3...HEAD
+[0.2.3]: https://codeberg.org/mmc/spectral/compare/v0.2.2...v0.2.3
 [0.2.2]: https://codeberg.org/mmc/spectral/compare/v0.2.1...v0.2.2
 [0.2.1]: https://codeberg.org/mmc/spectral/compare/v0.2.0...v0.2.1
 [0.2.0]: https://codeberg.org/mmc/spectral/compare/v0.1.0...v0.2.0
