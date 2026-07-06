@@ -52,10 +52,7 @@ impl PulseContext {
             };
 
             match state {
-                pulse::context::State::Ready => {
-                    println!("[PulseAudio] Connected successfully");
-                    break;
-                }
+                pulse::context::State::Ready => break,
                 pulse::context::State::Failed | pulse::context::State::Terminated => {
                     return Err(format!("Connection failed, state: {:?}", state));
                 }
