@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Locating the daemon socket now requires `XDG_RUNTIME_DIR` and fails with a clear
+  error when it is unset. The previous `/tmp/runtime-$USER` fallback pointed at a
+  directory that was never created, so connecting there could never succeed.
+
+### Fixed
+- Startup and enable no longer rely on fixed sleeps: the GUI retries the daemon
+  connection with a bounded deadline after spawning it, waits for an old daemon to
+  actually exit before respawning one, and the daemon polls PulseAudio until the
+  virtual source is registered before selecting it as the default input.
+
+### Internal
+- The UI derives control enablement from an explicit `mic_enabled` property instead
+  of comparing the status color against red.
+
 ## [0.2.2] - 2026-06-30
 
 ### Fixed
