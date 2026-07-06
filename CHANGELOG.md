@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Internal
 - The UI derives control enablement from an explicit `mic_enabled` property instead
   of comparing the status color against red.
+- The dev shell consumes the package's runtime library list via `passthru` instead
+  of maintaining a duplicate copy in the flake.
+- `nix flake check` now actually gates: it builds the package (which runs the test
+  suite), lints with clippy under denied warnings, and verifies formatting.
 
 ## [0.2.2] - 2026-06-30
 
