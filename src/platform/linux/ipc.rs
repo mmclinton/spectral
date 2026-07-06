@@ -69,24 +69,23 @@ pub enum DaemonResponse {
     Error(String),
 }
 
-pub fn get_socket_path() -> PathBuf {
-    let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| {
-        format!(
-            "/tmp/runtime-{}",
-            std::env::var("USER").unwrap_or_else(|_| "user".to_string())
-        )
-    });
-    PathBuf::from(runtime_dir).join("spectral-daemon.sock")
+fn runtime_dir() -> Result<PathBuf, std::io::Error> {
+    std::env::var("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "XDG_RUNTIME_DIR is not set; cannot locate the daemon socket",
+            )
+        })
 }
 
-fn get_pid_file_path() -> PathBuf {
-    let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| {
-        format!(
-            "/tmp/runtime-{}",
-            std::env::var("USER").unwrap_or_else(|_| "user".to_string())
-        )
-    });
-    PathBuf::from(runtime_dir).join("spectral-daemon.pid")
+fn get_socket_path() -> Result<PathBuf, std::io::Error> {
+    Ok(runtime_dir()?.join("spectral-daemon.sock"))
+}
+
+fn get_pid_file_path() -> Result<PathBuf, std::io::Error> {
+    Ok(runtime_dir()?.join("spectral-daemon.pid"))
 }
 
 pub struct DaemonClient {
@@ -95,7 +94,7 @@ pub struct DaemonClient {
 
 impl DaemonClient {
     pub fn connect() -> Result<Self, std::io::Error> {
-        let socket_path = get_socket_path();
+        let socket_path = get_socket_path()?;
         let stream = UnixStream::connect(socket_path)?;
         Ok(Self { stream })
     }
@@ -119,13 +118,14 @@ impl DaemonClient {
 
 pub struct DaemonServer {
     listener: UnixListener,
-    _pid_file_path: PathBuf,
+    socket_path: PathBuf,
+    pid_file_path: PathBuf,
 }
 
 impl DaemonServer {
     pub fn bind() -> Result<Self, std::io::Error> {
-        let socket_path = get_socket_path();
-        let pid_file_path = get_pid_file_path();
+        let socket_path = get_socket_path()?;
+        let pid_file_path = get_pid_file_path()?;
 
         // Check if another daemon is already running via PID file
         if let Some(existing_pid) = pid_file::read_pid(&pid_file_path) {
@@ -153,7 +153,8 @@ impl DaemonServer {
 
         Ok(Self {
             listener,
-            _pid_file_path: pid_file_path,
+            socket_path,
+            pid_file_path,
         })
     }
 
@@ -165,8 +166,8 @@ impl DaemonServer {
 
 impl Drop for DaemonServer {
     fn drop(&mut self) {
-        pid_file::cleanup(&self._pid_file_path);
-        let _ = std::fs::remove_file(get_socket_path());
+        pid_file::cleanup(&self.pid_file_path);
+        let _ = std::fs::remove_file(&self.socket_path);
     }
 }
 
