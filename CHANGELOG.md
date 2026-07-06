@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   connection with a bounded deadline after spawning it, waits for an old daemon to
   actually exit before respawning one, and the daemon polls PulseAudio until the
   virtual source is registered before selecting it as the default input.
+- Voice-test recordings now live under `~/.local/state/spectral/recordings` (the XDG
+  state directory) instead of `~/.config/spectral/recordings`, keeping WAV audio out
+  of config-directory backups. The two old files are swept automatically on daemon
+  startup.
 
 ### Internal
 - The UI derives control enablement from an explicit `mic_enabled` property instead
@@ -25,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of maintaining a duplicate copy in the flake.
 - `nix flake check` now actually gates: it builds the package (which runs the test
   suite), lints with clippy under denied warnings, and verifies formatting.
+- Removed the PulseAudio connect success print (error-only logging convention), a
+  stale cross-reference comment, and the Windows `USERPROFILE` fallback from the
+  Linux-only persistence module.
 
 ## [0.2.2] - 2026-06-30
 
