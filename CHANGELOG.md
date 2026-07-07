@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The input threshold now spans the whole slider: 0% is the explicit
+  denoise-only baseline (voice gate off) and 1–100% map linearly to a VAD
+  confidence cutoff of up to 0.95. Previously 0–49% were all identical to
+  denoise-only and only 50–100% drove the gate. Values 50–100% keep almost
+  exactly their old meaning (the default of 80% moves from a 0.77 to a 0.76
+  cutoff); values 1–49% go from doing nothing to a lenient gate.
+
 ### Fixed
+- Out-of-range threshold values from a hand-edited settings file or a rogue
+  socket client are now clamped to 0–100; previously they produced a cutoff
+  above 1.0 that the voice detector can never reach — a permanently silent
+  virtual mic.
+- The Help view's threshold entry described the slider as adjusting the
+  noise-suppression strength; it now explains the actual voice-gate
+  mechanism (per-frame VAD confidence against a cutoff).
 - Starting a voice test no longer leaks the previous recording's `pw-record`
   processes. Previously a start without an intervening stop (for example after
   relaunching the GUI mid-recording) orphaned the old pair, which kept running
