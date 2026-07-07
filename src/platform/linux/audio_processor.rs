@@ -5,6 +5,16 @@ use crate::state::{AppState, is_valid_mic_name, lock_or_recover, monitor_name, s
 use nnnoiseless::DenoiseState;
 use std::sync::{Arc, Mutex};
 
+/// Maps the 0-100 threshold to a VAD confidence cutoff. 0 disables the gate
+/// (denoise only); 1-100 map linearly to a cutoff of up to 0.95 — the VAD
+/// sigmoid saturates at 1.0, so a cutoff of 1.0 could never open the gate,
+/// and cutoffs above ~0.95 reject genuine speech onsets. Out-of-range input
+/// is clamped so a corrupt persisted threshold can never silence the mic.
+fn vad_cutoff(threshold: i32) -> Option<f32> {
+    let t = threshold.clamp(0, 100);
+    (t > 0).then(|| t as f32 / 100.0 * 0.95)
+}
+
 struct ProcessingContext {
     denoiser: Box<DenoiseState<'static>>,
     input_buffer: Vec<f32>,
@@ -33,7 +43,7 @@ impl AudioProcessor {
     }
 
     pub fn process_audio_buffer(&self, input: &[f32], output: &mut [f32]) {
-        let threshold = *lock_or_recover(&self.state.threshold_val) as f32 / 100.0;
+        let threshold = *lock_or_recover(&self.state.threshold_val);
 
         let mut ctx_guard = lock_or_recover(&self.context);
 
@@ -58,38 +68,35 @@ impl AudioProcessor {
             // Returns VAD probability (0.0-1.0) indicating voice presence confidence
             let vad_probability = denoiser.process_frame(scratch_output, scratch_input);
 
-            if threshold >= 0.5 {
-                // Map threshold 50-100% to VAD cutoff 0.5-0.95
-                let vad_threshold = (threshold - 0.5) * 0.9 + 0.5;
+            match vad_cutoff(threshold) {
+                Some(cutoff) => {
+                    let target_gate = if vad_probability > cutoff { 1.0 } else { 0.0 };
 
-                let target_gate = if vad_probability > vad_threshold {
-                    1.0
-                } else {
-                    0.0
-                };
+                    // Smooth gate transitions: attack=0.50 (~20ms ramp), release=0.96 (~250ms decay)
+                    let attack_coef = 0.50;
+                    let release_coef = 0.96;
 
-                // Smooth gate transitions: attack=0.50 (~20ms ramp), release=0.96 (~250ms decay)
-                let attack_coef = 0.50;
-                let release_coef = 0.96;
+                    if target_gate > 0.5 {
+                        *vad_state = attack_coef * (*vad_state) + (1.0 - attack_coef);
+                    } else {
+                        *vad_state *= release_coef;
+                    }
 
-                if target_gate > 0.5 {
-                    *vad_state = attack_coef * (*vad_state) + (1.0 - attack_coef);
-                } else {
-                    *vad_state *= release_coef;
-                }
-
-                let gain = *vad_state;
-                for &sample in scratch_output.iter() {
-                    if out_idx < output.len() {
-                        output[out_idx] = sample * gain;
-                        out_idx += 1;
+                    let gain = *vad_state;
+                    for &sample in scratch_output.iter() {
+                        if out_idx < output.len() {
+                            output[out_idx] = sample * gain;
+                            out_idx += 1;
+                        }
                     }
                 }
-            } else {
-                for &sample in scratch_output.iter() {
-                    if out_idx < output.len() {
-                        output[out_idx] = sample;
-                        out_idx += 1;
+                None => {
+                    *vad_state = 0.0;
+                    for &sample in scratch_output.iter() {
+                        if out_idx < output.len() {
+                            output[out_idx] = sample;
+                            out_idx += 1;
+                        }
                     }
                 }
             }
@@ -267,4 +274,33 @@ impl Drop for VirtualMic {
 /// keyed on the modules' own properties; returns the number unloaded.
 pub fn reap_leaked_modules() -> Result<usize, String> {
     PulseContext::new("spectral-reap")?.reap_spectral_modules()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::vad_cutoff;
+
+    #[test]
+    fn threshold_maps_linearly_onto_the_vad_cutoff() {
+        let cases = [
+            (-5, None),
+            (0, None),
+            (1, Some(0.0095)),
+            (50, Some(0.475)),
+            (80, Some(0.76)),
+            (100, Some(0.95)),
+            (400, Some(0.95)),
+        ];
+        for (threshold, expected) in cases {
+            let got = vad_cutoff(threshold);
+            match (got, expected) {
+                (None, None) => {}
+                (Some(g), Some(e)) => assert!(
+                    (g - e).abs() < 1e-6,
+                    "threshold {threshold}: got {g}, expected {e}"
+                ),
+                _ => panic!("threshold {threshold}: got {got:?}, expected {expected:?}"),
+            }
+        }
+    }
 }

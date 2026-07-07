@@ -68,6 +68,13 @@ fn main() {
         );
         persisted.mic_name = "Spectral-Mic".to_string();
     }
+    if !(0..=100).contains(&persisted.threshold) {
+        eprintln!(
+            "Persisted threshold {} is out of range, clamping",
+            persisted.threshold
+        );
+        persisted.threshold = persisted.threshold.clamp(0, 100);
+    }
     {
         *lock_or_recover(&state.threshold_val) = persisted.threshold;
         *lock_or_recover(&state.mic_name) = persisted.mic_name.clone();
@@ -193,6 +200,7 @@ fn handle_client(
                             ))?;
                             continue;
                         }
+                        let threshold = threshold.clamp(0, 100);
                         *lock_or_recover(&state.threshold_val) = threshold;
                         *lock_or_recover(&state.mic_name) = mic_name.clone();
                         *lock_or_recover(&state.selected_device_id) = Some(device_id);
