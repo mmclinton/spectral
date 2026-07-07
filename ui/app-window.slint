@@ -1081,7 +1081,7 @@ export component MainWindow inherits Window {
 
                             // Input Threshold
                             Rectangle {
-                                height: 85px;
+                                height: 130px;
                                 background: #0D1117;
                                 border-color: #30363D;
                                 border-width: 1px;
@@ -1099,7 +1099,7 @@ export component MainWindow inherits Window {
                                     }
 
                                     Text {
-                                        text: "Adjusts the noise suppression strength. Higher values filter more aggressively. Use \"Apply\" to save changes while the mic is active.";
+                                        text: "Your microphone audio is always denoised. For every 10 ms frame, the denoiser also reports its confidence (0.0–1.0) that the frame contains voice. The slider maps 1–100% to a confidence cutoff of up to 0.95: frames above the cutoff pass the gate, frames below are muted (~20 ms attack, ~250 ms release). At 0% the gate is off and you get denoising only. Use \"Apply\" to save changes while the mic is active.";
                                         font-size: 13px;
                                         color: #C9D1D9;
                                         wrap: word-wrap;
