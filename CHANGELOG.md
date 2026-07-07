@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Starting a voice test no longer leaks the previous recording's `pw-record`
+  processes. Previously a start without an intervening stop (for example after
+  relaunching the GUI mid-recording) orphaned the old pair, which kept running
+  and kept writing to the same output files as the new pair; partial spawn
+  failures could likewise orphan the recorder that did start.
+
+### Internal
+- The daemon's state query now takes its locks one at a time instead of holding
+  all three simultaneously in reverse of the documented lock order, closing a
+  latent deadlock trap.
+
 ## [0.2.3] - 2026-07-06
 
 ### Changed
