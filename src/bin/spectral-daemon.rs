@@ -320,6 +320,17 @@ fn handle_client(
                         let original_path = get_original_recording_path();
                         let filtered_path = get_filtered_recording_path();
                         let original_path_str = path_to_str(&original_path)?;
+                        let filtered_path_str = path_to_str(&filtered_path)?;
+
+                        if let Some(mut proc) = lock_or_recover(&recording_original).take() {
+                            let _ = proc.kill();
+                            let _ = proc.wait();
+                        }
+                        if let Some(mut proc) = lock_or_recover(&recording_filtered).take() {
+                            let _ = proc.kill();
+                            let _ = proc.wait();
+                        }
+
                         let original_proc = Command::new("pw-record")
                             .args([
                                 "--target",
@@ -338,7 +349,6 @@ fn handle_client(
                             .spawn();
 
                         let monitor_source = monitor_name(&mic_name);
-                        let filtered_path_str = path_to_str(&filtered_path)?;
                         let filtered_proc = Command::new("pw-record")
                             .args([
                                 "--target",
@@ -362,24 +372,18 @@ fn handle_client(
                                 *lock_or_recover(&recording_filtered) = Some(filt);
                                 DaemonResponse::Ok
                             }
-                            (Err(e), _) => {
+                            (Err(e), filt) => {
                                 eprintln!("[Recording] Failed to start original pw-record: {}", e);
-                                if let Some(mut p) = lock_or_recover(&recording_original).take() {
+                                if let Ok(mut p) = filt {
                                     let _ = p.kill();
-                                }
-                                if let Some(mut p) = lock_or_recover(&recording_filtered).take() {
-                                    let _ = p.kill();
+                                    let _ = p.wait();
                                 }
                                 DaemonResponse::Error(format!("Failed to start recording: {}", e))
                             }
-                            (_, Err(e)) => {
+                            (Ok(mut orig), Err(e)) => {
                                 eprintln!("[Recording] Failed to start filtered pw-record: {}", e);
-                                if let Some(mut p) = lock_or_recover(&recording_original).take() {
-                                    let _ = p.kill();
-                                }
-                                if let Some(mut p) = lock_or_recover(&recording_filtered).take() {
-                                    let _ = p.kill();
-                                }
+                                let _ = orig.kill();
+                                let _ = orig.wait();
                                 DaemonResponse::Error(format!("Failed to start recording: {}", e))
                             }
                         }
