@@ -281,11 +281,14 @@ fn handle_client(
                             }
                         };
 
+                        let threshold = *lock_or_recover(&state.threshold_val);
+                        let mic_name = lock_or_recover(&state.mic_name).clone();
+                        let device_id = *lock_or_recover(&state.selected_device_id);
                         let daemon_state = DaemonState {
                             status,
-                            device_id: *lock_or_recover(&state.selected_device_id),
-                            mic_name: lock_or_recover(&state.mic_name).clone(),
-                            threshold: *lock_or_recover(&state.threshold_val),
+                            device_id,
+                            mic_name,
+                            threshold,
                             is_playing_original,
                             is_playing_filtered,
                         };
