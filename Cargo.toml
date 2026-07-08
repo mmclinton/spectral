@@ -5,7 +5,11 @@ edition = "2024"
 license = "GPL-3.0-only"
 authors = ["mmc <codeberg.wilder850@simplelogin.com>"]
 repository = "https://codeberg.org/mmc/spectral"
+homepage = "https://codeberg.org/mmc/spectral"
 description = "Real-time audio noise suppression application"
+readme = "README.md"
+keywords = ["noise-suppression", "pipewire", "rnnoise", "audio", "microphone"]
+categories = ["multimedia::audio"]
 
 [lib]
 name = "spectral_lib"
@@ -36,3 +40,11 @@ signal-hook = "0.3"
 
 [build-dependencies]
 slint-build = "=1.15.0"
+
+[profile.release]
+# panic stays "unwind": lock_or_recover's poisoning recovery and the PipeWire
+# FFI boundary depend on unwinding, never aborting.
+panic = "unwind"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
