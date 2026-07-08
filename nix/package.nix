@@ -20,7 +20,7 @@
 }:
 let
   pname = "spectral";
-  version = "0.2.3";
+  version = "0.3.0";
 
   runtimeLibs = [
     libxkbcommon
