@@ -5,7 +5,11 @@ use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PersistedState {
+    /// PipeWire ids are scoped to one server instance; the node name below is
+    /// the durable handle across reboots and PipeWire restarts.
     pub device_id: Option<u32>,
+    #[serde(default)]
+    pub device_node_name: Option<String>,
     pub mic_name: String,
     pub threshold: i32,
 }
@@ -14,6 +18,7 @@ impl Default for PersistedState {
     fn default() -> Self {
         Self {
             device_id: None,
+            device_node_name: None,
             mic_name: "Spectral-Mic".to_string(),
             threshold: 80,
         }
@@ -151,7 +156,27 @@ mod tests {
             "is_active = true\ndevice_id = 42\nmic_name = \"My-Mic\"\nthreshold = 65\n";
         let state: PersistedState = toml::from_str(old_format).expect("old format must load");
         assert_eq!(state.device_id, Some(42));
+        assert_eq!(state.device_node_name, None);
         assert_eq!(state.mic_name, "My-Mic");
         assert_eq!(state.threshold, 65);
+    }
+
+    #[test]
+    fn device_node_name_roundtrips_present_and_absent() {
+        for node_name in [Some("alsa_input.usb-Blue_Yeti-00.analog-stereo"), None] {
+            let state = PersistedState {
+                device_id: Some(57),
+                device_node_name: node_name.map(str::to_string),
+                mic_name: "My-Mic".to_string(),
+                threshold: 65,
+            };
+            let toml_string = toml::to_string(&state).expect("state must serialize");
+            let loaded: PersistedState =
+                toml::from_str(&toml_string).expect("state must roundtrip");
+            assert_eq!(loaded.device_id, state.device_id);
+            assert_eq!(loaded.device_node_name, state.device_node_name);
+            assert_eq!(loaded.mic_name, state.mic_name);
+            assert_eq!(loaded.threshold, state.threshold);
+        }
     }
 }

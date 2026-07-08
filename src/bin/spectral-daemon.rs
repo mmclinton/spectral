@@ -70,6 +70,7 @@ fn main() {
             .store(persisted.threshold, Ordering::Relaxed);
         *lock_or_recover(&state.mic_name) = persisted.mic_name.clone();
         *lock_or_recover(&state.selected_device_id) = persisted.device_id;
+        *lock_or_recover(&state.device_node_name) = persisted.device_node_name.clone();
     }
 
     let server = match DaemonServer::bind() {
@@ -157,13 +158,14 @@ fn handle_client(
     // (state.threshold_val is an atomic and exempt):
     // 1. state.mic_name
     // 2. state.selected_device_id
-    // 3. virtual_mic
-    // 4. state.status
-    // 5. state.last_error
-    // 6. recording_original
-    // 7. recording_filtered
-    // 8. playback_original
-    // 9. playback_filtered
+    // 3. state.device_node_name
+    // 4. virtual_mic
+    // 5. state.status
+    // 6. state.last_error
+    // 7. recording_original
+    // 8. recording_filtered
+    // 9. playback_original
+    // 10. playback_filtered
     //
     // Important: Release locks as soon as possible by limiting scope.
     // Never hold multiple locks longer than necessary.
@@ -185,12 +187,15 @@ fn handle_client(
                             continue;
                         }
                         let threshold = threshold.clamp(0, 100);
+                        let device_node_name = get_node_name(device_id).ok();
                         state.threshold_val.store(threshold, Ordering::Relaxed);
                         *lock_or_recover(&state.mic_name) = mic_name.clone();
                         *lock_or_recover(&state.selected_device_id) = Some(device_id);
+                        *lock_or_recover(&state.device_node_name) = device_node_name.clone();
 
                         if let Err(e) = save_state(&PersistedState {
                             device_id: Some(device_id),
+                            device_node_name,
                             mic_name: mic_name.clone(),
                             threshold,
                         }) {

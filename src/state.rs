@@ -36,6 +36,9 @@ pub enum Status {
 pub struct AppState {
     pub status: Arc<Mutex<Status>>,
     pub selected_device_id: Arc<Mutex<Option<u32>>>,
+    /// The selected device's PipeWire node.name — the durable handle; ids are
+    /// scoped to one server instance.
+    pub device_node_name: Arc<Mutex<Option<String>>>,
     /// Atomic so the real-time audio path can read it without locking.
     pub threshold_val: Arc<AtomicI32>,
     pub mic_name: Arc<Mutex<String>>,
@@ -55,6 +58,7 @@ impl AppState {
         Self {
             status: Arc::new(Mutex::new(Status::Inactive)),
             selected_device_id: Arc::new(Mutex::new(None)),
+            device_node_name: Arc::new(Mutex::new(None)),
             threshold_val: Arc::new(AtomicI32::new(80)),
             mic_name: Arc::new(Mutex::new("Spectral-Mic".to_string())),
             last_error: Arc::new(Mutex::new(None)),
