@@ -1,3 +1,4 @@
+mod cli;
 mod daemon_launch;
 
 use spectral_lib::audio_devices;
@@ -135,10 +136,26 @@ fn apply_pending_transition(
     }
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
-    unsafe { std::env::set_var("SLINT_BACKEND", "winit-software") };
+fn main() -> std::process::ExitCode {
+    use std::process::ExitCode;
 
-    run_app()
+    match cli::parse(std::env::args_os().skip(1)) {
+        Ok(cli::CliCommand::Gui) => {
+            unsafe { std::env::set_var("SLINT_BACKEND", "winit-software") };
+            match run_app() {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        Ok(command) => cli::run(command),
+        Err(msg) => {
+            eprintln!("spectral: {msg}\nTry 'spectral --help'.");
+            ExitCode::from(2)
+        }
+    }
 }
 
 fn run_app() -> Result<(), Box<dyn Error>> {
