@@ -1,5 +1,7 @@
 use spectral_lib::audio_devices;
-use spectral_lib::ipc::{DaemonClient, DaemonCommand, DaemonResponse, wait_for_daemon_exit};
+use spectral_lib::ipc::{
+    DaemonClient, DaemonCommand, DaemonResponse, DaemonState, wait_for_daemon_exit,
+};
 use spectral_lib::state::{AudioDevice, MIC_NAME_MAX_LEN, Status};
 
 use slint::ModelRc;
@@ -166,7 +168,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     run_app()
 }
 
-fn run_app() -> Result<(), Box<dyn Error>> {
+/// Connect to the daemon (spawning one if needed) and fetch its state,
+/// restarting a daemon whose state no longer parses (an old version).
+fn fetch_initial_daemon_state() -> Result<DaemonState, Box<dyn Error>> {
     let mut daemon_client = match DaemonClient::connect() {
         Ok(client) => client,
         Err(_) => {
@@ -175,9 +179,9 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let daemon_state = match daemon_client.send_command(DaemonCommand::GetState) {
-        Ok(DaemonResponse::State(state)) => state,
-        Ok(_) => return Err("Unexpected response from daemon".into()),
+    match daemon_client.send_command(DaemonCommand::GetState) {
+        Ok(DaemonResponse::State(state)) => Ok(state),
+        Ok(_) => Err("Unexpected response from daemon".into()),
         Err(e) => {
             eprintln!(
                 "Failed to communicate with daemon (possibly old version), restarting: {}",
@@ -189,9 +193,33 @@ fn run_app() -> Result<(), Box<dyn Error>> {
 
             let mut new_client = DaemonClient::connect_with_retry()?;
             match new_client.send_command(DaemonCommand::GetState) {
-                Ok(DaemonResponse::State(state)) => state,
-                _ => return Err("Failed to get daemon state after restart".into()),
+                Ok(DaemonResponse::State(state)) => Ok(state),
+                _ => Err("Failed to get daemon state after restart".into()),
             }
+        }
+    }
+}
+
+fn run_app() -> Result<(), Box<dyn Error>> {
+    let (daemon_state, launch_error) = match fetch_initial_daemon_state() {
+        Ok(state) => (state, None),
+        Err(e) => {
+            // Still open the window: a .desktop launch has no stderr, so a
+            // silent exit looks like the app is broken. The defaults mirror
+            // the .slint property defaults; Inactive keeps controls disabled.
+            eprintln!("Cannot reach the daemon: {e}");
+            (
+                DaemonState {
+                    status: Status::Inactive,
+                    device_id: None,
+                    mic_name: "Spectral-Mic".to_string(),
+                    threshold: 80,
+                    is_playing_original: false,
+                    is_playing_filtered: false,
+                    last_error: None,
+                },
+                Some(format!("Cannot reach the daemon: {e}")),
+            )
         }
     };
 
@@ -250,6 +278,9 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     let current_status = Rc::new(std::cell::Cell::new(daemon_state.status));
 
     update_ui_status(&ui_weak, daemon_state.status);
+    if let Some(msg) = launch_error {
+        show_error(&ui_weak, &msg);
+    }
 
     ui.on_selected_input_index_change({
         let ui_weak = ui_weak.clone();
