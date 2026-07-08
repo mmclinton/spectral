@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- The window now shows an error line under the status bar when an action
+  fails, including when the daemon cannot be reached. Previously errors went
+  to stderr only, which a desktop launch never shows.
+- Launching Spectral without a reachable daemon now opens the window with an
+  explanation instead of exiting before any window appeared.
+
 ### Changed
 - The input threshold now spans the whole slider: 0% is the explicit
   denoise-only baseline (voice gate off) and 1–100% map linearly to a VAD
@@ -16,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cutoff); values 1–49% go from doing nothing to a lenient gate.
 
 ### Fixed
+- The daemon now detects when the audio pipeline dies (for example after a
+  PipeWire restart), tears down the dead virtual mic instead of leaving a
+  silent zombie device selectable, and reports the reason. Previously the
+  status stayed Active while the mic produced silence.
+- The GUI now reconciles its status display with the daemon every second
+  instead of trusting its last click, so a pipeline or daemon death shows up
+  within about a second. Voice-test playback still polls at 250 ms.
+- Disabling now reports virtual-mic teardown failures (the leftover modules
+  are reaped on the next enable) instead of always claiming success.
 - Out-of-range threshold values from a hand-edited settings file or a rogue
   socket client are now clamped to 0–100; previously they produced a cutoff
   above 1.0 that the voice detector can never reach — a permanently silent
