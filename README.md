@@ -1,3 +1,8 @@
+---
+gitea: none
+include_toc: "true"
+---
+
 # Spectral
 
 A real-time audio noise suppression application powered by [RNNoise](https://arxiv.org/pdf/1709.08243), a hybrid DSP and neural-network–based noise suppression system originally developed by Xiph.org.
@@ -24,9 +29,10 @@ A real-time audio noise suppression application powered by [RNNoise](https://arx
 > Spectral requires a running PipeWire session with its session manager
 > (WirePlumber). Manual builds may work but are unsupported.
 
-### NixOS / Nix
+<details>
+<summary><strong>NixOS / Nix</strong></summary>
 
-#### Option 1: Direct installation (try it out)
+**Option 1: Direct installation (try it out)**
 
 ```bash
 # Run directly without installing
@@ -36,7 +42,7 @@ nix run git+https://codeberg.org/mmc/spectral
 nix profile add git+https://codeberg.org/mmc/spectral
 ```
 
-#### Option 2: NixOS declarative installation
+**Option 2: NixOS declarative installation**
 
 Add to your `flake.nix` inputs:
 
@@ -63,7 +69,7 @@ Then in your NixOS configuration:
 }
 ```
 
-#### Option 3: Using the overlay only
+**Option 3: Using the overlay only**
 
 If you prefer manual control over installation:
 
@@ -76,7 +82,10 @@ If you prefer manual control over installation:
 }
 ```
 
-### Arch Linux (AUR)
+</details>
+
+<details>
+<summary><strong>Arch Linux (AUR)</strong></summary>
 
 ```bash
 paru -S spectral-mic   # or: yay -S spectral-mic
@@ -86,6 +95,8 @@ The package is named `spectral-mic` and conflicts with the unrelated AUR
 package `spectral`, which ships the same binary name. Publication to the AUR
 begins with the first announced release; until then the PKGBUILD lives in
 [packaging/aur](packaging/aur).
+
+</details>
 
 ## Usage
 
@@ -113,22 +124,6 @@ begins with the first announced release; until then the PKGBUILD lives in
 - Denoising incoming audio (a "headphones sink") — [EasyEffects](https://github.com/wwmm/easyeffects) covers this well.
 - Systems without PipeWire (pure PulseAudio, ALSA, or JACK).
 - Self-updating — package managers own updates.
-
-## Rendering
-
-Spectral forces Slint to the `winit` backend with the `software` renderer,
-and this is the only renderer compiled into the binary. This combination
-has the broadest coverage: it has no GPU, EGL, Vulkan, GBM, or libdrm
-dependency and therefore survives broken or mismatched Mesa/driver
-stacks, headless sessions, and most container/sandbox setups. Spectral's
-UI is small and static, so CPU rasterization is not noticeable in
-practice.
-
-`SLINT_BACKEND` is set unconditionally at startup, so the environment
-variable cannot be used to switch renderers. If you want a different
-combination, you must rebuild Spectral with the matching
-`slint/renderer-...` feature enabled and remove the override in
-`src/main.rs`.
 
 ## License
 

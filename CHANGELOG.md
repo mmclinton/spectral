@@ -27,7 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a hardcoded mic name.
 - README overhauled: the stale PulseAudio (libpulse) requirement is gone,
   AUR install instructions added, and new troubleshooting, known-limitations,
-  and non-goals sections.
+  and non-goals sections. A follow-up pass added a rendered table of
+  contents, collapsed the per-distro install instructions, and dropped the
+  renderer notes (self-documented in the flake and source).
 - The desktop entry is now a committed file installed by the Nix package
   (previously generated at build time), so all packaging shares one source
   of truth.
