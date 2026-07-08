@@ -14,8 +14,6 @@
   fontconfig,
   freetype,
   pipewire,
-  copyDesktopItems,
-  makeDesktopItem,
   jetbrains-mono,
 }:
 let
@@ -47,7 +45,6 @@ rustPlatform.buildRustPackage {
     pkg-config
     clang
     makeWrapper
-    copyDesktopItems
   ];
 
   buildInputs = runtimeLibs;
@@ -57,33 +54,8 @@ rustPlatform.buildRustPackage {
 
   LIBCLANG_PATH = "${llvmPackages.libclang.lib}/lib";
 
-  desktopItems = [
-    (makeDesktopItem {
-      name = "page.codeberg.mmc.Spectral";
-      desktopName = "Spectral";
-      comment = "Real-time audio noise suppression";
-      exec = "spectral";
-      icon = "page.codeberg.mmc.Spectral";
-      terminal = false;
-      type = "Application";
-      categories = [
-        "AudioVideo"
-        "Audio"
-        "Mixer"
-      ];
-      keywords = [
-        "noise"
-        "suppression"
-        "microphone"
-        "audio"
-        "rnnoise"
-      ];
-      startupNotify = true;
-      startupWMClass = "page.codeberg.mmc.Spectral";
-    })
-  ];
-
   postInstall = ''
+    install -Dm644 assets/page.codeberg.mmc.Spectral.desktop $out/share/applications/page.codeberg.mmc.Spectral.desktop
     install -Dm644 assets/spectral.png $out/share/icons/hicolor/512x512/apps/page.codeberg.mmc.Spectral.png
 
     # Wrap binaries with runtime library paths and fallback font.

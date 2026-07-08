@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Spectral
+Comment=Real-time audio noise suppression
+Exec=spectral
+Icon=page.codeberg.mmc.Spectral
+Terminal=false
+Categories=AudioVideo;Audio;Mixer;
+Keywords=noise;suppression;microphone;audio;rnnoise;
+StartupNotify=true
+StartupWMClass=page.codeberg.mmc.Spectral
