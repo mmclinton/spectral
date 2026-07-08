@@ -50,6 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parse — which optional fields never do — so a stale daemon could survive
   an upgrade undetected and fail later requests confusingly.
 
+### Internal
+- Every push now runs `nix flake check` (build + tests, clippy with denied
+  warnings, formatting) on Codeberg via Forgejo Actions on a self-hosted
+  runner, with a status badge in the README.
+
 ## [0.3.0] - 2026-07-08
 
 ### Added
