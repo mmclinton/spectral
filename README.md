@@ -6,11 +6,11 @@ A real-time audio noise suppression application powered by [RNNoise](https://arx
 
 ## Features
 
-- Real-time noise suppression using RNNoise neural network
-- PipeWire native audio pipeline integration
-- Virtual microphone creation for use with any application
-- Adjustable noise suppression threshold
-- Persistent state across sessions
+- Real-time RNNoise denoising with an adjustable voice-activity gate
+- Native PipeWire virtual microphone, owned by the daemon — it disappears the instant the daemon exits, so stale devices cannot accumulate
+- Automatically set as the system default input on Enable
+- Built-in voice test to compare original and filtered audio
+- Persistent settings across sessions
 
 ## Architecture
 
@@ -20,8 +20,9 @@ A real-time audio noise suppression application powered by [RNNoise](https://arx
 
 ## Installation
 
-> **Nix is the only officially supported installation method.**  
-> Spectral depends on PipeWire, PulseAudio (libpulse), and WirePlumber being correctly configured. The Nix package handles this automatically. Manual builds may work but are unsupported. I am currently working on broadening support.
+> Nix and the AUR are the supported installation methods.
+> Spectral requires a running PipeWire session with its session manager
+> (WirePlumber). Manual builds may work but are unsupported.
 
 ### NixOS / Nix
 
@@ -75,13 +76,43 @@ If you prefer manual control over installation:
 }
 ```
 
+### Arch Linux (AUR)
+
+```bash
+paru -S spectral-mic   # or: yay -S spectral-mic
+```
+
+The package is named `spectral-mic` and conflicts with the unrelated AUR
+package `spectral`, which ships the same binary name. Publication to the AUR
+begins with the first announced release; until then the PKGBUILD lives in
+[packaging/aur](packaging/aur).
+
 ## Usage
 
-1. Launch the GUI: `spectral`
-2. Select your input device from the dropdown
-3. Adjust the noise suppression threshold as needed
-4. Click "Enable" to create the virtual microphone
-5. Select "Spectral-Mic" (or your custom name) as the input in other applications
+1. Launch the GUI: `spectral` (the daemon starts automatically)
+2. Select your input device from the list
+3. Adjust the threshold: 0% is denoise-only, higher values gate more strictly on voice activity
+4. Click "Enable" — the virtual microphone is created and becomes the system default input
+5. Applications that pin a specific device can select the virtual mic by name (default "Spectral-Mic"); "Rename"/"Reset" stage a new name, applied on the next Enable/Apply
+
+## Troubleshooting
+
+- **Your microphone isn't listed:** click "Refresh", or see the in-app "Not seeing your device?" guide.
+- **After a PipeWire restart** (e.g. `systemctl --user restart pipewire`): the device list points at devices that no longer exist — click "Refresh" and re-select before enabling.
+- **Something failed:** errors appear under the status bar; the daemon also logs to `$XDG_RUNTIME_DIR/spectral-daemon.log`.
+- **Voice-test recordings** are saved under `~/.local/state/spectral/recordings`.
+
+## Known limitations
+
+- The window's minimum size is 920×800, which does not fit 768p displays. A responsive-layout fix is planned.
+- Inputs with more than two channels and Bluetooth microphones are untested.
+- Voice-test recordings are not restored in the UI after relaunching the GUI.
+
+## Non-goals
+
+- Denoising incoming audio (a "headphones sink") — [EasyEffects](https://github.com/wwmm/easyeffects) covers this well.
+- Systems without PipeWire (pure PulseAudio, ALSA, or JACK).
+- Self-updating — package managers own updates.
 
 ## Rendering
 
@@ -98,3 +129,9 @@ variable cannot be used to switch renderers. If you want a different
 combination, you must rebuild Spectral with the matching
 `slint/renderer-...` feature enabled and remove the override in
 `src/main.rs`.
+
+## License
+
+Spectral is licensed under the GPL-3.0-only (see [LICENSE](LICENSE)).
+Statically linked third-party components are attributed in
+[THIRD-PARTY.md](THIRD-PARTY.md).
