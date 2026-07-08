@@ -15,7 +15,6 @@
   freetype,
   pipewire,
   libpulseaudio,
-  wireplumber,
   copyDesktopItems,
   makeDesktopItem,
   jetbrains-mono,
@@ -96,12 +95,7 @@ rustPlatform.buildRustPackage {
 
     wrapProgram $out/bin/spectral-daemon \
       --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath runtimeLibs}" \
-      --prefix PATH : "${
-        lib.makeBinPath [
-          pipewire
-          wireplumber
-        ]
-      }"
+      --prefix PATH : "${lib.makeBinPath [ pipewire ]}"
   '';
 
   meta = with lib; {

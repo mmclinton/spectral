@@ -1,53 +1,33 @@
 use crate::state::{AudioDevice, lock_or_recover};
 use pipewire as pw;
 use pw::core::PW_ID_CORE;
+use pw::registry::GlobalObject;
+use pw::spa::utils::dict::DictRef;
 use pw::spa::utils::result::AsyncSeq;
 use pw::{context::ContextRc, main_loop::MainLoopRc, types::ObjectType};
 use std::error::Error;
-use std::process::Command;
 use std::sync::{Arc, Mutex};
 
-pub fn get_input_devices() -> Result<Vec<AudioDevice>, Box<dyn Error>> {
+/// Connect, enumerate every registry global once, and collect whatever
+/// `visit` extracts. One transient PipeWire connection per call.
+fn collect_globals<T, F>(visit: F) -> Result<Vec<T>, Box<dyn Error>>
+where
+    T: 'static,
+    F: Fn(&GlobalObject<&DictRef>) -> Option<T> + 'static,
+{
     let mainloop = MainLoopRc::new(None)?;
     let context = ContextRc::new(&mainloop, None)?;
     let core = context.connect(None)?;
     let registry = core.get_registry()?;
 
-    let devices = Arc::new(Mutex::new(Vec::<AudioDevice>::new()));
-    let devices_clone = devices.clone();
+    let found = Arc::new(Mutex::new(Vec::<T>::new()));
+    let found_clone = found.clone();
 
     let _reg_listener = registry
         .add_listener_local()
         .global(move |global| {
-            if global.type_ == ObjectType::Node
-                && let Some(props) = &global.props
-                && props.get("media.class") == Some("Audio/Source")
-            {
-                let nick = props
-                    .get("node.nick")
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| {
-                        props
-                            .get("node.description")
-                            .map(|s| s.to_string())
-                            .unwrap_or("Unknown".to_string())
-                    });
-
-                // TODO: Validate that "audio.channels" is reliably populated by PipeWire
-                // for all device types. Some devices may not expose this property until
-                // a stream is negotiated. Fallback to 2 (stereo) if not available.
-                let channels = props
-                    .get("audio.channels")
-                    .and_then(|s| s.parse::<u32>().ok())
-                    .unwrap_or(2);
-
-                if !nick.to_lowercase().contains("monitor") {
-                    lock_or_recover(&devices_clone).push(AudioDevice {
-                        id: global.id,
-                        name: nick,
-                        channels,
-                    });
-                }
+            if let Some(item) = visit(global) {
+                lock_or_recover(&found_clone).push(item);
             }
         })
         .register();
@@ -76,8 +56,44 @@ pub fn get_input_devices() -> Result<Vec<AudioDevice>, Box<dyn Error>> {
 
     mainloop.run();
 
-    let input_devices = lock_or_recover(&devices).clone();
-    Ok(input_devices)
+    let items = std::mem::take(&mut *lock_or_recover(&found));
+    Ok(items)
+}
+
+pub fn get_input_devices() -> Result<Vec<AudioDevice>, Box<dyn Error>> {
+    collect_globals(|global| {
+        if global.type_ != ObjectType::Node {
+            return None;
+        }
+        let props = global.props.as_ref()?;
+        if props.get("media.class") != Some("Audio/Source") {
+            return None;
+        }
+
+        let nick = props
+            .get("node.nick")
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| {
+                props
+                    .get("node.description")
+                    .map(|s| s.to_string())
+                    .unwrap_or("Unknown".to_string())
+            });
+
+        // TODO: Validate that "audio.channels" is reliably populated by PipeWire
+        // for all device types. Some devices may not expose this property until
+        // a stream is negotiated. Fallback to 2 (stereo) if not available.
+        let channels = props
+            .get("audio.channels")
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(2);
+
+        (!nick.to_lowercase().contains("monitor")).then_some(AudioDevice {
+            id: global.id,
+            name: nick,
+            channels,
+        })
+    })
 }
 
 /// Get the channel count for a specific device by ID.
@@ -95,34 +111,22 @@ pub fn get_device_channels(device_id: u32) -> u32 {
     }
 }
 
-/// Get the PipeWire node name for a device by its ID.
-///
-/// This queries WirePlumber via `wpctl inspect` to get the node.name property,
-/// which is needed for targeting streams to specific devices.
+/// Get the PipeWire node name for a device by its ID, straight from the
+/// registry — `node.name` is what streams and recorders target.
 ///
 /// # Errors
-/// Returns an error if:
-/// - The `wpctl` command fails to execute
-/// - The node ID doesn't exist
-/// - The node.name property cannot be found in the output
+/// Returns an error if the PipeWire connection fails or no node with that
+/// id exposes a `node.name`.
 pub fn get_node_name(node_id: u32) -> Result<String, Box<dyn Error>> {
-    let output = Command::new("wpctl")
-        .args(["inspect", &node_id.to_string()])
-        .output()?;
-
-    if !output.status.success() {
-        return Err(format!("Failed to inspect node {}", node_id).into());
-    }
-
-    let output_str = String::from_utf8_lossy(&output.stdout);
-
-    for line in output_str.lines() {
-        if line.contains("node.name")
-            && let Some(name_part) = line.split('"').nth(1)
-        {
-            return Ok(name_part.to_string());
+    let names = collect_globals(move |global| {
+        if global.type_ != ObjectType::Node || global.id != node_id {
+            return None;
         }
-    }
+        global.props.as_ref()?.get("node.name").map(str::to_string)
+    })?;
 
-    Err(format!("Could not find node.name for node {}", node_id).into())
+    names
+        .into_iter()
+        .next()
+        .ok_or_else(|| format!("Could not find node.name for node {}", node_id).into())
 }
