@@ -49,6 +49,44 @@ fn update_ui_status(ui_weak: &Weak<MainWindow>, status: Status) {
     }
 }
 
+const DAEMON_UNREACHABLE: &str = "Cannot reach the daemon — restart Spectral to relaunch it";
+
+fn show_error(ui_weak: &Weak<MainWindow>, msg: &str) {
+    if let Some(ui) = ui_weak.upgrade() {
+        ui.set_error_text(msg.into());
+    }
+}
+
+fn clear_error(ui_weak: &Weak<MainWindow>) {
+    show_error(ui_weak, "");
+}
+
+/// Send a command whose only interesting outcome is success or an error
+/// message; failures land in the window's error line, successes clear it.
+fn send_simple_command(ui_weak: &Weak<MainWindow>, command: DaemonCommand, action: &str) {
+    match DaemonClient::connect() {
+        Ok(mut c) => match c.send_command(command) {
+            Ok(DaemonResponse::Ok) => clear_error(ui_weak),
+            Ok(DaemonResponse::Error(e)) => {
+                eprintln!("Failed to {action}: {e}");
+                show_error(ui_weak, &e);
+            }
+            Ok(DaemonResponse::State(_)) => {
+                eprintln!("Unexpected response from daemon");
+                show_error(ui_weak, "Unexpected response from daemon");
+            }
+            Err(e) => {
+                eprintln!("Failed to {action}: {e}");
+                show_error(ui_weak, DAEMON_UNREACHABLE);
+            }
+        },
+        Err(e) => {
+            eprintln!("Failed to connect to daemon: {e}");
+            show_error(ui_weak, DAEMON_UNREACHABLE);
+        }
+    }
+}
+
 /// Whether the device at `idx` in the filtered list equals the applied device,
 /// treating an out-of-range index as "no device" (matches only when none is
 /// applied). The settings-change callbacks share this comparison.
@@ -310,34 +348,49 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                 let mic_name = ui.get_mic_name_text().to_string();
                 if mic_name.is_empty() {
                     eprintln!("Cannot enable: mic name is empty");
+                    show_error(&ui_weak, "Cannot enable: the mic name is empty");
                     return;
                 }
 
-                if idx >= 0
-                    && (idx as usize) < devices.len()
-                    && let Ok(ref mut c) = DaemonClient::connect()
-                {
-                    let device_id = devices[idx as usize].id;
-                    match c.send_command(DaemonCommand::Enable {
-                        device_id,
-                        mic_name: mic_name.clone(),
-                        threshold,
-                    }) {
-                        Ok(DaemonResponse::Ok) => {
-                            applied_threshold.set(threshold);
-                            applied_device_id.set(Some(device_id));
-                            *applied_mic_name.borrow_mut() = mic_name;
-                            current_status.set(Status::Active);
-                            update_ui_status(&ui_weak, Status::Active);
+                if idx >= 0 && (idx as usize) < devices.len() {
+                    match DaemonClient::connect() {
+                        Ok(mut c) => {
+                            let device_id = devices[idx as usize].id;
+                            match c.send_command(DaemonCommand::Enable {
+                                device_id,
+                                mic_name: mic_name.clone(),
+                                threshold,
+                            }) {
+                                Ok(DaemonResponse::Ok) => {
+                                    applied_threshold.set(threshold);
+                                    applied_device_id.set(Some(device_id));
+                                    *applied_mic_name.borrow_mut() = mic_name;
+                                    current_status.set(Status::Active);
+                                    update_ui_status(&ui_weak, Status::Active);
+                                    clear_error(&ui_weak);
+                                }
+                                Ok(DaemonResponse::Error(e)) => {
+                                    eprintln!("Failed to enable: {}", e);
+                                    current_status.set(Status::Inactive);
+                                    update_ui_status(&ui_weak, Status::Inactive);
+                                    show_error(&ui_weak, &e);
+                                }
+                                Ok(DaemonResponse::State(_)) => {
+                                    current_status.set(Status::Inactive);
+                                    update_ui_status(&ui_weak, Status::Inactive);
+                                    show_error(&ui_weak, "Unexpected response from daemon");
+                                }
+                                Err(e) => {
+                                    eprintln!("Failed to enable: {}", e);
+                                    current_status.set(Status::Inactive);
+                                    update_ui_status(&ui_weak, Status::Inactive);
+                                    show_error(&ui_weak, DAEMON_UNREACHABLE);
+                                }
+                            }
                         }
-                        Ok(DaemonResponse::Error(e)) => {
-                            eprintln!("Failed to enable: {}", e);
-                            current_status.set(Status::Inactive);
-                            update_ui_status(&ui_weak, Status::Inactive);
-                        }
-                        _ => {
-                            current_status.set(Status::Inactive);
-                            update_ui_status(&ui_weak, Status::Inactive);
+                        Err(e) => {
+                            eprintln!("Failed to connect to daemon: {}", e);
+                            show_error(&ui_weak, DAEMON_UNREACHABLE);
                         }
                     }
                 }
@@ -349,10 +402,33 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let ui_weak = ui_weak.clone();
         let current_status = current_status.clone();
         move || {
-            if let Ok(ref mut c) = DaemonClient::connect() {
-                let _ = c.send_command(DaemonCommand::Disable);
-                current_status.set(Status::Inactive);
-                update_ui_status(&ui_weak, Status::Inactive);
+            match DaemonClient::connect() {
+                Ok(mut c) => match c.send_command(DaemonCommand::Disable) {
+                    Ok(DaemonResponse::Ok) => {
+                        current_status.set(Status::Inactive);
+                        update_ui_status(&ui_weak, Status::Inactive);
+                        clear_error(&ui_weak);
+                    }
+                    Ok(DaemonResponse::Error(e)) => {
+                        // The daemon stops the pipeline even when module
+                        // teardown fails, so Inactive is still the truth.
+                        eprintln!("Failed to disable cleanly: {}", e);
+                        current_status.set(Status::Inactive);
+                        update_ui_status(&ui_weak, Status::Inactive);
+                        show_error(&ui_weak, &e);
+                    }
+                    Ok(DaemonResponse::State(_)) => {
+                        show_error(&ui_weak, "Unexpected response from daemon");
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to disable: {}", e);
+                        show_error(&ui_weak, DAEMON_UNREACHABLE);
+                    }
+                },
+                Err(e) => {
+                    eprintln!("Failed to connect to daemon: {}", e);
+                    show_error(&ui_weak, DAEMON_UNREACHABLE);
+                }
             }
         }
     });
@@ -417,9 +493,11 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         }
 
                         *devices.borrow_mut() = filtered;
+                        clear_error(&ui_weak);
                     }
                     Err(e) => {
                         eprintln!("Failed to refresh devices: {}", e);
+                        show_error(&ui_weak, &format!("Failed to refresh devices: {e}"));
                     }
                 }
             }
@@ -439,64 +517,34 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    ui.on_start_recording(|| {
-        if let Ok(ref mut c) = DaemonClient::connect() {
-            match c.send_command(DaemonCommand::StartRecording) {
-                Ok(DaemonResponse::Ok) => {}
-                Ok(DaemonResponse::Error(e)) => eprintln!("Failed to start recording: {}", e),
-                _ => eprintln!("Unexpected response from daemon"),
-            }
-        }
+    ui.on_start_recording({
+        let ui_weak = ui_weak.clone();
+        move || send_simple_command(&ui_weak, DaemonCommand::StartRecording, "start recording")
     });
 
-    ui.on_stop_recording(|| {
-        if let Ok(ref mut c) = DaemonClient::connect() {
-            match c.send_command(DaemonCommand::StopRecording) {
-                Ok(DaemonResponse::Ok) => {}
-                Ok(DaemonResponse::Error(e)) => eprintln!("Failed to stop recording: {}", e),
-                _ => eprintln!("Unexpected response from daemon"),
-            }
-        }
+    ui.on_stop_recording({
+        let ui_weak = ui_weak.clone();
+        move || send_simple_command(&ui_weak, DaemonCommand::StopRecording, "stop recording")
     });
 
-    ui.on_play_original(|| {
-        if let Ok(ref mut c) = DaemonClient::connect() {
-            match c.send_command(DaemonCommand::PlayOriginal) {
-                Ok(DaemonResponse::Ok) => {}
-                Ok(DaemonResponse::Error(e)) => eprintln!("Failed to play original: {}", e),
-                _ => eprintln!("Unexpected response from daemon"),
-            }
-        }
+    ui.on_play_original({
+        let ui_weak = ui_weak.clone();
+        move || send_simple_command(&ui_weak, DaemonCommand::PlayOriginal, "play original")
     });
 
-    ui.on_stop_original(|| {
-        if let Ok(ref mut c) = DaemonClient::connect() {
-            match c.send_command(DaemonCommand::StopOriginal) {
-                Ok(DaemonResponse::Ok) => {}
-                Ok(DaemonResponse::Error(e)) => eprintln!("Failed to stop original: {}", e),
-                _ => eprintln!("Unexpected response from daemon"),
-            }
-        }
+    ui.on_stop_original({
+        let ui_weak = ui_weak.clone();
+        move || send_simple_command(&ui_weak, DaemonCommand::StopOriginal, "stop original")
     });
 
-    ui.on_play_filtered(|| {
-        if let Ok(ref mut c) = DaemonClient::connect() {
-            match c.send_command(DaemonCommand::PlayFiltered) {
-                Ok(DaemonResponse::Ok) => {}
-                Ok(DaemonResponse::Error(e)) => eprintln!("Failed to play filtered: {}", e),
-                _ => eprintln!("Unexpected response from daemon"),
-            }
-        }
+    ui.on_play_filtered({
+        let ui_weak = ui_weak.clone();
+        move || send_simple_command(&ui_weak, DaemonCommand::PlayFiltered, "play filtered")
     });
 
-    ui.on_stop_filtered(|| {
-        if let Ok(ref mut c) = DaemonClient::connect() {
-            match c.send_command(DaemonCommand::StopFiltered) {
-                Ok(DaemonResponse::Ok) => {}
-                Ok(DaemonResponse::Error(e)) => eprintln!("Failed to stop filtered: {}", e),
-                _ => eprintln!("Unexpected response from daemon"),
-            }
-        }
+    ui.on_stop_filtered({
+        let ui_weak = ui_weak.clone();
+        move || send_simple_command(&ui_weak, DaemonCommand::StopFiltered, "stop filtered")
     });
 
     ui.on_poll_playback_status({

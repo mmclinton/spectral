@@ -28,6 +28,7 @@ export component MainWindow inherits Window {
     in-out property <int> recording_countdown: 0;
     in-out property <string> status_text: "Status: Inactive";
     in-out property <color> status_color: #FF0000;
+    in-out property <string> error_text: "";
     in-out property <bool> mic_enabled: false;
     in-out property <bool> show_device_help_popup: false;
     in-out property <bool> show_help_popup: false;
@@ -118,6 +119,20 @@ export component MainWindow inherits Window {
                     horizontal-alignment: center;
                     vertical-alignment: center;
                 }
+            }
+
+            // Error line under the status bar
+            if root.error_text != "": Text {
+                x: ((parent.width / 2) - (self.width / 2));
+                y: 64px;
+                width: 600px;
+                height: 20px;
+                text: root.error_text;
+                font-size: 12px;
+                color: #FF4444;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                overflow: elide;
             }
 
             // Input Threshold label
