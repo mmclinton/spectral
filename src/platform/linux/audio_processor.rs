@@ -1,9 +1,10 @@
 use super::audio_devices::get_node_name;
 use super::pipewire::{NativeAudioPipeline, RNNOISE_FRAME_SIZE};
 use super::pulse::PulseContext;
-use crate::state::{AppState, is_valid_mic_name, lock_or_recover, monitor_name, sink_name};
+use crate::state::{AppState, is_valid_mic_name, monitor_name, sink_name};
 use nnnoiseless::DenoiseState;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 /// Maps the 0-100 threshold to a VAD confidence cutoff. 0 disables the gate
 /// (denoise only); 1-100 map linearly to a cutoff of up to 0.95 — the VAD
@@ -15,109 +16,55 @@ fn vad_cutoff(threshold: i32) -> Option<f32> {
     (t > 0).then(|| t as f32 / 100.0 * 0.95)
 }
 
-struct ProcessingContext {
-    denoiser: Box<DenoiseState<'static>>,
-    input_buffer: Vec<f32>,
-    vad_state: f32,
-    scratch_input: Vec<f32>,
-    scratch_output: Vec<f32>,
-}
-
 pub struct AudioProcessor {
     state: Arc<AppState>,
-    context: Mutex<ProcessingContext>,
+    denoiser: Box<DenoiseState<'static>>,
+    vad_state: f32,
 }
 
 impl AudioProcessor {
     pub fn new(state: Arc<AppState>) -> Self {
         Self {
             state,
-            context: Mutex::new(ProcessingContext {
-                denoiser: DenoiseState::new(),
-                input_buffer: Vec::with_capacity(RNNOISE_FRAME_SIZE * 2),
-                vad_state: 0.0,
-                scratch_input: vec![0.0; RNNOISE_FRAME_SIZE],
-                scratch_output: vec![0.0; RNNOISE_FRAME_SIZE],
-            }),
+            denoiser: DenoiseState::new(),
+            vad_state: 0.0,
         }
     }
 
-    pub fn process_audio_buffer(&self, input: &[f32], output: &mut [f32]) {
-        let threshold = self
-            .state
-            .threshold_val
-            .load(std::sync::atomic::Ordering::Relaxed);
+    /// Denoise and gate exactly one frame: `input` is RNNOISE_FRAME_SIZE mono
+    /// samples scaled to the i16 range, `output` receives the processed frame.
+    /// Runs on the real-time audio thread — no locks, no allocations.
+    pub fn process_frame(&mut self, input: &[f32], output: &mut [f32]) {
+        debug_assert_eq!(input.len(), RNNOISE_FRAME_SIZE);
+        debug_assert_eq!(output.len(), RNNOISE_FRAME_SIZE);
 
-        let mut ctx_guard = lock_or_recover(&self.context);
+        let threshold = self.state.threshold_val.load(Ordering::Relaxed);
 
-        let ProcessingContext {
-            denoiser,
-            input_buffer,
-            vad_state,
-            scratch_input,
-            scratch_output,
-        } = &mut *ctx_guard;
+        // RNNoise processes audio in the i16 range [-32768.0, 32767.0] and
+        // returns the frame's VAD probability (0.0-1.0).
+        let vad_probability = self.denoiser.process_frame(output, input);
 
-        input_buffer.extend_from_slice(input);
-
-        let mut out_idx = 0;
-
-        while input_buffer.len() >= RNNOISE_FRAME_SIZE {
-            for (i, sample) in input_buffer.drain(..RNNOISE_FRAME_SIZE).enumerate() {
-                scratch_input[i] = sample;
-            }
-
-            // Apply RNNoise - processes audio in i16 range [-32768.0, 32767.0]
-            // Returns VAD probability (0.0-1.0) indicating voice presence confidence
-            let vad_probability = denoiser.process_frame(scratch_output, scratch_input);
-
-            match vad_cutoff(threshold) {
-                Some(cutoff) => {
-                    let target_gate = if vad_probability > cutoff { 1.0 } else { 0.0 };
-
-                    // Smooth gate transitions: attack=0.50 (~20ms ramp), release=0.96 (~250ms decay)
-                    let attack_coef = 0.50;
-                    let release_coef = 0.96;
-
-                    if target_gate > 0.5 {
-                        *vad_state = attack_coef * (*vad_state) + (1.0 - attack_coef);
-                    } else {
-                        *vad_state *= release_coef;
-                    }
-
-                    let gain = *vad_state;
-                    for &sample in scratch_output.iter() {
-                        if out_idx < output.len() {
-                            output[out_idx] = sample * gain;
-                            out_idx += 1;
-                        }
-                    }
+        match vad_cutoff(threshold) {
+            Some(cutoff) => {
+                // Smooth gate transitions: attack=0.50 (~20ms ramp), release=0.96 (~250ms decay)
+                if vad_probability > cutoff {
+                    self.vad_state = 0.50 * self.vad_state + 0.50;
+                } else {
+                    self.vad_state *= 0.96;
                 }
-                None => {
-                    *vad_state = 0.0;
-                    for &sample in scratch_output.iter() {
-                        if out_idx < output.len() {
-                            output[out_idx] = sample;
-                            out_idx += 1;
-                        }
-                    }
+                for sample in output.iter_mut() {
+                    *sample *= self.vad_state;
                 }
             }
-        }
-
-        while out_idx < output.len() {
-            output[out_idx] = 0.0;
-            out_idx += 1;
+            None => self.vad_state = 0.0,
         }
     }
 }
 
 pub struct VirtualMic {
-    _source_name: String,
     sink_module_id: Option<u32>,
     remap_module_id: Option<u32>,
     audio_pipeline: Option<NativeAudioPipeline>,
-    _processor: Arc<AudioProcessor>,
 }
 
 impl VirtualMic {
@@ -140,7 +87,7 @@ impl VirtualMic {
         if !is_valid_mic_name(virtual_name) {
             return Err(format!("Invalid mic name: {:?}", virtual_name).into());
         }
-        let processor = Arc::new(AudioProcessor::new(state.clone()));
+        let processor = AudioProcessor::new(state.clone());
 
         let source_name = virtual_name.to_string();
         let sink = sink_name(&source_name);
@@ -197,30 +144,24 @@ impl VirtualMic {
 
         let source_node_name = get_node_name(source_device_id)?;
 
-        let audio_pipeline = match NativeAudioPipeline::start(
-            processor.clone(),
-            &source_node_name,
-            &sink,
-            input_channels,
-        ) {
-            Ok(pipeline) => Some(pipeline),
-            Err(e) => {
-                if let Some(remap_id) = remap_module_id {
-                    let _ = pulse_ctx.unload_module(remap_id);
+        let audio_pipeline =
+            match NativeAudioPipeline::start(processor, &source_node_name, &sink, input_channels) {
+                Ok(pipeline) => Some(pipeline),
+                Err(e) => {
+                    if let Some(remap_id) = remap_module_id {
+                        let _ = pulse_ctx.unload_module(remap_id);
+                    }
+                    if let Some(sink_id) = sink_module_id {
+                        let _ = pulse_ctx.unload_module(sink_id);
+                    }
+                    return Err(format!("Failed to start audio pipeline: {}", e).into());
                 }
-                if let Some(sink_id) = sink_module_id {
-                    let _ = pulse_ctx.unload_module(sink_id);
-                }
-                return Err(format!("Failed to start audio pipeline: {}", e).into());
-            }
-        };
+            };
 
         Ok(Self {
-            _source_name: source_name,
             sink_module_id,
             remap_module_id,
             audio_pipeline,
-            _processor: processor,
         })
     }
 

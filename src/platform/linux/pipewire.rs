@@ -44,14 +44,16 @@ pub const RNNOISE_SCALE_FACTOR: f32 = 32768.0;
 const PIPELINE_READY_TIMEOUT: Duration = Duration::from_secs(5);
 
 struct PipelineData {
-    processor: Arc<AudioProcessor>,
+    processor: AudioProcessor,
     input_buffer: Vec<f32>,
     output_buffer: Vec<f32>,
     input_channels: u32,
+    mono_scratch: Vec<f32>,
+    processed_scratch: Vec<f32>,
 }
 
 impl PipelineData {
-    fn new(processor: Arc<AudioProcessor>, input_channels: u32) -> Self {
+    fn new(processor: AudioProcessor, input_channels: u32) -> Self {
         // Clamp channels to valid range
         // TODO: Validate that channel clamping produces acceptable audio quality
         let channels = input_channels.clamp(1, MAX_INPUT_CHANNELS);
@@ -60,6 +62,8 @@ impl PipelineData {
             input_buffer: Vec::with_capacity(RNNOISE_FRAME_SIZE * channels as usize * 4),
             output_buffer: Vec::with_capacity(RNNOISE_FRAME_SIZE * 4),
             input_channels: channels,
+            mono_scratch: vec![0.0; RNNOISE_FRAME_SIZE],
+            processed_scratch: vec![0.0; RNNOISE_FRAME_SIZE],
         }
     }
 }
@@ -90,7 +94,7 @@ impl NativeAudioPipeline {
     /// TODO: Validate that PipeWire correctly negotiates the channel count
     /// for various device types (USB mics, built-in mics, audio interfaces)
     pub fn start(
-        processor: Arc<AudioProcessor>,
+        processor: AudioProcessor,
         source_node: &str,
         sink_node: &str,
         input_channels: u32,
@@ -200,7 +204,7 @@ fn build_audio_format_pod(
 }
 
 fn run_pipeline(
-    processor: Arc<AudioProcessor>,
+    processor: AudioProcessor,
     source_node: &str,
     sink_node: &str,
     running: Arc<AtomicBool>,
@@ -391,8 +395,15 @@ fn process_capture_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCe
 
             let valid_data = &slice[chunk_offset..chunk_offset + chunk_size];
             let mut pipeline_data = data.borrow_mut();
-
-            let input_channels = pipeline_data.input_channels as usize;
+            let PipelineData {
+                processor,
+                input_buffer,
+                output_buffer,
+                input_channels,
+                mono_scratch,
+                processed_scratch,
+            } = &mut *pipeline_data;
+            let channels = *input_channels as usize;
 
             for audio_chunk in valid_data.chunks_exact(4) {
                 let sample = f32::from_le_bytes([
@@ -401,31 +412,24 @@ fn process_capture_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCe
                     audio_chunk[2],
                     audio_chunk[3],
                 ]);
-                pipeline_data.input_buffer.push(sample);
+                input_buffer.push(sample);
             }
 
-            // Process complete frames (480 samples per channel)
-            let frame_size = RNNOISE_FRAME_SIZE * input_channels;
-            while pipeline_data.input_buffer.len() >= frame_size {
-                let frame: Vec<f32> = pipeline_data.input_buffer.drain(..frame_size).collect();
-
+            // Process complete frames (480 samples per channel) in the
+            // preallocated scratch buffers — the RT thread must not allocate.
+            let frame_size = RNNOISE_FRAME_SIZE * channels;
+            while input_buffer.len() >= frame_size {
                 // Convert N channels to mono and scale to i16 range for RNNoise
-                let mut mono_samples = vec![0f32; RNNOISE_FRAME_SIZE];
-                mix_to_mono(&frame, input_channels, &mut mono_samples);
-
-                let mut processed_samples = vec![0f32; RNNOISE_FRAME_SIZE];
-                pipeline_data
-                    .processor
-                    .process_audio_buffer(&mono_samples, &mut processed_samples);
+                mix_to_mono(&input_buffer[..frame_size], channels, mono_scratch);
+                processor.process_frame(mono_scratch, processed_scratch);
 
                 // Scale back to f32 PCM range [-1.0, 1.0]
-                for sample in &mut processed_samples {
+                for sample in processed_scratch.iter_mut() {
                     *sample /= RNNOISE_SCALE_FACTOR;
                 }
 
-                pipeline_data
-                    .output_buffer
-                    .extend_from_slice(&processed_samples);
+                output_buffer.extend_from_slice(processed_scratch);
+                input_buffer.drain(..frame_size);
             }
         }
     }
@@ -447,22 +451,11 @@ fn process_playback_buffer(
             let max_samples = slice.len() / 4;
             let available = pipeline_data.output_buffer.len().min(max_samples);
 
-            let bytes_written = if available > 0 {
-                let output_samples: Vec<f32> =
-                    pipeline_data.output_buffer.drain(..available).collect();
-
-                for (i, &sample) in output_samples.iter().enumerate() {
-                    let bytes = sample.to_le_bytes();
-                    let offset = i * 4;
-                    if offset + 4 <= slice.len() {
-                        // Use safe slice copy instead of unsafe ptr operations
-                        slice[offset..offset + 4].copy_from_slice(&bytes);
-                    }
-                }
-                available * 4
-            } else {
-                0
-            };
+            for (i, sample) in pipeline_data.output_buffer[..available].iter().enumerate() {
+                slice[i * 4..i * 4 + 4].copy_from_slice(&sample.to_le_bytes());
+            }
+            pipeline_data.output_buffer.drain(..available);
+            let bytes_written = available * 4;
 
             // CRITICAL: Set the chunk size to indicate how many bytes we wrote
             let chunk = datas[0].chunk_mut();
@@ -483,5 +476,21 @@ mod tests {
         assert!(result.is_ok(), "Should be able to create audio format pod");
         let pod_bytes = result.unwrap();
         assert!(!pod_bytes.is_empty(), "Pod should have content");
+    }
+
+    #[test]
+    fn mix_to_mono_scales_and_averages() {
+        let mut out = vec![0.0f32; 3];
+        mix_to_mono(&[0.5, -0.25, 1.0], 1, &mut out);
+        assert_eq!(out, [16384.0, -8192.0, 32768.0]);
+
+        let mut out = vec![0.0f32; 2];
+        mix_to_mono(&[1.0, 0.0, -0.5, 0.5], 2, &mut out);
+        assert_eq!(out, [16384.0, 0.0]);
+
+        // Output shorter than the input frames: extra input ignored, no panic.
+        let mut out = vec![0.0f32; 1];
+        mix_to_mono(&[1.0, 1.0], 1, &mut out);
+        assert_eq!(out, [32768.0]);
     }
 }
