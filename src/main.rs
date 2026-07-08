@@ -1,7 +1,7 @@
+mod daemon_launch;
+
 use spectral_lib::audio_devices;
-use spectral_lib::ipc::{
-    DaemonClient, DaemonCommand, DaemonResponse, DaemonState, wait_for_daemon_exit,
-};
+use spectral_lib::ipc::{DaemonClient, DaemonCommand, DaemonResponse, DaemonState};
 use spectral_lib::state::{AudioDevice, MIC_NAME_MAX_LEN, Status};
 
 use slint::ModelRc;
@@ -135,74 +135,15 @@ fn apply_pending_transition(
     }
 }
 
-fn start_daemon() -> Result<(), Box<dyn Error>> {
-    let current_exe = std::env::current_exe()?;
-    let daemon_dir = current_exe
-        .parent()
-        .ok_or("Failed to determine daemon directory (executable might be at root)")?;
-    let daemon_path = daemon_dir.join("spectral-daemon");
-
-    let log_path = std::env::var("XDG_RUNTIME_DIR")
-        .or_else(|_| std::env::var("HOME").map(|h| format!("{}/tmp", h)))
-        .unwrap_or_else(|_| "/tmp".to_string());
-
-    let log_file = std::path::PathBuf::from(log_path).join("spectral-daemon.log");
-    let log = std::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(&log_file)?;
-
-    Command::new(&daemon_path)
-        .stdin(Stdio::null())
-        .stdout(log.try_clone()?)
-        .stderr(log)
-        .spawn()?;
-
-    Ok(())
-}
-
 fn main() -> Result<(), Box<dyn Error>> {
     unsafe { std::env::set_var("SLINT_BACKEND", "winit-software") };
 
     run_app()
 }
 
-/// Connect to the daemon (spawning one if needed) and fetch its state,
-/// restarting a daemon whose state no longer parses (an old version).
-fn fetch_initial_daemon_state() -> Result<DaemonState, Box<dyn Error>> {
-    let mut daemon_client = match DaemonClient::connect() {
-        Ok(client) => client,
-        Err(_) => {
-            start_daemon()?;
-            DaemonClient::connect_with_retry()?
-        }
-    };
-
-    match daemon_client.send_command(DaemonCommand::GetState) {
-        Ok(DaemonResponse::State(state)) => Ok(state),
-        Ok(_) => Err("Unexpected response from daemon".into()),
-        Err(e) => {
-            eprintln!(
-                "Failed to communicate with daemon (possibly old version), restarting: {}",
-                e
-            );
-            let _ = daemon_client.send_command(DaemonCommand::Shutdown);
-            wait_for_daemon_exit()?;
-            start_daemon()?;
-
-            let mut new_client = DaemonClient::connect_with_retry()?;
-            match new_client.send_command(DaemonCommand::GetState) {
-                Ok(DaemonResponse::State(state)) => Ok(state),
-                _ => Err("Failed to get daemon state after restart".into()),
-            }
-        }
-    }
-}
-
 fn run_app() -> Result<(), Box<dyn Error>> {
-    let (daemon_state, launch_error) = match fetch_initial_daemon_state() {
-        Ok(state) => (state, None),
+    let (daemon_state, launch_error) = match daemon_launch::connect_and_fetch_state() {
+        Ok((_, state)) => (state, None),
         Err(e) => {
             // Still open the window: a .desktop launch has no stderr, so a
             // silent exit looks like the app is broken. The defaults mirror
