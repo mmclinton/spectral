@@ -49,14 +49,15 @@ export component MainWindow inherits Window {
     callback stop_original();
     callback play_filtered();
     callback stop_filtered();
-    callback poll_playback_status();
+    callback poll_daemon_state();
 
-    // Timer to poll playback status when playing
+    // Always-on daemon reconcile: 1s heartbeat, 250ms while playback
+    // glyphs need snappy updates
     Timer {
-        interval: 250ms;
-        running: root.is_playing_original || root.is_playing_filtered;
+        interval: (root.is_playing_original || root.is_playing_filtered) ? 250ms : 1s;
+        running: true;
         triggered => {
-            root.poll_playback_status();
+            root.poll_daemon_state();
         }
     }
 

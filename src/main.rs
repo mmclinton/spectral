@@ -102,6 +102,16 @@ fn device_matches_applied(
     }
 }
 
+/// The status to display given the daemon's truth and the local view: staged
+/// but unapplied edits (a local Pending over a daemon Active) survive the
+/// poll; everything else defers to the daemon.
+fn reconcile_status(daemon: Status, local: Status) -> Status {
+    match (daemon, local) {
+        (Status::Active, Status::Pending) => Status::Pending,
+        (daemon, _) => daemon,
+    }
+}
+
 /// Drive the Active↔Pending transition shared by the settings-change callbacks:
 /// an applied (Active) mic drifts to Pending when settings diverge, and back to
 /// Active when they realign. Any other state is left untouched.
@@ -547,15 +557,50 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         move || send_simple_command(&ui_weak, DaemonCommand::StopFiltered, "stop filtered")
     });
 
-    ui.on_poll_playback_status({
+    ui.on_poll_daemon_state({
         let ui_weak = ui_weak.clone();
+        let current_status = current_status.clone();
+        let last_daemon_error = std::cell::RefCell::new(None::<String>);
         move || {
-            if let Some(ui) = ui_weak.upgrade()
-                && let Ok(ref mut c) = DaemonClient::connect()
-                && let Ok(DaemonResponse::State(state)) = c.send_command(DaemonCommand::GetState)
-            {
-                ui.set_is_playing_original(state.is_playing_original);
-                ui.set_is_playing_filtered(state.is_playing_filtered);
+            let Some(ui) = ui_weak.upgrade() else { return };
+            match DaemonClient::connect() {
+                Ok(mut c) => match c.send_command(DaemonCommand::GetState) {
+                    Ok(DaemonResponse::State(state)) => {
+                        ui.set_is_playing_original(state.is_playing_original);
+                        ui.set_is_playing_filtered(state.is_playing_filtered);
+
+                        let display = reconcile_status(state.status, current_status.get());
+                        if display != current_status.get() {
+                            current_status.set(display);
+                            update_ui_status(&ui_weak, display);
+                        }
+
+                        // Show a daemon error only when it changes so a sticky
+                        // one can't stomp fresher local messages every tick;
+                        // None never clears (local errors must outlive a tick).
+                        if state.last_error != *last_daemon_error.borrow() {
+                            if let Some(msg) = &state.last_error {
+                                show_error(&ui_weak, msg);
+                            }
+                            *last_daemon_error.borrow_mut() = state.last_error;
+                        }
+                    }
+                    Ok(_) => show_error(&ui_weak, "Unexpected response from daemon"),
+                    Err(_) => {
+                        show_error(&ui_weak, DAEMON_UNREACHABLE);
+                    }
+                },
+                Err(_) => {
+                    // Daemon gone means the pipeline is gone too: force the
+                    // display to Inactive so the controls offer Enable. If the
+                    // daemon somehow returns on its own the message lingers —
+                    // accepted, nothing auto-restarts it.
+                    show_error(&ui_weak, DAEMON_UNREACHABLE);
+                    if current_status.get() != Status::Inactive {
+                        current_status.set(Status::Inactive);
+                        update_ui_status(&ui_weak, Status::Inactive);
+                    }
+                }
             }
         }
     });
@@ -563,4 +608,32 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     ui.run()?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reconcile_prefers_daemon_truth_except_for_staged_edits() {
+        use Status::*;
+        let cases = [
+            (Active, Active, Active),
+            (Active, Pending, Pending),
+            (Active, Inactive, Active),
+            (Inactive, Active, Inactive),
+            (Inactive, Pending, Inactive),
+            (Inactive, Inactive, Inactive),
+            (Pending, Active, Pending),
+            (Pending, Pending, Pending),
+            (Pending, Inactive, Pending),
+        ];
+        for (daemon, local, expected) in cases {
+            assert_eq!(
+                reconcile_status(daemon, local),
+                expected,
+                "daemon {daemon:?}, local {local:?}"
+            );
+        }
+    }
 }
