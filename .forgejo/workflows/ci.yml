@@ -1,0 +1,11 @@
+name: ci
+on: [push]
+
+jobs:
+  check:
+    # Self-hosted host-mode runner with Nix on PATH (warm store); Codeberg's
+    # hosted runners cannot fit this build inside their 10-minute cap.
+    runs-on: self-hosted
+    steps:
+      - uses: https://github.com/actions/checkout@v4
+      - run: nix flake check --print-build-logs
