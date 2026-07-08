@@ -43,7 +43,10 @@ impl AudioProcessor {
     }
 
     pub fn process_audio_buffer(&self, input: &[f32], output: &mut [f32]) {
-        let threshold = *lock_or_recover(&self.state.threshold_val);
+        let threshold = self
+            .state
+            .threshold_val
+            .load(std::sync::atomic::Ordering::Relaxed);
 
         let mut ctx_guard = lock_or_recover(&self.context);
 

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::AtomicI32;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 /// The process-wide locking policy: recover from poisoned mutexes instead of
@@ -35,7 +36,8 @@ pub enum Status {
 pub struct AppState {
     pub status: Arc<Mutex<Status>>,
     pub selected_device_id: Arc<Mutex<Option<u32>>>,
-    pub threshold_val: Arc<Mutex<i32>>,
+    /// Atomic so the real-time audio path can read it without locking.
+    pub threshold_val: Arc<AtomicI32>,
     pub mic_name: Arc<Mutex<String>>,
     /// Why the mic is not active: set on pipeline death or a failed
     /// enable/disable, cleared when an enable or disable succeeds.
@@ -53,7 +55,7 @@ impl AppState {
         Self {
             status: Arc::new(Mutex::new(Status::Inactive)),
             selected_device_id: Arc::new(Mutex::new(None)),
-            threshold_val: Arc::new(Mutex::new(80)),
+            threshold_val: Arc::new(AtomicI32::new(80)),
             mic_name: Arc::new(Mutex::new("Spectral-Mic".to_string())),
             last_error: Arc::new(Mutex::new(None)),
         }

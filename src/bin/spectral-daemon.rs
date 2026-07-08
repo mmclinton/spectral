@@ -76,7 +76,9 @@ fn main() {
         persisted.threshold = persisted.threshold.clamp(0, 100);
     }
     {
-        *lock_or_recover(&state.threshold_val) = persisted.threshold;
+        state
+            .threshold_val
+            .store(persisted.threshold, Ordering::Relaxed);
         *lock_or_recover(&state.mic_name) = persisted.mic_name.clone();
         *lock_or_recover(&state.selected_device_id) = persisted.device_id;
     }
@@ -172,17 +174,17 @@ fn handle_client(
     playback_filtered: Arc<Mutex<Option<Child>>>,
 ) -> Result<(), std::io::Error> {
     // LOCK ORDERING CONVENTION:
-    // To prevent deadlocks, always acquire locks in this order:
-    // 1. state.threshold_val
-    // 2. state.mic_name
-    // 3. state.selected_device_id
-    // 4. virtual_mic
-    // 5. state.status
-    // 6. state.last_error
-    // 7. recording_original
-    // 8. recording_filtered
-    // 9. playback_original
-    // 10. playback_filtered
+    // To prevent deadlocks, always acquire locks in this order
+    // (state.threshold_val is an atomic and exempt):
+    // 1. state.mic_name
+    // 2. state.selected_device_id
+    // 3. virtual_mic
+    // 4. state.status
+    // 5. state.last_error
+    // 6. recording_original
+    // 7. recording_filtered
+    // 8. playback_original
+    // 9. playback_filtered
     //
     // Important: Release locks as soon as possible by limiting scope.
     // Never hold multiple locks longer than necessary.
@@ -204,7 +206,7 @@ fn handle_client(
                             continue;
                         }
                         let threshold = threshold.clamp(0, 100);
-                        *lock_or_recover(&state.threshold_val) = threshold;
+                        state.threshold_val.store(threshold, Ordering::Relaxed);
                         *lock_or_recover(&state.mic_name) = mic_name.clone();
                         *lock_or_recover(&state.selected_device_id) = Some(device_id);
 
@@ -324,7 +326,7 @@ fn handle_client(
                             }
                         };
 
-                        let threshold = *lock_or_recover(&state.threshold_val);
+                        let threshold = state.threshold_val.load(Ordering::Relaxed);
                         let mic_name = lock_or_recover(&state.mic_name).clone();
                         let device_id = *lock_or_recover(&state.selected_device_id);
                         let last_error = lock_or_recover(&state.last_error).clone();
