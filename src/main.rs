@@ -212,6 +212,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                 DaemonState {
                     status: Status::Inactive,
                     device_id: None,
+                    device_node_name: None,
                     mic_name: "Spectral-Mic".to_string(),
                     threshold: 80,
                     is_playing_original: false,
@@ -398,9 +399,9 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         Ok(mut c) => {
                             let device_id = devices[idx as usize].id;
                             match c.send_command(DaemonCommand::Enable {
-                                device_id,
-                                mic_name: mic_name.clone(),
-                                threshold,
+                                device_id: Some(device_id),
+                                mic_name: Some(mic_name.clone()),
+                                threshold: Some(threshold),
                             }) {
                                 Ok(DaemonResponse::Ok) => {
                                     applied_threshold.set(threshold);

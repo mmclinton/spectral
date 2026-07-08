@@ -182,6 +182,26 @@ pub fn set_default_source(node_name: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Resolve an `Audio/Source` node's current registry id by its `node.name`.
+/// Ids are scoped to one PipeWire instance, so the name is the durable
+/// handle. A missing node is `Ok(None)`, not an error.
+///
+/// # Errors
+/// Returns an error if the PipeWire connection fails.
+pub fn find_node_id(node_name: &str) -> Result<Option<u32>, Box<dyn Error>> {
+    let node_name = node_name.to_string();
+    let ids = collect_globals(move |global| {
+        if global.type_ != ObjectType::Node {
+            return None;
+        }
+        let props = global.props.as_ref()?;
+        (props.get("media.class") == Some("Audio/Source")
+            && props.get("node.name") == Some(node_name.as_str()))
+        .then_some(global.id)
+    })?;
+    Ok(ids.into_iter().next())
+}
+
 /// Get the PipeWire node name for a device by its ID, straight from the
 /// registry — `node.name` is what streams and recorders target.
 ///

@@ -41,10 +41,12 @@ mod pid_file {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum DaemonCommand {
+    /// `None` fields mean "keep the daemon's current setting"; the device is
+    /// then resolved from the remembered node name (ids are per-instance).
     Enable {
-        device_id: u32,
-        mic_name: String,
-        threshold: i32,
+        device_id: Option<u32>,
+        mic_name: Option<String>,
+        threshold: Option<i32>,
     },
     Disable,
     GetState,
@@ -61,12 +63,15 @@ pub enum DaemonCommand {
 pub struct DaemonState {
     pub status: Status,
     pub device_id: Option<u32>,
+    // Fields added after a release (device_node_name, last_error) are
+    // deliberately not #[serde(default)]: a new client must fail to parse an
+    // old daemon's state so it trips its restart-old-daemon path and
+    // upgrades it.
+    pub device_node_name: Option<String>,
     pub mic_name: String,
     pub threshold: i32,
     pub is_playing_original: bool,
     pub is_playing_filtered: bool,
-    // Deliberately not #[serde(default)]: a new GUI must fail to parse an old
-    // daemon's state so it trips its restart-old-daemon path and upgrades it.
     pub last_error: Option<String>,
 }
 

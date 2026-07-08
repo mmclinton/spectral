@@ -1,4 +1,4 @@
-use spectral_lib::audio_devices::{get_device_channels, get_node_name};
+use spectral_lib::audio_devices::{find_node_id, get_device_channels, get_node_name};
 use spectral_lib::audio_processor::VirtualMic;
 use spectral_lib::ipc::{DaemonCommand, DaemonResponse, DaemonServer, DaemonState};
 use spectral_lib::persistence::{
@@ -144,6 +144,102 @@ fn main() {
     let _ = signal_thread.join();
 }
 
+/// Resolve the effective mic name, threshold, and device for an Enable
+/// request (`None` means "keep the current setting"), then (re)create the
+/// virtual mic. The running mic is only stopped once resolution has fully
+/// succeeded, so a rejected request leaves the active state untouched.
+fn handle_enable(
+    state: &Arc<AppState>,
+    virtual_mic: &Mutex<Option<VirtualMic>>,
+    device_id: Option<u32>,
+    mic_name: Option<String>,
+    threshold: Option<i32>,
+) -> DaemonResponse {
+    let mic_name = match mic_name {
+        Some(name) => {
+            if !is_valid_mic_name(&name) {
+                return DaemonResponse::Error(
+                    "Invalid mic name: only [A-Za-z0-9_-] allowed, 1-21 chars".to_string(),
+                );
+            }
+            name
+        }
+        None => lock_or_recover(&state.mic_name).clone(),
+    };
+    let threshold = match threshold {
+        Some(t) => t.clamp(0, 100),
+        None => state.threshold_val.load(Ordering::Relaxed),
+    };
+    let (device_id, device_node_name) = match device_id {
+        Some(id) => match get_node_name(id) {
+            Ok(name) => (id, name),
+            Err(e) => {
+                return DaemonResponse::Error(format!(
+                    "Cannot use device {id}: {e} (stale id? refresh the device list or run `spectral devices`)"
+                ));
+            }
+        },
+        None => {
+            let remembered = lock_or_recover(&state.device_node_name).clone();
+            match remembered {
+                Some(name) => match find_node_id(&name) {
+                    Ok(Some(id)) => (id, name),
+                    Ok(None) => {
+                        return DaemonResponse::Error(format!(
+                            "Remembered device \"{name}\" is not present — run `spectral devices` and pass --device"
+                        ));
+                    }
+                    Err(e) => {
+                        return DaemonResponse::Error(format!("Failed to query PipeWire: {e}"));
+                    }
+                },
+                None => {
+                    return DaemonResponse::Error(
+                        "No device selected — pass --device <id> (see `spectral devices`)"
+                            .to_string(),
+                    );
+                }
+            }
+        }
+    };
+
+    state.threshold_val.store(threshold, Ordering::Relaxed);
+    *lock_or_recover(&state.mic_name) = mic_name.clone();
+    *lock_or_recover(&state.selected_device_id) = Some(device_id);
+    *lock_or_recover(&state.device_node_name) = Some(device_node_name.clone());
+
+    if let Err(e) = save_state(&PersistedState {
+        device_id: Some(device_id),
+        device_node_name: Some(device_node_name),
+        mic_name: mic_name.clone(),
+        threshold,
+    }) {
+        eprintln!("Failed to persist settings: {}", e);
+    }
+
+    let mut mic_guard = lock_or_recover(virtual_mic);
+    if let Some(mic) = mic_guard.take() {
+        mic.stop();
+    }
+
+    // TODO: Validate channel detection for dynamically connected devices
+    let channels = get_device_channels(device_id);
+    match VirtualMic::create(state.clone(), device_id, &mic_name, channels) {
+        Ok(mic) => {
+            *mic_guard = Some(mic);
+            state.update_status(Status::Active);
+            state.set_last_error(None);
+            DaemonResponse::Ok
+        }
+        Err(e) => {
+            state.update_status(Status::Inactive);
+            let msg = format!("Failed to create virtual mic: {}", e);
+            state.set_last_error(Some(msg.clone()));
+            DaemonResponse::Error(msg)
+        }
+    }
+}
+
 fn handle_client(
     conn: &mut spectral_lib::ipc::DaemonConnection,
     state: Arc<AppState>,
@@ -178,52 +274,7 @@ fn handle_client(
                         device_id,
                         mic_name,
                         threshold,
-                    } => {
-                        if !is_valid_mic_name(&mic_name) {
-                            conn.send_response(DaemonResponse::Error(
-                                "Invalid mic name: only [A-Za-z0-9_-] allowed, 1-21 chars"
-                                    .to_string(),
-                            ))?;
-                            continue;
-                        }
-                        let threshold = threshold.clamp(0, 100);
-                        let device_node_name = get_node_name(device_id).ok();
-                        state.threshold_val.store(threshold, Ordering::Relaxed);
-                        *lock_or_recover(&state.mic_name) = mic_name.clone();
-                        *lock_or_recover(&state.selected_device_id) = Some(device_id);
-                        *lock_or_recover(&state.device_node_name) = device_node_name.clone();
-
-                        if let Err(e) = save_state(&PersistedState {
-                            device_id: Some(device_id),
-                            device_node_name,
-                            mic_name: mic_name.clone(),
-                            threshold,
-                        }) {
-                            eprintln!("Failed to persist settings: {}", e);
-                        }
-
-                        let mut mic_guard = lock_or_recover(&virtual_mic);
-                        if let Some(mic) = mic_guard.take() {
-                            mic.stop();
-                        }
-
-                        // TODO: Validate channel detection for dynamically connected devices
-                        let channels = get_device_channels(device_id);
-                        match VirtualMic::create(state.clone(), device_id, &mic_name, channels) {
-                            Ok(mic) => {
-                                *mic_guard = Some(mic);
-                                state.update_status(Status::Active);
-                                state.set_last_error(None);
-                                DaemonResponse::Ok
-                            }
-                            Err(e) => {
-                                state.update_status(Status::Inactive);
-                                let msg = format!("Failed to create virtual mic: {}", e);
-                                state.set_last_error(Some(msg.clone()));
-                                DaemonResponse::Error(msg)
-                            }
-                        }
-                    }
+                    } => handle_enable(&state, &virtual_mic, device_id, mic_name, threshold),
                     DaemonCommand::Disable => {
                         let mut mic_guard = lock_or_recover(&virtual_mic);
                         if let Some(mic) = mic_guard.take() {
@@ -293,10 +344,12 @@ fn handle_client(
                         let threshold = state.threshold_val.load(Ordering::Relaxed);
                         let mic_name = lock_or_recover(&state.mic_name).clone();
                         let device_id = *lock_or_recover(&state.selected_device_id);
+                        let device_node_name = lock_or_recover(&state.device_node_name).clone();
                         let last_error = lock_or_recover(&state.last_error).clone();
                         let daemon_state = DaemonState {
                             status,
                             device_id,
+                            device_node_name,
                             mic_name,
                             threshold,
                             is_playing_original,
