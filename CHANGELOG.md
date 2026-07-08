@@ -15,12 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   explanation instead of exiting before any window appeared.
 
 ### Changed
+- The virtual microphone is now a native PipeWire source owned by the
+  daemon instead of PulseAudio null-sink + remap-source modules. Exactly
+  one new device appears — an input; the "Spectral-DoNotUse" output device
+  is gone — and the mic vanishes the instant the daemon exits, so leaked
+  devices are impossible by construction. The default input is selected
+  through PipeWire metadata (the same value `wpctl set-default` writes),
+  and the pipeline now requests a 10 ms quantum, cutting end-to-end
+  latency when the graph grants it.
 - The input threshold now spans the whole slider: 0% is the explicit
   denoise-only baseline (voice gate off) and 1–100% map linearly to a VAD
   confidence cutoff of up to 0.95. Previously 0–49% were all identical to
   denoise-only and only 50–100% drove the gate. Values 50–100% keep almost
   exactly their old meaning (the default of 80% moves from a 0.77 to a 0.76
   cutoff); values 1–49% go from doing nothing to a lenient gate.
+
+### Removed
+- The `--reap` subcommand and all PulseAudio module handling, including
+  the libpulse dependency — with the mic's objects owned by the daemon
+  process there is nothing left to leak or reap. One-time note when
+  upgrading from 0.2.x: modules leaked by old versions are no longer swept
+  automatically. Any 0.2.3 daemon start already cleaned them; a lingering
+  "Spectral-DoNotUse"/"Spectral-Mic" pair can be removed with
+  `pactl unload-module module-remap-source` then
+  `pactl unload-module module-null-sink`, or a session restart.
 
 ### Fixed
 - The daemon now detects when the audio pipeline dies (for example after a
@@ -46,6 +64,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failures could likewise orphan the recorder that did start.
 
 ### Internal
+- The real-time audio path no longer takes locks or allocates: the threshold
+  is an atomic, the denoiser state is owned by the pipeline thread, and both
+  stream callbacks reuse preallocated buffers.
+- Node names are resolved from the PipeWire registry instead of shelling out
+  to `wpctl`, dropping the WirePlumber CLI from the daemon's runtime
+  dependencies.
+- Enable's readiness gate now verifies both streams and the mic's feed link
+  natively; the previous gate only waited for the PulseAudio source to
+  register.
 - The daemon's state query now takes its locks one at a time instead of holding
   all three simultaneously in reverse of the documented lock order, closing a
   latent deadlock trap.
