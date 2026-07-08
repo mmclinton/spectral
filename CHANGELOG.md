@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Headless CLI: `spectral enable|disable|status|devices|shutdown` control the
+  daemon without the GUI (bare `spectral` still opens it). `enable` accepts
+  `--device`, `--threshold`, and `--mic-name`, spawns the daemon when none is
+  running, and keeps the current settings for omitted flags. Exit codes:
+  0 success, 1 runtime failure, 2 usage error.
 - AUR packaging under `packaging/aur/` (package name `spectral-mic`; the AUR
   name `spectral` belongs to an unrelated project shipping the same binary
   name, so the package conflicts with it).
@@ -19,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   profile: thin LTO, one codegen unit, stripped symbols; panic stays `unwind`.
 
 ### Changed
+- The daemon remembers the selected input device by PipeWire node name and
+  re-resolves it when enabling, so re-enabling survives reboots and PipeWire
+  restarts (numeric device ids are scoped to one PipeWire instance and go
+  stale with it).
 - The Help and device-troubleshooting popups now describe the PipeWire-native
   reality: WirePlumber in the service check, `wpctl status` and Bluetooth
   HSP/HFP profiles in diagnosis, guidance to Refresh after a PipeWire restart
@@ -33,6 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The desktop entry is now a committed file installed by the Nix package
   (previously generated at build time), so all packaging shares one source
   of truth.
+
+### Fixed
+- Clients now reliably detect and replace an outdated running daemon after
+  an upgrade, via an explicit protocol-version field in the daemon's state.
+  The previous detection relied on newly added state fields failing to
+  parse — which optional fields never do — so a stale daemon could survive
+  an upgrade undetected and fail later requests confusingly.
 
 ## [0.3.0] - 2026-07-08
 
