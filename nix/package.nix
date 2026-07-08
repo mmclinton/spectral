@@ -14,7 +14,6 @@
   fontconfig,
   freetype,
   pipewire,
-  libpulseaudio,
   copyDesktopItems,
   makeDesktopItem,
   jetbrains-mono,
@@ -33,7 +32,6 @@ let
     fontconfig
     freetype
     pipewire
-    libpulseaudio
   ];
 in
 rustPlatform.buildRustPackage {

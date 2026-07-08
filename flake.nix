@@ -50,12 +50,12 @@
           # cleanup via Drop); SIGKILL is a last resort, after re-verifying
           # the PID still belongs to a spectral-daemon. The IPC Shutdown
           # command is avoided: it exits without running Drop, leaving stale
-          # files — which are swept here instead. Virtual-mic PulseAudio modules
-          # a SIGKILLed daemon can't unload are reaped via `spectral-daemon
-          # --reap` once no daemon remains. Process matching covers both
-          # dev builds (comm "spectral-daemon") and Nix-wrapped installs
-          # (".spectral-daemon-wrapped", comm-truncated to ".spectral-daemo"),
-          # with the pidfile as a verified fallback for renamed wrappers.
+          # files — which are swept here instead. The virtual mic itself needs
+          # no sweeping: its PipeWire objects die with the daemon process.
+          # Process matching covers both dev builds (comm "spectral-daemon")
+          # and Nix-wrapped installs (".spectral-daemon-wrapped",
+          # comm-truncated to ".spectral-daemo"), with the pidfile as a
+          # verified fallback for renamed wrappers.
           spectral-teardown = pkgs.writers.writeFishBin "spectral-teardown" ''
             set PATH ${pkgs.lib.makeBinPath (with pkgs; [ procps util-linux coreutils ])} $PATH
 
@@ -119,26 +119,6 @@
                         rm -f $f
                         echo "spectral-teardown: removed stale $f"
                     end
-                end
-                # No daemon remains; sweep any virtual-mic modules a killed or
-                # crashed instance leaked (SIGKILL bypasses the daemon's Drop).
-                # Only a freshly built binary understands --reap; an installed one
-                # on PATH does not and would relaunch the daemon instead, so PATH
-                # is deliberately not consulted. timeout is a safety net so a
-                # mismatched or hung binary can never block teardown.
-                set -l reaper
-                for cand in ./target/debug/spectral-daemon ./result/bin/spectral-daemon ./target/release/spectral-daemon
-                    if test -x $cand
-                        set reaper $cand
-                        break
-                    end
-                end
-                if test -n "$reaper"
-                    if not timeout 15 $reaper --reap
-                        echo "spectral-teardown: reap via $reaper did not complete; leaked modules (if any) will be swept on the next launch" >&2
-                    end
-                else
-                    echo "spectral-teardown: no freshly built spectral-daemon found; leaked modules (if any) will be swept on the next launch" >&2
                 end
             end
           '';

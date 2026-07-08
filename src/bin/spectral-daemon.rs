@@ -1,5 +1,5 @@
 use spectral_lib::audio_devices::{get_device_channels, get_node_name};
-use spectral_lib::audio_processor::{VirtualMic, reap_leaked_modules};
+use spectral_lib::audio_processor::VirtualMic;
 use spectral_lib::ipc::{DaemonCommand, DaemonResponse, DaemonServer, DaemonState};
 use spectral_lib::persistence::{
     PersistedState, get_filtered_recording_path, get_original_recording_path, load_state,
@@ -23,17 +23,6 @@ fn path_to_str(path: &Path) -> Result<String, std::io::Error> {
 }
 
 fn main() {
-    if std::env::args().skip(1).any(|arg| arg == "--reap") {
-        match reap_leaked_modules() {
-            Ok(n) => println!("[reap] unloaded {n} leaked module(s)"),
-            Err(e) => {
-                eprintln!("[reap] failed: {e}");
-                std::process::exit(1);
-            }
-        }
-        return;
-    }
-
     let state = Arc::new(AppState::new());
     let virtual_mic: Arc<Mutex<Option<VirtualMic>>> = Arc::new(Mutex::new(None));
 
@@ -90,14 +79,6 @@ fn main() {
             return;
         }
     };
-
-    // Now that we hold the single-instance lock, clear any modules an earlier
-    // instance leaked (a crash or SIGKILL bypasses VirtualMic's Drop).
-    match reap_leaked_modules() {
-        Ok(0) => {}
-        Ok(n) => eprintln!("[startup] reaped {n} leaked virtual-mic module(s)"),
-        Err(e) => eprintln!("[startup] module reap skipped: {e}"),
-    }
 
     remove_legacy_recordings();
 
@@ -219,11 +200,6 @@ fn handle_client(
                         let mut mic_guard = lock_or_recover(&virtual_mic);
                         if let Some(mic) = mic_guard.take() {
                             mic.stop();
-                        }
-                        // Sweep any orphaned modules before creating fresh ones so a
-                        // failed prior teardown can't accumulate duplicates.
-                        if let Err(e) = reap_leaked_modules() {
-                            eprintln!("[enable] module reap skipped: {e}");
                         }
 
                         // TODO: Validate channel detection for dynamically connected devices

@@ -17,5 +17,3 @@ pub use linux::ipc;
 pub use linux::persistence;
 #[cfg(target_os = "linux")]
 pub use linux::pipewire;
-#[cfg(target_os = "linux")]
-pub use linux::pulse;

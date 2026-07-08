@@ -1,6 +1,5 @@
 use super::audio_devices::{get_node_name, set_default_source};
 use super::pipewire::{NativeAudioPipeline, RNNOISE_FRAME_SIZE};
-use super::pulse::PulseContext;
 use crate::state::{AppState, is_valid_mic_name};
 use nnnoiseless::DenoiseState;
 use std::sync::Arc;
@@ -117,13 +116,6 @@ impl VirtualMic {
             pipeline.stop();
         }
     }
-}
-
-/// Connect to PulseAudio and unload any Spectral virtual-mic modules orphaned by
-/// a previous daemon instance (crash/SIGKILL bypasses Drop). Best-effort cleanup
-/// keyed on the modules' own properties; returns the number unloaded.
-pub fn reap_leaked_modules() -> Result<usize, String> {
-    PulseContext::new("spectral-reap")?.reap_spectral_modules()
 }
 
 #[cfg(test)]

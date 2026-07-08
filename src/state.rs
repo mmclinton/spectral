@@ -80,26 +80,3 @@ pub fn is_valid_mic_name(name: &str) -> bool {
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
-
-/// PulseAudio node names derived from a mic name. `VirtualMic::create` owns this
-/// scheme; every other consumer (e.g. filtered recording) derives names through
-/// these helpers so the sink and its monitor can never drift out of sync.
-pub fn sink_name(mic_name: &str) -> String {
-    format!("{mic_name}_sink")
-}
-
-pub fn monitor_name(mic_name: &str) -> String {
-    format!("{}.monitor", sink_name(mic_name))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn names_follow_the_pulseaudio_scheme() {
-        assert_eq!(sink_name("Spectral-Mic"), "Spectral-Mic_sink");
-        assert_eq!(monitor_name("Spectral-Mic"), "Spectral-Mic_sink.monitor");
-        assert_eq!(monitor_name("x"), format!("{}.monitor", sink_name("x")));
-    }
-}
