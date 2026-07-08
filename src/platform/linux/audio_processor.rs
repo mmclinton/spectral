@@ -1,4 +1,4 @@
-use super::audio_devices::get_node_name;
+use super::audio_devices::{get_node_name, set_default_source};
 use super::pipewire::{NativeAudioPipeline, RNNOISE_FRAME_SIZE};
 use super::pulse::PulseContext;
 use crate::state::{AppState, is_valid_mic_name, monitor_name, sink_name};
@@ -138,7 +138,7 @@ impl VirtualMic {
             return Err(format!("Remapped source did not become ready: {}", e).into());
         }
 
-        if let Err(e) = pulse_ctx.set_default_source(&source_name) {
+        if let Err(e) = set_default_source(&source_name) {
             eprintln!("Warning: Failed to set default source: {}", e);
         }
 

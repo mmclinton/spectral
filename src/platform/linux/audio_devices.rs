@@ -1,6 +1,8 @@
 use crate::state::{AudioDevice, lock_or_recover};
 use pipewire as pw;
 use pw::core::PW_ID_CORE;
+use pw::metadata::Metadata;
+use pw::properties::PropertiesBox;
 use pw::registry::GlobalObject;
 use pw::spa::utils::dict::DictRef;
 use pw::spa::utils::result::AsyncSeq;
@@ -109,6 +111,75 @@ pub fn get_device_channels(device_id: u32) -> u32 {
             .unwrap_or(2),
         Err(_) => 2,
     }
+}
+
+/// Point the configured default input at `node_name` — the persisted
+/// equivalent of `wpctl set-default`. WirePlumber stores the value and
+/// re-applies it whenever a node with that name (re)appears.
+pub fn set_default_source(node_name: &str) -> Result<(), Box<dyn Error>> {
+    let mainloop = MainLoopRc::new(None)?;
+    let context = ContextRc::new(&mainloop, None)?;
+    let core = context.connect(None)?;
+    let registry = core.get_registry()?;
+
+    // Rc, not Arc: the proxy global is !Send and never leaves this thread.
+    let metadata_global =
+        std::rc::Rc::new(std::cell::RefCell::new(None::<GlobalObject<PropertiesBox>>));
+    let global_clone = metadata_global.clone();
+
+    let _reg_listener = registry
+        .add_listener_local()
+        .global(move |global| {
+            if global.type_ == ObjectType::Metadata
+                && let Some(props) = &global.props
+                && props.get("metadata.name") == Some("default")
+            {
+                *global_clone.borrow_mut() = Some(global.to_owned());
+            }
+        })
+        .register();
+
+    let pending = Arc::new(Mutex::new(None::<AsyncSeq>));
+    let loop_clone = mainloop.clone();
+    let pending_clone = pending.clone();
+
+    let _core_listener = core
+        .add_listener_local()
+        .done(move |id, seq| {
+            if id == PW_ID_CORE {
+                let mut p = lock_or_recover(&pending_clone);
+                if let Some(val) = *p
+                    && val == seq
+                {
+                    *p = None;
+                    loop_clone.quit();
+                }
+            }
+        })
+        .register();
+
+    // Roundtrip 1: enumerate the globals so the session manager's "default"
+    // metadata object is discovered.
+    *lock_or_recover(&pending) = Some(core.sync(0)?);
+    mainloop.run();
+
+    let global = metadata_global
+        .borrow_mut()
+        .take()
+        .ok_or("no \"default\" metadata object found (is a session manager running?)")?;
+    let metadata: Metadata = registry.bind(&global)?;
+    metadata.set_property(
+        0,
+        "default.configured.audio.source",
+        Some("Spa:String:JSON"),
+        Some(&serde_json::json!({ "name": node_name }).to_string()),
+    );
+
+    // Roundtrip 2: flush the write before the connection drops.
+    *lock_or_recover(&pending) = Some(core.sync(0)?);
+    mainloop.run();
+
+    Ok(())
 }
 
 /// Get the PipeWire node name for a device by its ID, straight from the

@@ -119,25 +119,6 @@ impl PulseContext {
         Ok(index)
     }
 
-    pub fn set_default_source(&mut self, source_name: &str) -> Result<(), String> {
-        let context = self.context.clone();
-        let success = self.wait_for_callback("setting default source", move |result| {
-            context
-                .borrow_mut()
-                .set_default_source(source_name, move |success| {
-                    let (lock, cvar) = &*result;
-                    *lock_or_recover(lock) = Some(success);
-                    cvar.notify_one();
-                });
-        })?;
-
-        if !success {
-            return Err("Failed to set default source".to_string());
-        }
-
-        Ok(())
-    }
-
     pub fn unload_module(&mut self, index: u32) -> Result<(), String> {
         let context = self.context.clone();
         let success = self.wait_for_callback("unloading module", move |result| {
