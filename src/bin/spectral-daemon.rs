@@ -5,7 +5,7 @@ use spectral_lib::persistence::{
     PersistedState, get_filtered_recording_path, get_original_recording_path, load_state,
     remove_legacy_recordings, save_state,
 };
-use spectral_lib::state::{AppState, Status, is_valid_mic_name, lock_or_recover, monitor_name};
+use spectral_lib::state::{AppState, Status, is_valid_mic_name, lock_or_recover};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -149,10 +149,8 @@ fn main() {
         }
     }
 
-    if let Some(mic) = lock_or_recover(&virtual_mic).take()
-        && let Err(e) = mic.stop()
-    {
-        eprintln!("[shutdown] virtual mic teardown incomplete: {e}");
+    if let Some(mic) = lock_or_recover(&virtual_mic).take() {
+        mic.stop();
     }
 
     for handle in client_threads {
@@ -219,10 +217,8 @@ fn handle_client(
                         }
 
                         let mut mic_guard = lock_or_recover(&virtual_mic);
-                        if let Some(mic) = mic_guard.take()
-                            && let Err(e) = mic.stop()
-                        {
-                            eprintln!("[enable] previous mic teardown incomplete: {e}");
+                        if let Some(mic) = mic_guard.take() {
+                            mic.stop();
                         }
                         // Sweep any orphaned modules before creating fresh ones so a
                         // failed prior teardown can't accumulate duplicates.
@@ -249,23 +245,12 @@ fn handle_client(
                     }
                     DaemonCommand::Disable => {
                         let mut mic_guard = lock_or_recover(&virtual_mic);
-                        let result = mic_guard.take().map_or(Ok(()), VirtualMic::stop);
-                        // The pipeline is stopped even when module unloading
-                        // fails, so Inactive is the honest status either way.
-                        state.update_status(Status::Inactive);
-                        match result {
-                            Ok(()) => {
-                                state.set_last_error(None);
-                                DaemonResponse::Ok
-                            }
-                            Err(e) => {
-                                let msg = format!(
-                                    "Disable incomplete, modules will be reaped on next enable: {e}"
-                                );
-                                state.set_last_error(Some(msg.clone()));
-                                DaemonResponse::Error(msg)
-                            }
+                        if let Some(mic) = mic_guard.take() {
+                            mic.stop();
                         }
+                        state.update_status(Status::Inactive);
+                        state.set_last_error(None);
+                        DaemonResponse::Ok
                     }
                     DaemonCommand::GetState => {
                         // Lazy failure detection: the pipeline only records why it
@@ -279,9 +264,7 @@ fn handle_client(
                             }
                         };
                         if let Some((mic, msg)) = dead_mic {
-                            if let Err(e) = mic.stop() {
-                                eprintln!("[getstate] dead mic teardown incomplete: {e}");
-                            }
+                            mic.stop();
                             state.update_status(Status::Inactive);
                             state.set_last_error(Some(format!("Virtual mic stopped: {msg}")));
                         }
@@ -395,11 +378,11 @@ fn handle_client(
                             .stderr(Stdio::inherit())
                             .spawn();
 
-                        let monitor_source = monitor_name(&mic_name);
+                        // The virtual mic node itself is the filtered signal.
                         let filtered_proc = Command::new("pw-record")
                             .args([
                                 "--target",
-                                &monitor_source,
+                                &mic_name,
                                 "--rate",
                                 "48000",
                                 "--channels",
@@ -542,10 +525,8 @@ fn handle_client(
                     }
                     DaemonCommand::Shutdown => {
                         let mut mic_guard = lock_or_recover(&virtual_mic);
-                        if let Some(mic) = mic_guard.take()
-                            && let Err(e) = mic.stop()
-                        {
-                            eprintln!("[shutdown] virtual mic teardown incomplete: {e}");
+                        if let Some(mic) = mic_guard.take() {
+                            mic.stop();
                         }
 
                         conn.send_response(DaemonResponse::Ok)?;

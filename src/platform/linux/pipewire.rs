@@ -6,18 +6,20 @@
 use super::audio_processor::AudioProcessor;
 use crate::state::lock_or_recover;
 use pipewire::spa::{
-    param::audio::{AudioFormat, AudioInfoRaw},
+    param::audio::{AudioFormat, AudioInfoRaw, MAX_CHANNELS},
     pod::Pod,
     utils::Direction,
 };
 use pipewire::{
     context::ContextBox,
-    core::PW_ID_CORE,
+    link::Link,
     main_loop::MainLoopBox,
+    node::Node,
     properties::properties,
     stream::{StreamBox, StreamFlags, StreamState},
+    types::ObjectType,
 };
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
@@ -42,6 +44,19 @@ pub const RNNOISE_SCALE_FACTOR: f32 = 32768.0;
 
 /// Maximum time to wait for the pipeline thread to finish its PipeWire setup.
 const PIPELINE_READY_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Backstop bound on the capture→feed buffer (1 s of mono audio). The linked
+/// virtual-mic node drives its own graph section, so the feed drains
+/// continuously and this should be unreachable in practice.
+const OUTPUT_BUFFER_CAP: usize = SAMPLE_RATE as usize;
+
+/// Ready = both streams up and the feed link created; the daemon's Enable
+/// blocks on this inside PIPELINE_READY_TIMEOUT.
+#[derive(Default)]
+struct ReadyFlags {
+    capture: Cell<bool>,
+    feed: Cell<bool>,
+}
 
 struct PipelineData {
     processor: AudioProcessor,
@@ -88,7 +103,7 @@ impl NativeAudioPipeline {
     /// # Arguments
     /// * `processor` - Audio processor for noise reduction
     /// * `source_node` - PipeWire node name of the source device
-    /// * `sink_node` - PipeWire node name of the sink
+    /// * `virtual_name` - node name (and display name) of the virtual mic
     /// * `input_channels` - Number of channels on the input device
     ///
     /// TODO: Validate that PipeWire correctly negotiates the channel count
@@ -96,7 +111,7 @@ impl NativeAudioPipeline {
     pub fn start(
         processor: AudioProcessor,
         source_node: &str,
-        sink_node: &str,
+        virtual_name: &str,
         input_channels: u32,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let running = Arc::new(AtomicBool::new(true));
@@ -104,14 +119,14 @@ impl NativeAudioPipeline {
         let failure = Arc::new(Mutex::new(None));
         let failure_clone = failure.clone();
         let source_node = source_node.to_string();
-        let sink_node = sink_node.to_string();
+        let virtual_name = virtual_name.to_string();
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
 
         let pipeline_thread = thread::spawn(move || {
             if let Err(e) = run_pipeline(
                 processor,
                 &source_node,
-                &sink_node,
+                &virtual_name,
                 running_clone,
                 input_channels,
                 &ready_tx,
@@ -182,11 +197,17 @@ fn build_audio_format_pod(
     format: AudioFormat,
     rate: u32,
     channels: u32,
+    positions: Option<&[u32]>,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     let mut audio_info = AudioInfoRaw::new();
     audio_info.set_format(format);
     audio_info.set_rate(rate);
     audio_info.set_channels(channels);
+    if let Some(positions) = positions {
+        let mut position = [0u32; MAX_CHANNELS];
+        position[..positions.len()].copy_from_slice(positions);
+        audio_info.set_position(position);
+    }
 
     let values: Vec<u8> = pipewire::spa::pod::serialize::PodSerializer::serialize(
         std::io::Cursor::new(Vec::new()),
@@ -206,7 +227,7 @@ fn build_audio_format_pod(
 fn run_pipeline(
     processor: AudioProcessor,
     source_node: &str,
-    sink_node: &str,
+    virtual_name: &str,
     running: Arc<AtomicBool>,
     input_channels: u32,
     ready_tx: &mpsc::Sender<Result<(), String>>,
@@ -224,8 +245,33 @@ fn run_pipeline(
     let pipeline_data = Rc::new(RefCell::new(PipelineData::new(processor, channels)));
 
     // TODO: Verify PipeWire format negotiation works correctly for mono (1 channel) devices
-    let capture_format = build_audio_format_pod(AudioFormat::F32LE, SAMPLE_RATE, channels)?;
-    let playback_format = build_audio_format_pod(AudioFormat::F32LE, SAMPLE_RATE, OUTPUT_CHANNELS)?;
+    let capture_format = build_audio_format_pod(AudioFormat::F32LE, SAMPLE_RATE, channels, None)?;
+    let feed_format = build_audio_format_pod(
+        AudioFormat::F32LE,
+        SAMPLE_RATE,
+        OUTPUT_CHANNELS,
+        Some(&[pipewire::spa::sys::SPA_AUDIO_CHANNEL_MONO]),
+    )?;
+
+    // The mic itself: an adapter node classified as a virtual source. It
+    // lists as an input device only — no sink, no monitor — and dies with
+    // this connection. WirePlumber refuses to route playback into a
+    // source-classed node, so the feed stream below connects unrouted and
+    // the link is created explicitly once both ports exist.
+    let _virtual_mic_node = core.create_object::<Node>(
+        "adapter",
+        &properties! {
+            "factory.name" => "support.null-audio-sink",
+            *pipewire::keys::NODE_NAME => virtual_name,
+            *pipewire::keys::NODE_DESCRIPTION => virtual_name,
+            *pipewire::keys::MEDIA_CLASS => "Audio/Source/Virtual",
+            *pipewire::keys::NODE_VIRTUAL => "true",
+            "audio.position" => "[ MONO ]",
+            "device.icon-name" => "audio-input-microphone",
+        },
+    )?;
+
+    let ready = Rc::new(ReadyFlags::default());
 
     // "target.object" used since NODE_TARGET isn't exposed in the Rust bindings
     let capture_props = properties! {
@@ -234,6 +280,7 @@ fn run_pipeline(
         *pipewire::keys::MEDIA_ROLE => "Communication",
         *pipewire::keys::NODE_NAME => "spectral-native-capture",
         *pipewire::keys::NODE_DESCRIPTION => "Spectral Native Capture",
+        *pipewire::keys::NODE_LATENCY => "480/48000",
         "target.object" => source_node,
     };
 
@@ -241,12 +288,15 @@ fn run_pipeline(
 
     let capture_data = pipeline_data.clone();
     let capture_failure = failure.clone();
+    let capture_ready = ready.clone();
     let _capture_listener = capture_stream
         .add_local_listener_with_user_data(capture_data)
-        .state_changed(move |_stream, _data, _old, new| {
-            if let StreamState::Error(msg) = new {
+        .state_changed(move |_stream, _data, _old, new| match new {
+            StreamState::Error(msg) => {
                 record_failure(&capture_failure, format!("capture stream error: {msg}"));
             }
+            StreamState::Paused | StreamState::Streaming => capture_ready.capture.set(true),
+            _ => {}
         })
         .process(|stream, data| {
             process_capture_buffer(stream, data);
@@ -262,60 +312,92 @@ fn run_pipeline(
         &mut [capture_pod],
     )?;
 
-    let playback_props = properties! {
+    // No AUTOCONNECT: the session manager would route this to the default
+    // sink (audible!) since it refuses source-classed targets.
+    let feed_props = properties! {
         *pipewire::keys::MEDIA_TYPE => "Audio",
         *pipewire::keys::MEDIA_CATEGORY => "Playback",
         *pipewire::keys::MEDIA_ROLE => "Communication",
-        *pipewire::keys::NODE_NAME => "spectral-native-playback",
-        *pipewire::keys::NODE_DESCRIPTION => "Spectral Native Playback",
-        "target.object" => sink_node,
+        *pipewire::keys::NODE_NAME => "spectral-native-feed",
+        *pipewire::keys::NODE_DESCRIPTION => "Spectral Native Feed",
+        *pipewire::keys::NODE_LATENCY => "480/48000",
     };
 
-    let playback_stream = StreamBox::new(&core, "spectral-playback", playback_props)?;
+    let feed_stream = StreamBox::new(&core, "spectral-feed", feed_props)?;
 
-    let playback_data = pipeline_data.clone();
-    let playback_failure = failure.clone();
-    let _playback_listener = playback_stream
-        .add_local_listener_with_user_data(playback_data)
-        .state_changed(move |_stream, _data, _old, new| {
-            if let StreamState::Error(msg) = new {
-                record_failure(&playback_failure, format!("playback stream error: {msg}"));
+    let feed_data = pipeline_data.clone();
+    let feed_failure = failure.clone();
+    let feed_ready = ready.clone();
+    let _feed_listener = feed_stream
+        .add_local_listener_with_user_data(feed_data)
+        .state_changed(move |_stream, _data, _old, new| match new {
+            StreamState::Error(msg) => {
+                record_failure(&feed_failure, format!("feed stream error: {msg}"));
             }
+            StreamState::Paused | StreamState::Streaming => feed_ready.feed.set(true),
+            _ => {}
         })
         .process(|stream, data| {
-            process_playback_buffer(stream, data);
+            process_source_buffer(stream, data);
         })
         .register()?;
 
-    let playback_pod =
-        Pod::from_bytes(&playback_format).ok_or("Failed to create playback format pod")?;
-    playback_stream.connect(
+    let feed_pod = Pod::from_bytes(&feed_format).ok_or("Failed to create feed format pod")?;
+    feed_stream.connect(
         Direction::Output,
         None,
-        StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS | StreamFlags::RT_PROCESS,
-        &mut [playback_pod],
+        StreamFlags::MAP_BUFFERS | StreamFlags::RT_PROCESS,
+        &mut [feed_pod],
     )?;
 
-    let _timer = mainloop.loop_().add_timer(|_| {});
-    let _ = _timer.update_timer(
-        Some(std::time::Duration::from_millis(100)),
-        Some(std::time::Duration::from_millis(100)),
-    );
-
+    // Any proxy error is fatal: every object this connection owns (core,
+    // streams, mic node, feed link) is load-bearing, and create_object
+    // reports failures asynchronously as proxy errors.
     let core_failure = failure.clone();
     let _core_listener = core
         .add_listener_local()
         .error(move |id, _seq, res, message| {
-            if id == PW_ID_CORE {
-                record_failure(
-                    &core_failure,
-                    format!("PipeWire core error {res}: {message}"),
-                );
+            record_failure(
+                &core_failure,
+                format!("PipeWire error on object {id}: {res} {message}"),
+            );
+        })
+        .register();
+
+    // The session manager configures the mic node and the feed stream
+    // asynchronously; watch the registry for their ports, then link them.
+    let mic_node_id: Rc<Cell<Option<u32>>> = Rc::new(Cell::new(None));
+    let ports: Rc<RefCell<Vec<(u32, u32, String)>>> = Rc::new(RefCell::new(Vec::new()));
+
+    let registry = core.get_registry()?;
+    let mic_node_slot = mic_node_id.clone();
+    let ports_slot = ports.clone();
+    let mic_node_name = virtual_name.to_string();
+    let _registry_listener = registry
+        .add_listener_local()
+        .global(move |global| {
+            let Some(props) = &global.props else { return };
+            match global.type_ {
+                ObjectType::Node if props.get("node.name") == Some(mic_node_name.as_str()) => {
+                    mic_node_slot.set(Some(global.id));
+                }
+                ObjectType::Port => {
+                    if let (Some(node), Some(direction)) =
+                        (props.get("node.id"), props.get("port.direction"))
+                        && let Ok(node) = node.parse::<u32>()
+                    {
+                        ports_slot
+                            .borrow_mut()
+                            .push((global.id, node, direction.to_string()));
+                    }
+                }
+                _ => {}
             }
         })
         .register();
 
-    let _ = ready_tx.send(Ok(()));
+    let mut feed_link: Option<Link> = None;
+    let mut ready_sent = false;
 
     while running.load(Ordering::SeqCst) {
         let res = mainloop
@@ -328,6 +410,52 @@ fn run_pipeline(
         if lock_or_recover(failure).is_some() {
             break;
         }
+
+        if feed_link.is_none()
+            && let Some(mic_id) = mic_node_id.get()
+        {
+            let feed_id = feed_stream.node_id();
+            if feed_id != u32::MAX {
+                let (feed_port, mic_port) = {
+                    let ports = ports.borrow();
+                    (
+                        ports
+                            .iter()
+                            .find(|(_, node, dir)| *node == feed_id && dir.as_str() == "out")
+                            .map(|(id, ..)| *id),
+                        ports
+                            .iter()
+                            .find(|(_, node, dir)| *node == mic_id && dir.as_str() == "in")
+                            .map(|(id, ..)| *id),
+                    )
+                };
+                if let (Some(feed_port), Some(mic_port)) = (feed_port, mic_port) {
+                    feed_link = Some(core.create_object::<Link>(
+                        "link-factory",
+                        &properties! {
+                            "link.output.node" => feed_id.to_string(),
+                            "link.output.port" => feed_port.to_string(),
+                            "link.input.node" => mic_id.to_string(),
+                            "link.input.port" => mic_port.to_string(),
+                        },
+                    )?);
+                }
+            }
+        }
+
+        if !ready_sent && feed_link.is_some() && ready.capture.get() && ready.feed.get() {
+            ready_sent = true;
+            let _ = ready_tx.send(Ok(()));
+        }
+    }
+
+    // Surface the real reason when setup never completed — without this the
+    // daemon only sees the generic ready-timeout.
+    if !ready_sent {
+        let msg = lock_or_recover(failure)
+            .clone()
+            .unwrap_or_else(|| "pipeline stopped before becoming ready".to_string());
+        let _ = ready_tx.send(Err(msg));
     }
 
     mainloop.quit();
@@ -431,15 +559,24 @@ fn process_capture_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCe
                 output_buffer.extend_from_slice(processed_scratch);
                 input_buffer.drain(..frame_size);
             }
+            cap_buffer(output_buffer, OUTPUT_BUFFER_CAP);
         }
     }
 }
 
-fn process_playback_buffer(
-    stream: &pipewire::stream::Stream,
-    data: &mut Rc<RefCell<PipelineData>>,
-) {
+/// Keep only the newest `max` samples; silently drops overflow (backstop
+/// against a stalled consumer side — overflow protection, not flow control).
+fn cap_buffer(buf: &mut Vec<f32>, max: usize) {
+    let excess = buf.len().saturating_sub(max);
+    if excess > 0 {
+        buf.drain(..excess);
+    }
+}
+
+fn process_source_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCell<PipelineData>>) {
     if let Some(mut buffer) = stream.dequeue_buffer() {
+        // How many frames the graph asks for; must be read before datas_mut.
+        let requested = buffer.requested() as usize;
         let datas = buffer.datas_mut();
         if datas.is_empty() {
             return;
@@ -451,16 +588,28 @@ fn process_playback_buffer(
             let max_samples = slice.len() / 4;
             let available = pipeline_data.output_buffer.len().min(max_samples);
 
-            for (i, sample) in pipeline_data.output_buffer[..available].iter().enumerate() {
-                slice[i * 4..i * 4 + 4].copy_from_slice(&sample.to_le_bytes());
-            }
-            pipeline_data.output_buffer.drain(..available);
-            let bytes_written = available * 4;
+            let samples = if available > 0 {
+                for (i, sample) in pipeline_data.output_buffer[..available].iter().enumerate() {
+                    slice[i * 4..i * 4 + 4].copy_from_slice(&sample.to_le_bytes());
+                }
+                pipeline_data.output_buffer.drain(..available);
+                available
+            } else {
+                // Underrun (e.g. the first cycles after enable): emit silence
+                // sized to the request so the mic never produces an empty cycle.
+                let samples = if requested > 0 {
+                    requested.min(max_samples)
+                } else {
+                    max_samples
+                };
+                slice[..samples * 4].fill(0);
+                samples
+            };
 
             // CRITICAL: Set the chunk size to indicate how many bytes we wrote
             let chunk = datas[0].chunk_mut();
             *chunk.offset_mut() = 0;
-            *chunk.size_mut() = bytes_written as u32;
+            *chunk.size_mut() = (samples * 4) as u32;
             *chunk.stride_mut() = 4; // 4 bytes per sample (f32)
         }
     }
@@ -472,10 +621,34 @@ mod tests {
 
     #[test]
     fn test_audio_format_pod_creation() {
-        let result = build_audio_format_pod(AudioFormat::F32LE, 48000, 2);
+        let result = build_audio_format_pod(AudioFormat::F32LE, 48000, 2, None);
         assert!(result.is_ok(), "Should be able to create audio format pod");
         let pod_bytes = result.unwrap();
         assert!(!pod_bytes.is_empty(), "Pod should have content");
+
+        let positioned = build_audio_format_pod(
+            AudioFormat::F32LE,
+            48000,
+            1,
+            Some(&[pipewire::spa::sys::SPA_AUDIO_CHANNEL_MONO]),
+        );
+        assert!(positioned.is_ok(), "Positioned pod should build");
+        assert!(!positioned.unwrap().is_empty(), "Pod should have content");
+    }
+
+    #[test]
+    fn cap_buffer_keeps_only_the_newest_samples() {
+        let mut buf: Vec<f32> = (0..10).map(|i| i as f32).collect();
+        cap_buffer(&mut buf, 4);
+        assert_eq!(buf, [6.0, 7.0, 8.0, 9.0]);
+
+        let mut buf = vec![1.0f32; 3];
+        cap_buffer(&mut buf, 3);
+        assert_eq!(buf, [1.0, 1.0, 1.0]);
+
+        let mut buf = vec![1.0f32; 2];
+        cap_buffer(&mut buf, 4);
+        assert_eq!(buf, [1.0, 1.0]);
     }
 
     #[test]
