@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>page.codeberg.mmc.Spectral</id>
+  <name>Spectral</name>
+  <summary>Real-time audio noise suppression</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <developer id="page.codeberg.mmc">
+    <name>mmc</name>
+  </developer>
+  <description>
+    <p>
+      Spectral runs a chosen microphone through the RNNoise neural network
+      and exposes the result as a native PipeWire virtual microphone that
+      any application can use.
+    </p>
+    <ul>
+      <li>Real-time RNNoise denoising with an adjustable voice-activity gate</li>
+      <li>Native PipeWire virtual source, set as the default input automatically</li>
+      <li>Built-in voice test to compare original and filtered audio</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">page.codeberg.mmc.Spectral.desktop</launchable>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Mixer</category>
+  </categories>
+  <keywords>
+    <keyword>noise</keyword>
+    <keyword>suppression</keyword>
+    <keyword>microphone</keyword>
+    <keyword>audio</keyword>
+    <keyword>rnnoise</keyword>
+  </keywords>
+  <url type="homepage">https://codeberg.org/mmc/spectral</url>
+  <url type="bugtracker">https://codeberg.org/mmc/spectral/issues</url>
+  <url type="vcs-browser">https://codeberg.org/mmc/spectral</url>
+  <provides>
+    <binary>spectral</binary>
+    <binary>spectral-daemon</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.3.0" date="2026-07-08"/>
+    <release version="0.2.3" date="2026-07-06"/>
+    <release version="0.2.2" date="2026-06-30"/>
+    <release version="0.2.1" date="2026-06-30"/>
+    <release version="0.2.0" date="2026-06-29"/>
+    <release version="0.1.0" date="2026-01-01"/>
+  </releases>
+</component>
