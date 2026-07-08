@@ -4,6 +4,7 @@
 //! using direct stream connections for low-latency noise reduction.
 
 use super::audio_processor::AudioProcessor;
+use crate::state::lock_or_recover;
 use pipewire::spa::{
     param::audio::{AudioFormat, AudioInfoRaw},
     pod::Pod,
@@ -11,14 +12,15 @@ use pipewire::spa::{
 };
 use pipewire::{
     context::ContextBox,
+    core::PW_ID_CORE,
     main_loop::MainLoopBox,
     properties::properties,
-    stream::{StreamBox, StreamFlags},
+    stream::{StreamBox, StreamFlags, StreamState},
 };
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -64,7 +66,16 @@ impl PipelineData {
 
 pub struct NativeAudioPipeline {
     running: Arc<AtomicBool>,
+    failure: Arc<Mutex<Option<String>>>,
     pipeline_thread: Option<JoinHandle<()>>,
+}
+
+/// First error wins: later failures are usually cascades of the first.
+fn record_failure(slot: &Mutex<Option<String>>, msg: String) {
+    let mut guard = lock_or_recover(slot);
+    if guard.is_none() {
+        *guard = Some(msg);
+    }
 }
 
 impl NativeAudioPipeline {
@@ -86,6 +97,8 @@ impl NativeAudioPipeline {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let running = Arc::new(AtomicBool::new(true));
         let running_clone = running.clone();
+        let failure = Arc::new(Mutex::new(None));
+        let failure_clone = failure.clone();
         let source_node = source_node.to_string();
         let sink_node = sink_node.to_string();
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
@@ -98,7 +111,9 @@ impl NativeAudioPipeline {
                 running_clone,
                 input_channels,
                 &ready_tx,
+                &failure_clone,
             ) {
+                record_failure(&failure_clone, format!("pipeline error: {e}"));
                 let _ = ready_tx.send(Err(e.to_string()));
                 eprintln!("[Native Pipeline] ✗ Pipeline error: {}", e);
             }
@@ -107,6 +122,7 @@ impl NativeAudioPipeline {
         match ready_rx.recv_timeout(PIPELINE_READY_TIMEOUT) {
             Ok(Ok(())) => Ok(Self {
                 running,
+                failure,
                 pipeline_thread: Some(pipeline_thread),
             }),
             Ok(Err(e)) => {
@@ -133,6 +149,20 @@ impl NativeAudioPipeline {
         {
             eprintln!("Pipeline thread panicked during shutdown");
         }
+    }
+
+    /// Why the pipeline died, if it has. A finished thread with an empty
+    /// failure slot (e.g. a panic) still counts while `running` is set.
+    pub fn failure(&self) -> Option<String> {
+        if let Some(msg) = lock_or_recover(&self.failure).clone() {
+            return Some(msg);
+        }
+        let thread_exited = self
+            .pipeline_thread
+            .as_ref()
+            .is_some_and(JoinHandle::is_finished);
+        (self.running.load(Ordering::SeqCst) && thread_exited)
+            .then(|| "pipeline thread exited unexpectedly".to_string())
     }
 }
 
@@ -176,6 +206,7 @@ fn run_pipeline(
     running: Arc<AtomicBool>,
     input_channels: u32,
     ready_tx: &mpsc::Sender<Result<(), String>>,
+    failure: &Arc<Mutex<Option<String>>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     pipewire::init();
 
@@ -205,9 +236,14 @@ fn run_pipeline(
     let capture_stream = StreamBox::new(&core, "spectral-capture", capture_props)?;
 
     let capture_data = pipeline_data.clone();
+    let capture_failure = failure.clone();
     let _capture_listener = capture_stream
         .add_local_listener_with_user_data(capture_data)
-        .state_changed(|_stream, _data, _old, _new| {})
+        .state_changed(move |_stream, _data, _old, new| {
+            if let StreamState::Error(msg) = new {
+                record_failure(&capture_failure, format!("capture stream error: {msg}"));
+            }
+        })
         .process(|stream, data| {
             process_capture_buffer(stream, data);
         })
@@ -234,9 +270,14 @@ fn run_pipeline(
     let playback_stream = StreamBox::new(&core, "spectral-playback", playback_props)?;
 
     let playback_data = pipeline_data.clone();
+    let playback_failure = failure.clone();
     let _playback_listener = playback_stream
         .add_local_listener_with_user_data(playback_data)
-        .state_changed(|_stream, _data, _old, _new| {})
+        .state_changed(move |_stream, _data, _old, new| {
+            if let StreamState::Error(msg) = new {
+                record_failure(&playback_failure, format!("playback stream error: {msg}"));
+            }
+        })
         .process(|stream, data| {
             process_playback_buffer(stream, data);
         })
@@ -257,12 +298,32 @@ fn run_pipeline(
         Some(std::time::Duration::from_millis(100)),
     );
 
+    let core_failure = failure.clone();
+    let _core_listener = core
+        .add_listener_local()
+        .error(move |id, _seq, res, message| {
+            if id == PW_ID_CORE {
+                record_failure(
+                    &core_failure,
+                    format!("PipeWire core error {res}: {message}"),
+                );
+            }
+        })
+        .register();
+
     let _ = ready_tx.send(Ok(()));
 
     while running.load(Ordering::SeqCst) {
-        let _ = mainloop
+        let res = mainloop
             .loop_()
             .iterate(std::time::Duration::from_millis(10));
+        if res < 0 {
+            record_failure(failure, format!("main loop iterate failed: errno {}", -res));
+            break;
+        }
+        if lock_or_recover(failure).is_some() {
+            break;
+        }
     }
 
     mainloop.quit();

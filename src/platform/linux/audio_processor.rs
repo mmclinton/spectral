@@ -221,6 +221,11 @@ impl VirtualMic {
         })
     }
 
+    /// Why the underlying pipeline died, if it has.
+    pub fn failure(&self) -> Option<String> {
+        self.audio_pipeline.as_ref()?.failure()
+    }
+
     pub fn stop(mut self) {
         if let Some(mut pipeline) = self.audio_pipeline.take() {
             pipeline.stop();

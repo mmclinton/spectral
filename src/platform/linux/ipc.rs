@@ -65,6 +65,9 @@ pub struct DaemonState {
     pub threshold: i32,
     pub is_playing_original: bool,
     pub is_playing_filtered: bool,
+    // Deliberately not #[serde(default)]: a new GUI must fail to parse an old
+    // daemon's state so it trips its restart-old-daemon path and upgrades it.
+    pub last_error: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

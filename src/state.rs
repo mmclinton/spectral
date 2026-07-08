@@ -37,6 +37,9 @@ pub struct AppState {
     pub selected_device_id: Arc<Mutex<Option<u32>>>,
     pub threshold_val: Arc<Mutex<i32>>,
     pub mic_name: Arc<Mutex<String>>,
+    /// Why the mic is not active: set on pipeline death or a failed
+    /// enable/disable, cleared when an enable or disable succeeds.
+    pub last_error: Arc<Mutex<Option<String>>>,
 }
 
 impl Default for AppState {
@@ -52,11 +55,16 @@ impl AppState {
             selected_device_id: Arc::new(Mutex::new(None)),
             threshold_val: Arc::new(Mutex::new(80)),
             mic_name: Arc::new(Mutex::new("Spectral-Mic".to_string())),
+            last_error: Arc::new(Mutex::new(None)),
         }
     }
 
     pub fn update_status(&self, new_status: Status) {
         *lock_or_recover(&self.status) = new_status;
+    }
+
+    pub fn set_last_error(&self, error: Option<String>) {
+        *lock_or_recover(&self.last_error) = error;
     }
 }
 

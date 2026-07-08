@@ -174,12 +174,13 @@ fn handle_client(
     // 1. state.threshold_val
     // 2. state.mic_name
     // 3. state.selected_device_id
-    // 4. state.status
-    // 5. virtual_mic
-    // 6. recording_original
-    // 7. recording_filtered
-    // 8. playback_original
-    // 9. playback_filtered
+    // 4. virtual_mic
+    // 5. state.status
+    // 6. state.last_error
+    // 7. recording_original
+    // 8. recording_filtered
+    // 9. playback_original
+    // 10. playback_filtered
     //
     // Important: Release locks as soon as possible by limiting scope.
     // Never hold multiple locks longer than necessary.
@@ -229,14 +230,14 @@ fn handle_client(
                             Ok(mic) => {
                                 *mic_guard = Some(mic);
                                 state.update_status(Status::Active);
+                                state.set_last_error(None);
                                 DaemonResponse::Ok
                             }
                             Err(e) => {
                                 state.update_status(Status::Inactive);
-                                DaemonResponse::Error(format!(
-                                    "Failed to create virtual mic: {}",
-                                    e
-                                ))
+                                let msg = format!("Failed to create virtual mic: {}", e);
+                                state.set_last_error(Some(msg.clone()));
+                                DaemonResponse::Error(msg)
                             }
                         }
                     }
@@ -249,6 +250,22 @@ fn handle_client(
                         DaemonResponse::Ok
                     }
                     DaemonCommand::GetState => {
+                        // Lazy failure detection: the pipeline only records why it
+                        // died; reads reconcile, tearing down the dead mic so no
+                        // silent zombie source stays selectable.
+                        let dead_mic = {
+                            let mut mic_guard = lock_or_recover(&virtual_mic);
+                            match mic_guard.as_ref().and_then(VirtualMic::failure) {
+                                Some(msg) => mic_guard.take().map(|mic| (mic, msg)),
+                                None => None,
+                            }
+                        };
+                        if let Some((mic, msg)) = dead_mic {
+                            mic.stop();
+                            state.update_status(Status::Inactive);
+                            state.set_last_error(Some(format!("Virtual mic stopped: {msg}")));
+                        }
+
                         let status = *lock_or_recover(&state.status);
 
                         let is_playing_original = {
@@ -292,6 +309,7 @@ fn handle_client(
                         let threshold = *lock_or_recover(&state.threshold_val);
                         let mic_name = lock_or_recover(&state.mic_name).clone();
                         let device_id = *lock_or_recover(&state.selected_device_id);
+                        let last_error = lock_or_recover(&state.last_error).clone();
                         let daemon_state = DaemonState {
                             status,
                             device_id,
@@ -299,6 +317,7 @@ fn handle_client(
                             threshold,
                             is_playing_original,
                             is_playing_filtered,
+                            last_error,
                         };
                         DaemonResponse::State(daemon_state)
                     }
