@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- AUR packaging under `packaging/aur/` (package name `spectral-mic`; the AUR
+  name `spectral` belongs to an unrelated project shipping the same binary
+  name, so the package conflicts with it).
+- AppStream metainfo, installed to `share/metainfo`, so software centers can
+  index the app.
+- `THIRD-PARTY.md` reproducing nnnoiseless's BSD-3-Clause notice (including
+  the bundled RNNoise model weights), installed to `share/licenses`.
+- Cargo package metadata (homepage, keywords, categories) and a tuned release
+  profile: thin LTO, one codegen unit, stripped symbols; panic stays `unwind`.
+
+### Changed
+- The Help and device-troubleshooting popups now describe the PipeWire-native
+  reality: WirePlumber in the service check, `wpctl status` and Bluetooth
+  HSP/HFP profiles in diagnosis, guidance to Refresh after a PipeWire restart
+  (device entries go stale), honest staged-vs-applied rename semantics, and a
+  Getting Started that reflects the automatic default-input switch instead of
+  a hardcoded mic name.
+- README overhauled: the stale PulseAudio (libpulse) requirement is gone,
+  AUR install instructions added, and new troubleshooting, known-limitations,
+  and non-goals sections.
+- The desktop entry is now a committed file installed by the Nix package
+  (previously generated at build time), so all packaging shares one source
+  of truth.
+
 ## [0.3.0] - 2026-07-08
 
 ### Added
