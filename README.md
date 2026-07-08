@@ -106,6 +106,27 @@ begins with the first announced release; until then the PKGBUILD lives in
 4. Click "Enable" — the virtual microphone is created and becomes the system default input
 5. Applications that pin a specific device can select the virtual mic by name (default "Spectral-Mic"); "Rename"/"Reset" stage a new name, applied on the next Enable/Apply
 
+### Headless CLI
+
+The `spectral` binary doubles as a command-line client:
+
+```bash
+spectral devices              # list input devices and their current ids
+spectral enable --device 62   # create the virtual mic (spawns the daemon if needed)
+spectral enable               # re-enable with the remembered settings
+spectral status               # show state, device, mic name, threshold
+spectral disable              # tear the virtual mic down
+spectral shutdown             # stop the daemon
+```
+
+`enable` accepts `--device <id>`, `--threshold <0-100>`, and `--mic-name <name>`;
+omitted flags keep the current settings. Device ids are scoped to the running
+PipeWire instance — the daemon remembers the selected device by node name, so a
+flagless `spectral enable` works across reboots and PipeWire restarts.
+
+Exit codes: 0 on success (including a no-op `disable`/`shutdown`), 1 on runtime
+failures, 2 on usage errors.
+
 ## Troubleshooting
 
 - **Your microphone isn't listed:** click "Refresh", or see the in-app "Not seeing your device?" guide.
