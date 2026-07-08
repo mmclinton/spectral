@@ -2,7 +2,8 @@
 //! launch path and the headless CLI.
 
 use spectral_lib::ipc::{
-    DaemonClient, DaemonCommand, DaemonResponse, DaemonState, wait_for_daemon_exit,
+    DaemonClient, DaemonCommand, DaemonResponse, DaemonState, PROTOCOL_VERSION,
+    wait_for_daemon_exit,
 };
 use std::error::Error;
 use std::process::{Command, Stdio};
@@ -48,28 +49,41 @@ pub fn connect_or_spawn() -> Result<DaemonClient, Box<dyn Error>> {
 }
 
 /// Connect to the daemon (spawning one if needed) and fetch its state,
-/// restarting a daemon whose state no longer parses (an old version).
+/// restarting a daemon that answers with an old protocol — or not at all.
 /// Returns the client so a follow-up command can reuse the connection.
 pub fn connect_and_fetch_state() -> Result<(DaemonClient, DaemonState), Box<dyn Error>> {
     let mut client = connect_or_spawn()?;
 
     match client.send_command(DaemonCommand::GetState) {
-        Ok(DaemonResponse::State(state)) => Ok((client, state)),
+        Ok(DaemonResponse::State(state)) if state.protocol_version == PROTOCOL_VERSION => {
+            Ok((client, state))
+        }
+        Ok(DaemonResponse::State(_)) => {
+            eprintln!("Daemon speaks an old protocol, restarting it");
+            restart_and_refetch(client)
+        }
         Ok(_) => Err("Unexpected response from daemon".into()),
         Err(e) => {
             eprintln!(
                 "Failed to communicate with daemon (possibly old version), restarting: {}",
                 e
             );
-            let _ = client.send_command(DaemonCommand::Shutdown);
-            wait_for_daemon_exit()?;
-            start_daemon()?;
-
-            let mut new_client = DaemonClient::connect_with_retry()?;
-            match new_client.send_command(DaemonCommand::GetState) {
-                Ok(DaemonResponse::State(state)) => Ok((new_client, state)),
-                _ => Err("Failed to get daemon state after restart".into()),
-            }
+            restart_and_refetch(client)
         }
+    }
+}
+
+fn restart_and_refetch(
+    mut old_client: DaemonClient,
+) -> Result<(DaemonClient, DaemonState), Box<dyn Error>> {
+    let _ = old_client.send_command(DaemonCommand::Shutdown);
+    drop(old_client);
+    wait_for_daemon_exit()?;
+    start_daemon()?;
+
+    let mut client = DaemonClient::connect_with_retry()?;
+    match client.send_command(DaemonCommand::GetState) {
+        Ok(DaemonResponse::State(state)) => Ok((client, state)),
+        _ => Err("Failed to get daemon state after restart".into()),
     }
 }

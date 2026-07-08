@@ -168,6 +168,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
             eprintln!("Cannot reach the daemon: {e}");
             (
                 DaemonState {
+                    protocol_version: spectral_lib::ipc::PROTOCOL_VERSION,
                     status: Status::Inactive,
                     device_id: None,
                     device_node_name: None,

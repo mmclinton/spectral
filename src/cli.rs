@@ -5,7 +5,8 @@
 use crate::daemon_launch;
 use spectral_lib::audio_devices;
 use spectral_lib::ipc::{
-    DaemonClient, DaemonCommand, DaemonResponse, DaemonState, wait_for_daemon_exit,
+    DaemonClient, DaemonCommand, DaemonResponse, DaemonState, PROTOCOL_VERSION,
+    wait_for_daemon_exit,
 };
 use spectral_lib::state::{Status, is_valid_mic_name};
 use std::ffi::OsString;
@@ -281,6 +282,10 @@ fn run_status() -> ExitCode {
     };
 
     match client.send_command(DaemonCommand::GetState) {
+        Ok(DaemonResponse::State(state)) if state.protocol_version != PROTOCOL_VERSION => {
+            eprintln!("spectral: the daemon is an old version — `spectral enable` replaces it");
+            ExitCode::FAILURE
+        }
         Ok(DaemonResponse::State(state)) => {
             print_status(&state);
             ExitCode::SUCCESS

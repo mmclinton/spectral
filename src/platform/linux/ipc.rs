@@ -59,14 +59,20 @@ pub enum DaemonCommand {
     StopFiltered,
 }
 
+/// Bump whenever the wire format changes meaning. serde fills missing
+/// `Option` fields with `None` even without `#[serde(default)]`, so adding
+/// an optional field never makes a new client reject an old daemon's state;
+/// this required field is the explicit trip-wire that sends clients down
+/// their restart-and-upgrade path.
+pub const PROTOCOL_VERSION: u32 = 1;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DaemonState {
+    /// Must equal [`PROTOCOL_VERSION`]; absent (pre-0.4 daemons) or
+    /// different means the daemon predates this client.
+    pub protocol_version: u32,
     pub status: Status,
     pub device_id: Option<u32>,
-    // Fields added after a release (device_node_name, last_error) are
-    // deliberately not #[serde(default)]: a new client must fail to parse an
-    // old daemon's state so it trips its restart-old-daemon path and
-    // upgrades it.
     pub device_node_name: Option<String>,
     pub mic_name: String,
     pub threshold: i32,
@@ -248,5 +254,28 @@ impl DaemonConnection {
         let json = serde_json::to_string(&response)?;
         writeln!(self.stream, "{}", json)?;
         self.stream.flush()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A 0.3.0 daemon's GetState payload: no protocol_version,
+    // device_node_name, and (pre-0.3) last_error.
+    const OLD_STATE: &str = r#"{"status":"Active","device_id":42,"mic_name":"Spectral-Mic","threshold":80,"is_playing_original":false,"is_playing_filtered":false}"#;
+
+    #[test]
+    fn missing_option_fields_parse_as_none() {
+        let with_version = format!(r#"{{"protocol_version":1,{}"#, &OLD_STATE[1..]);
+        let state: DaemonState =
+            serde_json::from_str(&with_version).expect("optional fields may be absent");
+        assert_eq!(state.device_node_name, None);
+        assert_eq!(state.last_error, None);
+    }
+
+    #[test]
+    fn missing_protocol_version_fails_to_parse() {
+        assert!(serde_json::from_str::<DaemonState>(OLD_STATE).is_err());
     }
 }

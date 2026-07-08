@@ -1,6 +1,8 @@
 use spectral_lib::audio_devices::{find_node_id, get_device_channels, get_node_name};
 use spectral_lib::audio_processor::VirtualMic;
-use spectral_lib::ipc::{DaemonCommand, DaemonResponse, DaemonServer, DaemonState};
+use spectral_lib::ipc::{
+    DaemonCommand, DaemonResponse, DaemonServer, DaemonState, PROTOCOL_VERSION,
+};
 use spectral_lib::persistence::{
     PersistedState, get_filtered_recording_path, get_original_recording_path, load_state,
     remove_legacy_recordings, save_state,
@@ -347,6 +349,7 @@ fn handle_client(
                         let device_node_name = lock_or_recover(&state.device_node_name).clone();
                         let last_error = lock_or_recover(&state.last_error).clone();
                         let daemon_state = DaemonState {
+                            protocol_version: PROTOCOL_VERSION,
                             status,
                             device_id,
                             device_node_name,
