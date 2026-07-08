@@ -767,7 +767,7 @@ export component MainWindow inherits Window {
                                 horizontal-alignment: left;
                             }
 
-                            // Scenario 1: PipeWire not running
+                            // Scenario 1: PipeWire or WirePlumber not running
                             Rectangle {
                                 height: 90px;
                                 background: #0D1117;
@@ -780,14 +780,14 @@ export component MainWindow inherits Window {
                                     spacing: 8px;
 
                                     Text {
-                                        text: "1. PipeWire Not Running";
+                                        text: "1. PipeWire or WirePlumber Not Running";
                                         font-size: 16px;
                                         font-weight: 700;
                                         color: #0085FC;
                                     }
 
                                     Text {
-                                        text: "Spectral requires PipeWire to be running. Check with: `systemctl --user status pipewire`";
+                                        text: "Spectral needs PipeWire and its session manager. Check both: `systemctl --user status pipewire wireplumber`";
                                         font-size: 13px;
                                         color: #C9D1D9;
                                         wrap: word-wrap;
@@ -815,7 +815,7 @@ export component MainWindow inherits Window {
                                     }
 
                                     Text {
-                                        text: "Ensure your microphone is properly connected via USB/jack, or if wireless, that it's paired and powered on.";
+                                        text: "Check the cable, pairing, and power, then run `wpctl status` — if the device isn't listed under Sources there, PipeWire can't see it.";
                                         font-size: 13px;
                                         color: #C9D1D9;
                                         wrap: word-wrap;
@@ -823,7 +823,7 @@ export component MainWindow inherits Window {
                                 }
                             }
 
-                            // Scenario 3: Permissions
+                            // Scenario 3: Bluetooth profile
                             Rectangle {
                                 height: 90px;
                                 background: #0D1117;
@@ -836,14 +836,14 @@ export component MainWindow inherits Window {
                                     spacing: 8px;
 
                                     Text {
-                                        text: "3. Insufficient Permissions";
+                                        text: "3. Bluetooth Headset in the Wrong Profile";
                                         font-size: 16px;
                                         font-weight: 700;
                                         color: #0085FC;
                                     }
 
                                     Text {
-                                        text: "Your user may need to be in the 'audio' group. Run: `groups $(whoami) | grep audio`";
+                                        text: "Bluetooth mics only capture in the HSP/HFP headset profile; A2DP is playback-only. Switch the profile in your sound settings or `pavucontrol`.";
                                         font-size: 13px;
                                         color: #C9D1D9;
                                         wrap: word-wrap;
@@ -851,7 +851,7 @@ export component MainWindow inherits Window {
                                 }
                             }
 
-                            // Scenario 4: Device disabled in system
+                            // Scenario 4: Device disabled or muted
                             Rectangle {
                                 height: 90px;
                                 background: #0D1117;
@@ -864,14 +864,14 @@ export component MainWindow inherits Window {
                                     spacing: 8px;
 
                                     Text {
-                                        text: "4. Device Disabled in System Settings";
+                                        text: "4. Device Disabled or Muted";
                                         font-size: 16px;
                                         font-weight: 700;
                                         color: #0085FC;
                                     }
 
                                     Text {
-                                        text: "Check your system's sound settings or use `pavucontrol` to ensure the device isn't muted or disabled.";
+                                        text: "Check your system's sound settings or `pavucontrol`: the device may be muted, disabled, or its profile set to Off.";
                                         font-size: 13px;
                                         color: #C9D1D9;
                                         wrap: word-wrap;
@@ -879,7 +879,7 @@ export component MainWindow inherits Window {
                                 }
                             }
 
-                            // Scenario 5: Driver issues
+                            // Scenario 5: Stale devices after a PipeWire restart
                             Rectangle {
                                 height: 90px;
                                 background: #0D1117;
@@ -892,14 +892,14 @@ export component MainWindow inherits Window {
                                     spacing: 8px;
 
                                     Text {
-                                        text: "5. Missing or Incompatible Drivers";
+                                        text: "5. Stale Devices After a PipeWire Restart";
                                         font-size: 16px;
                                         font-weight: 700;
                                         color: #0085FC;
                                     }
 
                                     Text {
-                                        text: "Some USB mics need specific drivers. Check `dmesg | grep -i audio` for hardware detection issues.";
+                                        text: "After a PipeWire restart the list may point at devices that no longer exist. Click Refresh and re-select your device before enabling.";
                                         font-size: 13px;
                                         color: #C9D1D9;
                                         wrap: word-wrap;
