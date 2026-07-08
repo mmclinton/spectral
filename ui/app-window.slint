@@ -1059,7 +1059,7 @@ export component MainWindow inherits Window {
                                     }
 
                                     Text {
-                                        text: "Spectral is a real-time noise suppression tool for your microphone. It creates a virtual microphone that outputs a filtered version of your audio input.";
+                                        text: "Spectral runs a chosen microphone through the RNNoise denoiser and exposes the result as a virtual PipeWire microphone that any application can use.";
                                         font-size: 13px;
                                         color: #C9D1D9;
                                         wrap: word-wrap;
@@ -1087,7 +1087,7 @@ export component MainWindow inherits Window {
                                     }
 
                                     Text {
-                                        text: "1. Select your physical microphone from the \"Original Input Source\" list\n2. Click \"Enable\" to start noise suppression\n3. In your application, select \"Spectral-Mic\" as your input device";
+                                        text: "1. Select your physical microphone from the \"Original Input Source\" list\n2. Click \"Enable\" — Spectral creates the virtual mic and makes it the default input\n3. Apps that pin a specific device: select the virtual mic by the name set below";
                                         font-size: 13px;
                                         color: #C9D1D9;
                                         wrap: word-wrap;
@@ -1143,7 +1143,7 @@ export component MainWindow inherits Window {
                                     }
 
                                     Text {
-                                        text: "Customize the name of the virtual microphone. Click \"Rename\" to apply or \"Reset\" to restore the default name.";
+                                        text: "Rename and Reset only stage a new name — nothing changes until you click Enable (or Apply while active), which recreates the virtual mic under the staged name.";
                                         font-size: 13px;
                                         color: #C9D1D9;
                                         wrap: word-wrap;
@@ -1171,7 +1171,7 @@ export component MainWindow inherits Window {
                                     }
 
                                     Text {
-                                        text: "Record a short sample (up to 15 seconds) to compare the original and filtered audio. This helps you fine-tune the threshold setting for your environment.";
+                                        text: "Record a short sample (up to 15 seconds) to compare the original and filtered audio and fine-tune the threshold. Recordings are saved under ~/.local/state/spectral/recordings.";
                                         font-size: 13px;
                                         color: #C9D1D9;
                                         wrap: word-wrap;
@@ -1192,7 +1192,7 @@ export component MainWindow inherits Window {
                                     spacing: 8px;
 
                                     Text {
-                                        text: "Tip: The status bar shows \"Active\" (green) when Spectral is processing audio, \"Inactive\" (red) when disabled.";
+                                        text: "Tip: Status colors — green Active, yellow Pending Changes (staged settings not yet applied), red Inactive.";
                                         font-size: 13px;
                                         font-italic: true;
                                         color: #58A6FF;
