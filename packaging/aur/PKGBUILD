@@ -1,0 +1,64 @@
+# Maintainer: mmc <codeberg.wilder850@simplelogin.com>
+pkgname=spectral-mic
+pkgver=0.4.0
+pkgrel=1
+pkgdesc="Real-time microphone noise suppression via a virtual PipeWire source (RNNoise)"
+arch=('x86_64')
+url="https://codeberg.org/mmc/spectral"
+license=('GPL-3.0-only')
+depends=(
+  'gcc-libs'
+  'glibc'
+  'libpipewire'
+  'pipewire'          # the media graph itself + pw-record/pw-play
+  'wireplumber'       # session manager: owns the "default" metadata object
+  'fontconfig'
+  'freetype2'
+  'libxkbcommon'      # this and the wayland/x11 libs below are dlopened by winit
+  'wayland'
+  'libx11'
+  'libxcursor'
+  'libxi'
+  'libxrandr'
+  'hicolor-icon-theme'
+  'xdg-utils'         # xdg-open for the GUI's web links
+)
+makedepends=('rust' 'clang' 'pkgconf')
+# The unrelated AUR package "spectral" (BSC trace-analysis tool) also ships
+# /usr/bin/spectral.
+conflicts=('spectral')
+options=(!debug)      # the release profile already strips symbols
+source=("$pkgname-$pkgver.tar.gz::https://codeberg.org/mmc/spectral/archive/v$pkgver.tar.gz")
+# PLACEHOLDER: no v0.4.0 tag exists yet. Before the first AUR publication,
+# recompute from the pushed tag tarball and regenerate .SRCINFO:
+#   curl -sL https://codeberg.org/mmc/spectral/archive/v$pkgver.tar.gz | sha256sum
+sha256sums=('SKIP')
+
+prepare() {
+  cd spectral
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd spectral
+  cargo build --release --frozen
+}
+
+check() {
+  cd spectral
+  cargo test --release --frozen
+}
+
+package() {
+  cd spectral
+  install -Dm755 target/release/spectral "$pkgdir/usr/bin/spectral"
+  install -Dm755 target/release/spectral-daemon "$pkgdir/usr/bin/spectral-daemon"
+  install -Dm644 assets/page.codeberg.mmc.Spectral.desktop \
+    "$pkgdir/usr/share/applications/page.codeberg.mmc.Spectral.desktop"
+  install -Dm644 assets/spectral.png \
+    "$pkgdir/usr/share/icons/hicolor/512x512/apps/page.codeberg.mmc.Spectral.png"
+  install -Dm644 assets/page.codeberg.mmc.Spectral.metainfo.xml \
+    "$pkgdir/usr/share/metainfo/page.codeberg.mmc.Spectral.metainfo.xml"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 THIRD-PARTY.md "$pkgdir/usr/share/licenses/$pkgname/THIRD-PARTY.md"
+}
