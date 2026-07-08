@@ -226,24 +226,38 @@ impl VirtualMic {
         self.audio_pipeline.as_ref()?.failure()
     }
 
-    pub fn stop(mut self) {
+    /// Tear down the mic. The module ids are cleared even on error — Drop
+    /// stays a no-op and the reap machinery owns whatever PulseAudio kept.
+    pub fn stop(mut self) -> Result<(), String> {
         if let Some(mut pipeline) = self.audio_pipeline.take() {
             pipeline.stop();
         }
 
-        if let Ok(mut ctx) = PulseContext::new("spectral-cleanup") {
-            if let Some(id) = self.remap_module_id.take()
-                && let Err(e) = ctx.unload_module(id)
-            {
-                eprintln!("Failed to unload remap module: {}", e);
+        let mut errors = Vec::new();
+        match PulseContext::new("spectral-cleanup") {
+            Ok(mut ctx) => {
+                if let Some(id) = self.remap_module_id.take()
+                    && let Err(e) = ctx.unload_module(id)
+                {
+                    errors.push(format!("failed to unload remap module: {e}"));
+                }
+                if let Some(id) = self.sink_module_id.take()
+                    && let Err(e) = ctx.unload_module(id)
+                {
+                    errors.push(format!("failed to unload sink module: {e}"));
+                }
             }
-            if let Some(id) = self.sink_module_id.take()
-                && let Err(e) = ctx.unload_module(id)
-            {
-                eprintln!("Failed to unload sink module: {}", e);
+            Err(e) => {
+                self.remap_module_id.take();
+                self.sink_module_id.take();
+                errors.push(format!("failed to connect to PulseAudio for cleanup: {e}"));
             }
+        }
+
+        if errors.is_empty() {
+            Ok(())
         } else {
-            eprintln!("Failed to create PulseContext for cleanup");
+            Err(errors.join("; "))
         }
     }
 }
