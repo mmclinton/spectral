@@ -21,7 +21,6 @@ A real-time audio noise suppression application powered by [RNNoise](https://arx
 - [Architecture](#architecture)
 - [Installation](#installation)
 - [Usage](#usage)
-  - [Headless CLI](#headless-cli)
 - [Troubleshooting](#troubleshooting)
 - [Known limitations](#known-limitations)
 - [Non-goals](#non-goals)
