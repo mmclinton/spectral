@@ -49,7 +49,6 @@ pub enum DaemonCommand {
         threshold: Option<i32>,
         rumble_filter: Option<bool>,
         auto_level: Option<bool>,
-        voice_smoothing: Option<bool>,
     },
     Disable,
     GetState,
@@ -81,13 +80,11 @@ pub struct DaemonState {
     pub threshold: i32,
     /// Defaulted so a pre-0.5 daemon's payload still parses and reaches the
     /// version check above instead of dying as a parse error; likewise for
-    /// the other toggles.
+    /// `auto_level`.
     #[serde(default)]
     pub rumble_filter: bool,
     #[serde(default)]
     pub auto_level: bool,
-    #[serde(default)]
-    pub voice_smoothing: bool,
     pub is_playing_original: bool,
     pub is_playing_filtered: bool,
     pub last_error: Option<String>,
@@ -286,7 +283,6 @@ mod tests {
         assert_eq!(state.last_error, None);
         assert!(!state.rumble_filter);
         assert!(!state.auto_level);
-        assert!(!state.voice_smoothing);
     }
 
     #[test]

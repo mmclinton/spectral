@@ -1,29 +1,14 @@
 //! Voice-gate envelope: turns the per-frame binary gate decision into a
 //! click-free gain ramp.
 
+// One-pole coefficients per 10 ms frame: attack reaches perceptually full
+// gain in ~2-4 frames; release leaves a ~0.5 s audible tail.
+const ATTACK: f32 = 0.50;
+const RELEASE: f32 = 0.96;
+
 // Below this the release is inaudible; snapping to zero keeps the one-pole
 // from decaying through denormal range forever.
 const GAIN_FLOOR: f32 = 1e-9;
-
-/// Gate character: one-pole attack/release coefficients per 10 ms frame.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum GatePreset {
-    /// Full open in one frame, ~100 ms to silence — perceptually "just the
-    /// threshold", no audible transformation beyond the gating itself.
-    Tight,
-    /// Soft ~20-40 ms attack and a ~0.5 s release tail — the "voice
-    /// smoothing" character.
-    Gentle,
-}
-
-impl GatePreset {
-    fn coeffs(self) -> (f32, f32) {
-        match self {
-            GatePreset::Tight => (0.0, 0.5),
-            GatePreset::Gentle => (0.5, 0.96),
-        }
-    }
-}
 
 #[derive(Default)]
 pub struct GateEnvelope {
@@ -38,13 +23,12 @@ impl GateEnvelope {
     /// Advance one attack/release step toward `open` and apply the gain,
     /// interpolated sample-by-sample from the previous frame's value so a
     /// gate transition never steps at a frame boundary.
-    pub fn process(&mut self, frame: &mut [f32], open: bool, preset: GatePreset) {
-        let (attack, release) = preset.coeffs();
+    pub fn process(&mut self, frame: &mut [f32], open: bool) {
         let start = self.gain;
         let mut target = if open {
-            attack * start + (1.0 - attack)
+            ATTACK * start + (1.0 - ATTACK)
         } else {
-            release * start
+            RELEASE * start
         };
         if target < GAIN_FLOOR {
             target = 0.0;
@@ -69,49 +53,34 @@ mod tests {
 
     const FRAME: usize = 8;
 
-    fn run(env: &mut GateEnvelope, open: bool, preset: GatePreset) -> Vec<f32> {
+    fn run(env: &mut GateEnvelope, open: bool) -> Vec<f32> {
         let mut frame = vec![1.0f32; FRAME];
-        env.process(&mut frame, open, preset);
+        env.process(&mut frame, open);
         frame
     }
 
-    fn end_gain(env: &mut GateEnvelope, open: bool, preset: GatePreset) -> f32 {
-        *run(env, open, preset).last().unwrap()
+    fn end_gain(env: &mut GateEnvelope, open: bool) -> f32 {
+        *run(env, open).last().unwrap()
     }
 
     #[test]
-    fn gain_follows_the_attack_and_release_curves_of_each_preset() {
-        for preset in [GatePreset::Tight, GatePreset::Gentle] {
-            let (attack, release) = preset.coeffs();
-            let mut env = GateEnvelope::new();
-            let mut expected = 0.0f32;
-            for _ in 0..3 {
-                expected = attack * expected + (1.0 - attack);
-                assert!(
-                    (end_gain(&mut env, true, preset) - expected).abs() < 1e-6,
-                    "{preset:?} attack"
-                );
-            }
-            for _ in 0..3 {
-                expected *= release;
-                assert!(
-                    (end_gain(&mut env, false, preset) - expected).abs() < 1e-6,
-                    "{preset:?} release"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn tight_preset_opens_fully_in_one_frame() {
+    fn gain_follows_the_attack_and_release_curves() {
         let mut env = GateEnvelope::new();
-        assert_eq!(end_gain(&mut env, true, GatePreset::Tight), 1.0);
+        let mut expected = 0.0f32;
+        for _ in 0..3 {
+            expected = ATTACK * expected + (1.0 - ATTACK);
+            assert!((end_gain(&mut env, true) - expected).abs() < 1e-6);
+        }
+        for _ in 0..3 {
+            expected *= RELEASE;
+            assert!((end_gain(&mut env, false) - expected).abs() < 1e-6);
+        }
     }
 
     #[test]
     fn gain_ramps_linearly_within_a_frame() {
         let mut env = GateEnvelope::new();
-        let frame = run(&mut env, true, GatePreset::Gentle);
+        let frame = run(&mut env, true);
         for (i, sample) in frame.iter().enumerate() {
             let expected = 0.5 * (i + 1) as f32 / FRAME as f32;
             assert!(
@@ -123,21 +92,19 @@ mod tests {
 
     #[test]
     fn long_release_settles_at_exact_zero() {
-        for preset in [GatePreset::Tight, GatePreset::Gentle] {
-            let mut env = GateEnvelope::new();
-            run(&mut env, true, preset);
-            for _ in 0..1000 {
-                run(&mut env, false, preset);
-            }
-            assert_eq!(end_gain(&mut env, false, preset), 0.0, "{preset:?}");
+        let mut env = GateEnvelope::new();
+        run(&mut env, true);
+        for _ in 0..1000 {
+            run(&mut env, false);
         }
+        assert_eq!(end_gain(&mut env, false), 0.0);
     }
 
     #[test]
     fn reset_snaps_shut() {
         let mut env = GateEnvelope::new();
-        run(&mut env, true, GatePreset::Gentle);
+        run(&mut env, true);
         env.reset();
-        assert_eq!(end_gain(&mut env, false, GatePreset::Gentle), 0.0);
+        assert_eq!(end_gain(&mut env, false), 0.0);
     }
 }

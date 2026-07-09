@@ -25,7 +25,6 @@ export component MainWindow inherits Window {
     in-out property <int> slider_value: 80;
     in-out property <bool> rumble_filter: false;
     in-out property <bool> auto_level: false;
-    in-out property <bool> voice_smoothing: false;
     in-out property <bool> is_recording: false;
     in-out property <bool> has_recording: false;
     in-out property <bool> is_playing_original: false;
@@ -43,7 +42,6 @@ export component MainWindow inherits Window {
     callback threshold_change(int);
     callback rumble_filter_change(bool);
     callback auto_level_change(bool);
-    callback voice_smoothing_change(bool);
     callback rename_clicked(string);
     callback reset_clicked(string);
     callback enable_clicked();
@@ -414,26 +412,6 @@ export component MainWindow inherits Window {
                     y: 190px;
                     height: 30px;
                     text: "Auto level";
-                    font-size: 14px;
-                    color: white;
-                    vertical-alignment: center;
-                }
-
-                Switch {
-                    x: 10px;
-                    y: 230px;
-                    height: 30px;
-                    checked <=> root.voice_smoothing;
-                    toggled => {
-                        root.voice_smoothing_change(self.checked);
-                    }
-                }
-
-                Text {
-                    x: 70px;
-                    y: 230px;
-                    height: 30px;
-                    text: "Voice smoothing";
                     font-size: 14px;
                     color: white;
                     vertical-alignment: center;

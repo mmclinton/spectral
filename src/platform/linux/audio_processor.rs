@@ -1,6 +1,6 @@
 use super::audio_devices::{get_node_name, set_default_source};
 use super::pipewire::{NativeAudioPipeline, RNNOISE_FRAME_SIZE, SAMPLE_RATE};
-use super::stages::{GateEnvelope, GatePreset, HighPass, Leveler};
+use super::stages::{GateEnvelope, HighPass, Leveler};
 use crate::state::{AppState, is_valid_mic_name};
 use nnnoiseless::DenoiseState;
 use std::sync::Arc;
@@ -66,13 +66,8 @@ impl AudioProcessor {
             self.leveler.reset();
         }
 
-        let preset = if self.state.voice_smoothing.load(Ordering::Relaxed) {
-            GatePreset::Gentle
-        } else {
-            GatePreset::Tight
-        };
         match vad_cutoff(threshold) {
-            Some(cutoff) => self.gate.process(output, vad_probability > cutoff, preset),
+            Some(cutoff) => self.gate.process(output, vad_probability > cutoff),
             None => self.gate.reset(),
         }
     }

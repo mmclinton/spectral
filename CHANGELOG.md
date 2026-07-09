@@ -8,11 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- A Voice smoothing toggle (a GUI switch and `spectral enable
-  --voice-smoothing on|off`; `spectral status` reports it): ON is the gentle
-  gate character with a soft attack and a ~0.5 s release tail; OFF uses a
-  tight gate that opens instantly and falls silent in about 100 ms. The
-  setting persists and, like every other setting, applies on Enable/Apply.
 - A Rumble filter toggle (a GUI switch and `spectral enable
   --rumble-filter on|off`): a high-pass filter at 90 Hz ahead of the
   denoiser that cuts desk thumps, handling noise, and HVAC rumble, so the
@@ -24,11 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pumped up, with a built-in −1 dBFS peak limiter as the safety ceiling.
   Off by default.
 
-### Changed
-- The voice gate now defaults to the tight character; through 0.4.x the
-  gentle envelope was always on. Turn Voice smoothing on to keep the old
-  behavior.
-
 ### Fixed
 - The voice gate's gain now ramps sample-by-sample within each frame instead
   of stepping once per 10 ms frame, removing a faint zipper on gate
@@ -36,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 - The IPC protocol version is now 2 (the daemon state and enable command
-  carry the new toggle), so clients detect and replace a running 0.4.x
+  carry the new toggles), so clients detect and replace a running 0.4.x
   daemon on first use.
 
 ## [0.4.0] - 2026-07-08

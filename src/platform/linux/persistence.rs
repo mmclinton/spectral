@@ -16,8 +16,6 @@ pub struct PersistedState {
     pub rumble_filter: bool,
     #[serde(default)]
     pub auto_level: bool,
-    #[serde(default)]
-    pub voice_smoothing: bool,
 }
 
 impl Default for PersistedState {
@@ -29,7 +27,6 @@ impl Default for PersistedState {
             threshold: 80,
             rumble_filter: false,
             auto_level: false,
-            voice_smoothing: false,
         }
     }
 }
@@ -160,9 +157,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn old_state_format_with_is_active_still_loads() {
-        let old_format =
-            "is_active = true\ndevice_id = 42\nmic_name = \"My-Mic\"\nthreshold = 65\n";
+    fn old_and_stale_state_formats_still_load() {
+        // `is_active` predates 0.2.x; `voice_smoothing` existed only in
+        // unreleased builds. Unknown keys must be ignored, missing toggles
+        // default off.
+        let old_format = "is_active = true\ndevice_id = 42\nmic_name = \"My-Mic\"\nthreshold = 65\nvoice_smoothing = true\n";
         let state: PersistedState = toml::from_str(old_format).expect("old format must load");
         assert_eq!(state.device_id, Some(42));
         assert_eq!(state.device_node_name, None);
@@ -170,7 +169,6 @@ mod tests {
         assert_eq!(state.threshold, 65);
         assert!(!state.rumble_filter);
         assert!(!state.auto_level);
-        assert!(!state.voice_smoothing);
     }
 
     #[test]
@@ -183,7 +181,6 @@ mod tests {
                 threshold: 65,
                 rumble_filter: true,
                 auto_level: true,
-                voice_smoothing: true,
             };
             let toml_string = toml::to_string(&state).expect("state must serialize");
             let loaded: PersistedState =
@@ -194,7 +191,6 @@ mod tests {
             assert_eq!(loaded.threshold, state.threshold);
             assert_eq!(loaded.rumble_filter, state.rumble_filter);
             assert_eq!(loaded.auto_level, state.auto_level);
-            assert_eq!(loaded.voice_smoothing, state.voice_smoothing);
         }
     }
 }
