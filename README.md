@@ -31,9 +31,9 @@ A real-time audio noise suppression application powered by [RNNoise](https://arx
 ## Features
 
 - Real-time RNNoise denoising with an adjustable voice-activity gate
-- Native PipeWire virtual microphone, owned by the daemon — it disappears the instant the daemon exits, so stale devices cannot accumulate
-- Automatically set as the system default input on Enable
+- Native PipeWire virtual microphone, owned by the daemon
 - Built-in voice test to compare original and filtered audio
+- Automatically set as the system default input on Enable
 - Persistent settings across sessions
 
 ## Architecture
@@ -110,7 +110,7 @@ If you prefer manual control over installation:
 paru -S spectral-mic   # or: yay -S spectral-mic
 ```
 
-The package is named `spectral-mic` and conflicts with the unrelated AUR
+The package is named `spectral-mic` and due to conflicts with the unrelated AUR
 package `spectral`, which ships the same binary name. The PKGBUILD is
 maintained in this repository under [packaging/aur](packaging/aur).
 
