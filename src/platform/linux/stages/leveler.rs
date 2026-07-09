@@ -21,9 +21,12 @@ const MIN_RMS: f32 = 1.0;
 const GAIN_MIN: f32 = 0.251_19;
 const GAIN_MAX: f32 = 7.943_3;
 
-// 10^(0.03/20): 0.03 dB per 10 ms frame = 3 dB/s, slow enough to ride
-// average level without audible pumping.
-const SLEW_PER_FRAME: f32 = 1.003_460_5;
+// Asymmetric slew, the standard AGC convention: boosts creep up at 3 dB/s
+// (10^(0.03/20) per 10 ms frame) so quiet passages rise without pumping;
+// cuts act at 12 dB/s (10^(0.12/20) per frame) so a sudden loud passage is
+// tamed in under a second instead of riding hot.
+const SLEW_BOOST: f32 = 1.003_460_5;
+const SLEW_CUT: f32 = 1.013_911_4;
 
 // 32768 * 10^(-1/20): the limiter's -1 dBFS ceiling.
 const CEILING: f32 = 29_206.0;
@@ -61,9 +64,9 @@ impl Leveler {
             if rms > MIN_RMS {
                 let desired = (TARGET_RMS / rms).clamp(GAIN_MIN, GAIN_MAX);
                 self.gain = if desired > self.gain {
-                    (self.gain * SLEW_PER_FRAME).min(desired)
+                    (self.gain * SLEW_BOOST).min(desired)
                 } else {
-                    (self.gain / SLEW_PER_FRAME).max(desired)
+                    (self.gain / SLEW_CUT).max(desired)
                 };
             }
         }
@@ -149,6 +152,27 @@ mod tests {
         assert!(
             (GAIN_MAX * 0.98..GAIN_MAX * 1.02).contains(&gain),
             "gain {gain}"
+        );
+    }
+
+    #[test]
+    fn loud_voice_is_cut_four_times_faster_than_boosts() {
+        // -6 dBFS RMS input wants ~-12 dB of gain. At 12 dB/s the gain is
+        // already ~3.6 dB down after 30 frames — the old 3 dB/s pace would
+        // only have moved ~0.9 dB — and settles at the desired cut within
+        // ~1.2 s.
+        let mut leveler = Leveler::new();
+        let amplitude = 32768.0 * 0.501_19 * std::f32::consts::SQRT_2; // RMS -6 dBFS
+        let after_30 = run_frames(&mut leveler, amplitude, 1.0, 30);
+        let gain_30 = rms(&after_30) / (amplitude / std::f32::consts::SQRT_2);
+        assert!(gain_30 < 0.7, "gain after 30 frames: {gain_30}");
+
+        let settled = run_frames(&mut leveler, amplitude, 1.0, 90);
+        let gain = rms(&settled) / (amplitude / std::f32::consts::SQRT_2);
+        let desired = TARGET_RMS / (32768.0 * 0.501_19);
+        assert!(
+            (desired * 0.98..desired * 1.02).contains(&gain),
+            "gain {gain}, desired {desired}"
         );
     }
 

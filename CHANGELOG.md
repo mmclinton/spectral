@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fades to −20 dB of quiet, already-denoised room tone instead of muting to
   digital silence. The pipeline is 20 ms longer end-to-end (constant,
   including at threshold 0).
+- Auto level now reduces gain four times faster than it raises it (12
+  versus 3 dB/s), the standard gain-rider convention: a sudden loud passage
+  is tamed in under a second while quiet passages still come up gently.
 
 ### Fixed
 - Devices with more than two capture channels now downmix only the first
