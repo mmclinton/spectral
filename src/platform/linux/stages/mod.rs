@@ -5,6 +5,6 @@ pub mod gate;
 pub mod highpass;
 pub mod leveler;
 
-pub use gate::GateEnvelope;
+pub use gate::VoiceGate;
 pub use highpass::HighPass;
 pub use leveler::Leveler;

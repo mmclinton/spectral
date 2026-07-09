@@ -1,6 +1,6 @@
 use super::audio_devices::{get_node_name, set_default_source};
 use super::pipewire::{NativeAudioPipeline, RNNOISE_FRAME_SIZE, SAMPLE_RATE};
-use super::stages::{GateEnvelope, HighPass, Leveler};
+use super::stages::{HighPass, Leveler, VoiceGate};
 use crate::state::{AppState, is_valid_mic_name};
 use nnnoiseless::DenoiseState;
 use std::sync::Arc;
@@ -25,7 +25,7 @@ pub struct AudioProcessor {
     denoiser: Box<DenoiseState<'static>>,
     highpass: HighPass,
     leveler: Leveler,
-    gate: GateEnvelope,
+    gate: VoiceGate,
 }
 
 impl AudioProcessor {
@@ -35,7 +35,7 @@ impl AudioProcessor {
             denoiser: DenoiseState::new(),
             highpass: HighPass::new(RUMBLE_CUTOFF_HZ, SAMPLE_RATE as f64, RNNOISE_FRAME_SIZE),
             leveler: Leveler::new(),
-            gate: GateEnvelope::new(),
+            gate: VoiceGate::new(RNNOISE_FRAME_SIZE),
         }
     }
 
@@ -66,10 +66,10 @@ impl AudioProcessor {
             self.leveler.reset();
         }
 
-        match vad_cutoff(threshold) {
-            Some(cutoff) => self.gate.process(output, vad_probability > cutoff),
-            None => self.gate.reset(),
-        }
+        // The gate delays the output by LOOKAHEAD_FRAMES (constant, also in
+        // denoise-only bypass) so its decisions lead the audio.
+        self.gate
+            .process(output, vad_probability, vad_cutoff(threshold));
     }
 }
 

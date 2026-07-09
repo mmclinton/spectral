@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pumped up, with a built-in −1 dBFS peak limiter as the safety ceiling.
   Off by default.
 
+### Changed
+- The voice gate is rebuilt around how speech actually behaves: a constant
+  20 ms lookahead opens the gain before a word's first syllable plays
+  (RNNoise's voice detection lags onsets, which no attack speed could fix),
+  a 200 ms hold keeps natural pauses at full volume, hysteresis stops
+  confidence flutter from chattering the gate mid-word, and the closed gate
+  fades to −20 dB of quiet, already-denoised room tone instead of muting to
+  digital silence. The pipeline is 20 ms longer end-to-end (constant,
+  including at threshold 0).
+
 ### Fixed
 - The voice gate's gain now ramps sample-by-sample within each frame instead
   of stepping once per 10 ms frame, removing a faint zipper on gate
