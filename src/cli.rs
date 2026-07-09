@@ -19,6 +19,7 @@ pub enum CliCommand {
         device_id: Option<u32>,
         threshold: Option<i32>,
         mic_name: Option<String>,
+        voice_smoothing: Option<bool>,
     },
     Disable,
     Status,
@@ -43,6 +44,9 @@ Commands:
                                      defaults to the current setting
                 --mic-name <name>    virtual mic name ([A-Za-z0-9_-], max 21);
                                      defaults to the current setting
+                --voice-smoothing <on|off>
+                                     gentler voice-gate attack/release with a
+                                     longer tail; defaults to the current setting
   disable     Tear down the virtual microphone
   status      Show the daemon's state
   devices     List input devices with their current PipeWire ids
@@ -93,6 +97,7 @@ where
     let mut device_id: Option<u32> = None;
     let mut threshold: Option<i32> = None;
     let mut mic_name: Option<String> = None;
+    let mut voice_smoothing: Option<bool> = None;
 
     while let Some(arg) = args.next() {
         let arg = arg?;
@@ -136,6 +141,13 @@ where
                 }
                 mic_name = Some(value);
             }
+            "--voice-smoothing" => {
+                if voice_smoothing.is_some() {
+                    return Err("duplicate flag --voice-smoothing".to_string());
+                }
+                let value = take_value(args, inline, "--voice-smoothing")?;
+                voice_smoothing = Some(parse_toggle(&value, "--voice-smoothing")?);
+            }
             other => return Err(format!("unexpected argument '{other}'")),
         }
     }
@@ -144,7 +156,16 @@ where
         device_id,
         threshold,
         mic_name,
+        voice_smoothing,
     })
+}
+
+fn parse_toggle(value: &str, flag: &str) -> Result<bool, String> {
+    match value {
+        "on" => Ok(true),
+        "off" => Ok(false),
+        other => Err(format!("invalid {flag} '{other}': expected on|off")),
+    }
 }
 
 fn take_value<I>(args: &mut I, inline: Option<String>, flag: &str) -> Result<String, String>
@@ -177,7 +198,8 @@ pub fn run(command: CliCommand) -> ExitCode {
             device_id,
             threshold,
             mic_name,
-        } => run_enable(device_id, threshold, mic_name),
+            voice_smoothing,
+        } => run_enable(device_id, threshold, mic_name, voice_smoothing),
         CliCommand::Disable => run_disable(),
         CliCommand::Status => run_status(),
         CliCommand::Shutdown => run_shutdown(),
@@ -208,6 +230,7 @@ fn run_enable(
     device_id: Option<u32>,
     threshold: Option<i32>,
     mic_name: Option<String>,
+    voice_smoothing: Option<bool>,
 ) -> ExitCode {
     // connect_and_fetch_state spawns a daemon when none is running and
     // replaces one whose state no longer parses (an old version).
@@ -223,6 +246,7 @@ fn run_enable(
         device_id,
         mic_name,
         threshold,
+        voice_smoothing,
     }) {
         Ok(DaemonResponse::Ok) => {
             println!("noise suppression enabled");
@@ -309,12 +333,16 @@ fn print_status(state: &DaemonState) {
         Status::Pending => "Pending",
         Status::Inactive => "Inactive",
     };
-    println!("status:     {status}");
-    println!("device:     {}", describe_device(state));
-    println!("mic name:   {}", state.mic_name);
-    println!("threshold:  {}%", state.threshold);
+    println!("status:           {status}");
+    println!("device:           {}", describe_device(state));
+    println!("mic name:         {}", state.mic_name);
+    println!("threshold:        {}%", state.threshold);
+    println!(
+        "voice smoothing:  {}",
+        if state.voice_smoothing { "on" } else { "off" }
+    );
     if let Some(error) = &state.last_error {
-        println!("last error: {error}");
+        println!("last error:       {error}");
     }
 }
 
@@ -408,6 +436,7 @@ mod tests {
                 device_id: None,
                 threshold: None,
                 mic_name: None,
+                voice_smoothing: None,
             })
         );
     }
@@ -418,6 +447,7 @@ mod tests {
             device_id: Some(5),
             threshold: Some(70),
             mic_name: Some("My-Mic_2".to_string()),
+            voice_smoothing: Some(true),
         });
         assert_eq!(
             p(&[
@@ -427,7 +457,9 @@ mod tests {
                 "--threshold",
                 "70",
                 "--mic-name",
-                "My-Mic_2"
+                "My-Mic_2",
+                "--voice-smoothing",
+                "on"
             ]),
             expected
         );
@@ -436,10 +468,33 @@ mod tests {
                 "enable",
                 "--device=5",
                 "--threshold=70",
-                "--mic-name=My-Mic_2"
+                "--mic-name=My-Mic_2",
+                "--voice-smoothing=on"
             ]),
             expected
         );
+    }
+
+    #[test]
+    fn toggle_flags_accept_only_on_or_off() {
+        let smoothing = |args: &[&str]| match p(args) {
+            Ok(CliCommand::Enable {
+                voice_smoothing, ..
+            }) => voice_smoothing,
+            other => panic!("expected Enable, got {other:?}"),
+        };
+        assert_eq!(
+            smoothing(&["enable", "--voice-smoothing", "on"]),
+            Some(true)
+        );
+        assert_eq!(
+            smoothing(&["enable", "--voice-smoothing", "off"]),
+            Some(false)
+        );
+        assert!(p(&["enable", "--voice-smoothing", "true"]).is_err());
+        assert!(p(&["enable", "--voice-smoothing", "ON"]).is_err());
+        assert!(p(&["enable", "--voice-smoothing"]).is_err());
+        assert!(p(&["enable", "--voice-smoothing=on", "--voice-smoothing=off"]).is_err());
     }
 
     #[test]

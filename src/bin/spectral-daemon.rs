@@ -70,6 +70,9 @@ fn main() {
         state
             .threshold_val
             .store(persisted.threshold, Ordering::Relaxed);
+        state
+            .voice_smoothing
+            .store(persisted.voice_smoothing, Ordering::Relaxed);
         *lock_or_recover(&state.mic_name) = persisted.mic_name.clone();
         *lock_or_recover(&state.selected_device_id) = persisted.device_id;
         *lock_or_recover(&state.device_node_name) = persisted.device_node_name.clone();
@@ -156,6 +159,7 @@ fn handle_enable(
     device_id: Option<u32>,
     mic_name: Option<String>,
     threshold: Option<i32>,
+    voice_smoothing: Option<bool>,
 ) -> DaemonResponse {
     let mic_name = match mic_name {
         Some(name) => {
@@ -172,6 +176,8 @@ fn handle_enable(
         Some(t) => t.clamp(0, 100),
         None => state.threshold_val.load(Ordering::Relaxed),
     };
+    let voice_smoothing =
+        voice_smoothing.unwrap_or_else(|| state.voice_smoothing.load(Ordering::Relaxed));
     let (device_id, device_node_name) = match device_id {
         Some(id) => match get_node_name(id) {
             Ok(name) => (id, name),
@@ -206,6 +212,9 @@ fn handle_enable(
     };
 
     state.threshold_val.store(threshold, Ordering::Relaxed);
+    state
+        .voice_smoothing
+        .store(voice_smoothing, Ordering::Relaxed);
     *lock_or_recover(&state.mic_name) = mic_name.clone();
     *lock_or_recover(&state.selected_device_id) = Some(device_id);
     *lock_or_recover(&state.device_node_name) = Some(device_node_name.clone());
@@ -215,6 +224,7 @@ fn handle_enable(
         device_node_name: Some(device_node_name),
         mic_name: mic_name.clone(),
         threshold,
+        voice_smoothing,
     }) {
         eprintln!("Failed to persist settings: {}", e);
     }
@@ -276,7 +286,15 @@ fn handle_client(
                         device_id,
                         mic_name,
                         threshold,
-                    } => handle_enable(&state, &virtual_mic, device_id, mic_name, threshold),
+                        voice_smoothing,
+                    } => handle_enable(
+                        &state,
+                        &virtual_mic,
+                        device_id,
+                        mic_name,
+                        threshold,
+                        voice_smoothing,
+                    ),
                     DaemonCommand::Disable => {
                         let mut mic_guard = lock_or_recover(&virtual_mic);
                         if let Some(mic) = mic_guard.take() {
@@ -344,6 +362,7 @@ fn handle_client(
                         };
 
                         let threshold = state.threshold_val.load(Ordering::Relaxed);
+                        let voice_smoothing = state.voice_smoothing.load(Ordering::Relaxed);
                         let mic_name = lock_or_recover(&state.mic_name).clone();
                         let device_id = *lock_or_recover(&state.selected_device_id);
                         let device_node_name = lock_or_recover(&state.device_node_name).clone();
@@ -355,6 +374,7 @@ fn handle_client(
                             device_node_name,
                             mic_name,
                             threshold,
+                            voice_smoothing,
                             is_playing_original,
                             is_playing_filtered,
                             last_error,

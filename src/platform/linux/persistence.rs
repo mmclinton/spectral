@@ -12,6 +12,8 @@ pub struct PersistedState {
     pub device_node_name: Option<String>,
     pub mic_name: String,
     pub threshold: i32,
+    #[serde(default)]
+    pub voice_smoothing: bool,
 }
 
 impl Default for PersistedState {
@@ -21,6 +23,7 @@ impl Default for PersistedState {
             device_node_name: None,
             mic_name: "Spectral-Mic".to_string(),
             threshold: 80,
+            voice_smoothing: false,
         }
     }
 }
@@ -159,6 +162,7 @@ mod tests {
         assert_eq!(state.device_node_name, None);
         assert_eq!(state.mic_name, "My-Mic");
         assert_eq!(state.threshold, 65);
+        assert!(!state.voice_smoothing);
     }
 
     #[test]
@@ -169,6 +173,7 @@ mod tests {
                 device_node_name: node_name.map(str::to_string),
                 mic_name: "My-Mic".to_string(),
                 threshold: 65,
+                voice_smoothing: true,
             };
             let toml_string = toml::to_string(&state).expect("state must serialize");
             let loaded: PersistedState =
@@ -177,6 +182,7 @@ mod tests {
             assert_eq!(loaded.device_node_name, state.device_node_name);
             assert_eq!(loaded.mic_name, state.mic_name);
             assert_eq!(loaded.threshold, state.threshold);
+            assert_eq!(loaded.voice_smoothing, state.voice_smoothing);
         }
     }
 }

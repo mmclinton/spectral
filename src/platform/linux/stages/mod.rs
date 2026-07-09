@@ -3,4 +3,4 @@
 
 pub mod gate;
 
-pub use gate::GateEnvelope;
+pub use gate::{GateEnvelope, GatePreset};

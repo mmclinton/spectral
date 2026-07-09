@@ -47,6 +47,7 @@ pub enum DaemonCommand {
         device_id: Option<u32>,
         mic_name: Option<String>,
         threshold: Option<i32>,
+        voice_smoothing: Option<bool>,
     },
     Disable,
     GetState,
@@ -64,7 +65,7 @@ pub enum DaemonCommand {
 /// an optional field never makes a new client reject an old daemon's state;
 /// this required field is the explicit trip-wire that sends clients down
 /// their restart-and-upgrade path.
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DaemonState {
@@ -76,6 +77,10 @@ pub struct DaemonState {
     pub device_node_name: Option<String>,
     pub mic_name: String,
     pub threshold: i32,
+    /// Defaulted so a pre-0.5 daemon's payload still parses and reaches the
+    /// version check above instead of dying as a parse error.
+    #[serde(default)]
+    pub voice_smoothing: bool,
     pub is_playing_original: bool,
     pub is_playing_filtered: bool,
     pub last_error: Option<String>,
@@ -272,6 +277,7 @@ mod tests {
             serde_json::from_str(&with_version).expect("optional fields may be absent");
         assert_eq!(state.device_node_name, None);
         assert_eq!(state.last_error, None);
+        assert!(!state.voice_smoothing);
     }
 
     #[test]

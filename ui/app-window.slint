@@ -4,6 +4,7 @@ import {
     LineEdit,
     ListView,
     StandardListView,
+    Switch,
 } from "std-widgets.slint";
 import { SectionHeader } from "section-headers.slint";
 import { ClickableLink } from "links.slint";
@@ -21,6 +22,7 @@ export component MainWindow inherits Window {
     in-out property <int> selected_input_index: -1;
     in-out property <[StandardListViewItem]> input_devices;
     in-out property <int> slider_value: 80;
+    in-out property <bool> voice_smoothing: false;
     in-out property <bool> is_recording: false;
     in-out property <bool> has_recording: false;
     in-out property <bool> is_playing_original: false;
@@ -36,6 +38,7 @@ export component MainWindow inherits Window {
 
     callback selected_input_index_change(int);
     callback threshold_change(int);
+    callback voice_smoothing_change(bool);
     callback rename_clicked(string);
     callback reset_clicked(string);
     callback enable_clicked();
@@ -362,6 +365,33 @@ export component MainWindow inherits Window {
                             }
                         }
                     }
+                }
+
+                // Voice Processing header
+                SectionHeader {
+                    x: 10px;
+                    y: 110px;
+                    title: "Voice Processing";
+                }
+
+                Switch {
+                    x: 10px;
+                    y: 230px;
+                    height: 30px;
+                    checked <=> root.voice_smoothing;
+                    toggled => {
+                        root.voice_smoothing_change(self.checked);
+                    }
+                }
+
+                Text {
+                    x: 70px;
+                    y: 230px;
+                    height: 30px;
+                    text: "Voice smoothing";
+                    font-size: 14px;
+                    color: white;
+                    vertical-alignment: center;
                 }
 
                 // Voice Test Header
@@ -1115,7 +1145,7 @@ export component MainWindow inherits Window {
                                     }
 
                                     Text {
-                                        text: "Your microphone audio is always denoised. For every 10 ms frame, the denoiser also reports its confidence (0.0–1.0) that the frame contains voice. The slider maps 1–100% to a confidence cutoff of up to 0.95: frames above the cutoff pass the gate, frames below are muted (~20 ms attack, ~250 ms release). At 0% the gate is off and you get denoising only. Use \"Apply\" to save changes while the mic is active.";
+                                        text: "Your microphone audio is always denoised. For every 10 ms frame, the denoiser also reports its confidence (0.0–1.0) that the frame contains voice. The slider maps 1–100% to a confidence cutoff of up to 0.95: frames above the cutoff pass the gate, frames below are muted. At 0% the gate is off and you get denoising only. Use \"Apply\" to save changes while the mic is active.";
                                         font-size: 13px;
                                         color: #C9D1D9;
                                         wrap: word-wrap;
