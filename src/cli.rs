@@ -20,6 +20,7 @@ pub enum CliCommand {
         threshold: Option<i32>,
         mic_name: Option<String>,
         rumble_filter: Option<bool>,
+        auto_level: Option<bool>,
         voice_smoothing: Option<bool>,
     },
     Disable,
@@ -49,6 +50,10 @@ Commands:
                                      cut low-frequency rumble (below ~90 Hz)
                                      before denoising; defaults to the current
                                      setting
+                --auto-level <on|off>
+                                     even out voice volume automatically, with
+                                     a peak limiter as the safety ceiling;
+                                     defaults to the current setting
                 --voice-smoothing <on|off>
                                      gentler voice-gate attack/release with a
                                      longer tail; defaults to the current setting
@@ -103,6 +108,7 @@ where
     let mut threshold: Option<i32> = None;
     let mut mic_name: Option<String> = None;
     let mut rumble_filter: Option<bool> = None;
+    let mut auto_level: Option<bool> = None;
     let mut voice_smoothing: Option<bool> = None;
 
     while let Some(arg) = args.next() {
@@ -154,6 +160,13 @@ where
                 let value = take_value(args, inline, "--rumble-filter")?;
                 rumble_filter = Some(parse_toggle(&value, "--rumble-filter")?);
             }
+            "--auto-level" => {
+                if auto_level.is_some() {
+                    return Err("duplicate flag --auto-level".to_string());
+                }
+                let value = take_value(args, inline, "--auto-level")?;
+                auto_level = Some(parse_toggle(&value, "--auto-level")?);
+            }
             "--voice-smoothing" => {
                 if voice_smoothing.is_some() {
                     return Err("duplicate flag --voice-smoothing".to_string());
@@ -170,6 +183,7 @@ where
         threshold,
         mic_name,
         rumble_filter,
+        auto_level,
         voice_smoothing,
     })
 }
@@ -213,12 +227,14 @@ pub fn run(command: CliCommand) -> ExitCode {
             threshold,
             mic_name,
             rumble_filter,
+            auto_level,
             voice_smoothing,
         } => run_enable(
             device_id,
             threshold,
             mic_name,
             rumble_filter,
+            auto_level,
             voice_smoothing,
         ),
         CliCommand::Disable => run_disable(),
@@ -252,6 +268,7 @@ fn run_enable(
     threshold: Option<i32>,
     mic_name: Option<String>,
     rumble_filter: Option<bool>,
+    auto_level: Option<bool>,
     voice_smoothing: Option<bool>,
 ) -> ExitCode {
     // connect_and_fetch_state spawns a daemon when none is running and
@@ -269,6 +286,7 @@ fn run_enable(
         mic_name,
         threshold,
         rumble_filter,
+        auto_level,
         voice_smoothing,
     }) {
         Ok(DaemonResponse::Ok) => {
@@ -363,6 +381,10 @@ fn print_status(state: &DaemonState) {
     println!(
         "rumble filter:    {}",
         if state.rumble_filter { "on" } else { "off" }
+    );
+    println!(
+        "auto level:       {}",
+        if state.auto_level { "on" } else { "off" }
     );
     println!(
         "voice smoothing:  {}",
@@ -464,6 +486,7 @@ mod tests {
                 threshold: None,
                 mic_name: None,
                 rumble_filter: None,
+                auto_level: None,
                 voice_smoothing: None,
             })
         );
@@ -476,6 +499,7 @@ mod tests {
             threshold: Some(70),
             mic_name: Some("My-Mic_2".to_string()),
             rumble_filter: Some(false),
+            auto_level: Some(true),
             voice_smoothing: Some(true),
         });
         assert_eq!(
@@ -489,6 +513,8 @@ mod tests {
                 "My-Mic_2",
                 "--rumble-filter",
                 "off",
+                "--auto-level",
+                "on",
                 "--voice-smoothing",
                 "on"
             ]),
@@ -501,6 +527,7 @@ mod tests {
                 "--threshold=70",
                 "--mic-name=My-Mic_2",
                 "--rumble-filter=off",
+                "--auto-level=on",
                 "--voice-smoothing=on"
             ]),
             expected
@@ -529,6 +556,8 @@ mod tests {
         assert!(p(&["enable", "--voice-smoothing=on", "--voice-smoothing=off"]).is_err());
         assert!(p(&["enable", "--rumble-filter", "1"]).is_err());
         assert!(p(&["enable", "--rumble-filter=on", "--rumble-filter=on"]).is_err());
+        assert!(p(&["enable", "--auto-level", "yes"]).is_err());
+        assert!(p(&["enable", "--auto-level=on", "--auto-level=off"]).is_err());
     }
 
     #[test]

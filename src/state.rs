@@ -44,6 +44,9 @@ pub struct AppState {
     /// High-pass rumble cut ahead of the denoiser. Atomic for the same
     /// reason as `threshold_val`.
     pub rumble_filter: Arc<AtomicBool>,
+    /// VAD-frozen automatic gain riding with a peak limiter. Atomic for the
+    /// same reason as `threshold_val`.
+    pub auto_level: Arc<AtomicBool>,
     /// Gate character: gentle attack/release when set, tight when not.
     /// Atomic for the same reason as `threshold_val`.
     pub voice_smoothing: Arc<AtomicBool>,
@@ -67,6 +70,7 @@ impl AppState {
             device_node_name: Arc::new(Mutex::new(None)),
             threshold_val: Arc::new(AtomicI32::new(80)),
             rumble_filter: Arc::new(AtomicBool::new(false)),
+            auto_level: Arc::new(AtomicBool::new(false)),
             voice_smoothing: Arc::new(AtomicBool::new(false)),
             mic_name: Arc::new(Mutex::new("Spectral-Mic".to_string())),
             last_error: Arc::new(Mutex::new(None)),

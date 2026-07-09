@@ -74,6 +74,9 @@ fn main() {
             .rumble_filter
             .store(persisted.rumble_filter, Ordering::Relaxed);
         state
+            .auto_level
+            .store(persisted.auto_level, Ordering::Relaxed);
+        state
             .voice_smoothing
             .store(persisted.voice_smoothing, Ordering::Relaxed);
         *lock_or_recover(&state.mic_name) = persisted.mic_name.clone();
@@ -152,19 +155,33 @@ fn main() {
     let _ = signal_thread.join();
 }
 
-/// Resolve the effective mic name, threshold, and device for an Enable
-/// request (`None` means "keep the current setting"), then (re)create the
-/// virtual mic. The running mic is only stopped once resolution has fully
-/// succeeded, so a rejected request leaves the active state untouched.
-fn handle_enable(
-    state: &Arc<AppState>,
-    virtual_mic: &Mutex<Option<VirtualMic>>,
+/// An Enable command's settings; `None` means "keep the current setting".
+struct EnableRequest {
     device_id: Option<u32>,
     mic_name: Option<String>,
     threshold: Option<i32>,
     rumble_filter: Option<bool>,
+    auto_level: Option<bool>,
     voice_smoothing: Option<bool>,
+}
+
+/// Resolve the effective settings and device for an Enable request, then
+/// (re)create the virtual mic. The running mic is only stopped once
+/// resolution has fully succeeded, so a rejected request leaves the active
+/// state untouched.
+fn handle_enable(
+    state: &Arc<AppState>,
+    virtual_mic: &Mutex<Option<VirtualMic>>,
+    request: EnableRequest,
 ) -> DaemonResponse {
+    let EnableRequest {
+        device_id,
+        mic_name,
+        threshold,
+        rumble_filter,
+        auto_level,
+        voice_smoothing,
+    } = request;
     let mic_name = match mic_name {
         Some(name) => {
             if !is_valid_mic_name(&name) {
@@ -182,6 +199,7 @@ fn handle_enable(
     };
     let rumble_filter =
         rumble_filter.unwrap_or_else(|| state.rumble_filter.load(Ordering::Relaxed));
+    let auto_level = auto_level.unwrap_or_else(|| state.auto_level.load(Ordering::Relaxed));
     let voice_smoothing =
         voice_smoothing.unwrap_or_else(|| state.voice_smoothing.load(Ordering::Relaxed));
     let (device_id, device_node_name) = match device_id {
@@ -219,6 +237,7 @@ fn handle_enable(
 
     state.threshold_val.store(threshold, Ordering::Relaxed);
     state.rumble_filter.store(rumble_filter, Ordering::Relaxed);
+    state.auto_level.store(auto_level, Ordering::Relaxed);
     state
         .voice_smoothing
         .store(voice_smoothing, Ordering::Relaxed);
@@ -232,6 +251,7 @@ fn handle_enable(
         mic_name: mic_name.clone(),
         threshold,
         rumble_filter,
+        auto_level,
         voice_smoothing,
     }) {
         eprintln!("Failed to persist settings: {}", e);
@@ -295,15 +315,19 @@ fn handle_client(
                         mic_name,
                         threshold,
                         rumble_filter,
+                        auto_level,
                         voice_smoothing,
                     } => handle_enable(
                         &state,
                         &virtual_mic,
-                        device_id,
-                        mic_name,
-                        threshold,
-                        rumble_filter,
-                        voice_smoothing,
+                        EnableRequest {
+                            device_id,
+                            mic_name,
+                            threshold,
+                            rumble_filter,
+                            auto_level,
+                            voice_smoothing,
+                        },
                     ),
                     DaemonCommand::Disable => {
                         let mut mic_guard = lock_or_recover(&virtual_mic);
@@ -373,6 +397,7 @@ fn handle_client(
 
                         let threshold = state.threshold_val.load(Ordering::Relaxed);
                         let rumble_filter = state.rumble_filter.load(Ordering::Relaxed);
+                        let auto_level = state.auto_level.load(Ordering::Relaxed);
                         let voice_smoothing = state.voice_smoothing.load(Ordering::Relaxed);
                         let mic_name = lock_or_recover(&state.mic_name).clone();
                         let device_id = *lock_or_recover(&state.selected_device_id);
@@ -386,6 +411,7 @@ fn handle_client(
                             mic_name,
                             threshold,
                             rumble_filter,
+                            auto_level,
                             voice_smoothing,
                             is_playing_original,
                             is_playing_filtered,

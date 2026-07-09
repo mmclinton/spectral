@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   --rumble-filter on|off`): a high-pass filter at 90 Hz ahead of the
   denoiser that cuts desk thumps, handling noise, and HVAC rumble, so the
   denoiser and its voice detector analyze a cleaner signal. Off by default.
+- An Auto level toggle (a GUI switch and `spectral enable
+  --auto-level on|off`): a slow automatic gain rider that evens out mic
+  distance and voice-volume swings toward a −18 dBFS RMS target (at most
+  −12/+18 dB, 3 dB/s), adapting only while you speak so silence is never
+  pumped up, with a built-in −1 dBFS peak limiter as the safety ceiling.
+  Off by default.
 
 ### Changed
 - The voice gate now defaults to the tight character; through 0.4.x the

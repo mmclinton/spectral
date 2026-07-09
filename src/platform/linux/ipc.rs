@@ -48,6 +48,7 @@ pub enum DaemonCommand {
         mic_name: Option<String>,
         threshold: Option<i32>,
         rumble_filter: Option<bool>,
+        auto_level: Option<bool>,
         voice_smoothing: Option<bool>,
     },
     Disable,
@@ -83,6 +84,8 @@ pub struct DaemonState {
     /// the other toggles.
     #[serde(default)]
     pub rumble_filter: bool,
+    #[serde(default)]
+    pub auto_level: bool,
     #[serde(default)]
     pub voice_smoothing: bool,
     pub is_playing_original: bool,
@@ -282,6 +285,7 @@ mod tests {
         assert_eq!(state.device_node_name, None);
         assert_eq!(state.last_error, None);
         assert!(!state.rumble_filter);
+        assert!(!state.auto_level);
         assert!(!state.voice_smoothing);
     }
 

@@ -1,6 +1,6 @@
 use super::audio_devices::{get_node_name, set_default_source};
 use super::pipewire::{NativeAudioPipeline, RNNOISE_FRAME_SIZE, SAMPLE_RATE};
-use super::stages::{GateEnvelope, GatePreset, HighPass};
+use super::stages::{GateEnvelope, GatePreset, HighPass, Leveler};
 use crate::state::{AppState, is_valid_mic_name};
 use nnnoiseless::DenoiseState;
 use std::sync::Arc;
@@ -24,6 +24,7 @@ pub struct AudioProcessor {
     state: Arc<AppState>,
     denoiser: Box<DenoiseState<'static>>,
     highpass: HighPass,
+    leveler: Leveler,
     gate: GateEnvelope,
 }
 
@@ -33,6 +34,7 @@ impl AudioProcessor {
             state,
             denoiser: DenoiseState::new(),
             highpass: HighPass::new(RUMBLE_CUTOFF_HZ, SAMPLE_RATE as f64, RNNOISE_FRAME_SIZE),
+            leveler: Leveler::new(),
             gate: GateEnvelope::new(),
         }
     }
@@ -57,6 +59,12 @@ impl AudioProcessor {
         // RNNoise processes audio in the i16 range [-32768.0, 32767.0] and
         // returns the frame's VAD probability (0.0-1.0).
         let vad_probability = self.denoiser.process_frame(output, input);
+
+        if self.state.auto_level.load(Ordering::Relaxed) {
+            self.leveler.process(output, vad_probability);
+        } else {
+            self.leveler.reset();
+        }
 
         let preset = if self.state.voice_smoothing.load(Ordering::Relaxed) {
             GatePreset::Gentle

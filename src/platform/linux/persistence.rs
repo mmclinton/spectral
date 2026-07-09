@@ -15,6 +15,8 @@ pub struct PersistedState {
     #[serde(default)]
     pub rumble_filter: bool,
     #[serde(default)]
+    pub auto_level: bool,
+    #[serde(default)]
     pub voice_smoothing: bool,
 }
 
@@ -26,6 +28,7 @@ impl Default for PersistedState {
             mic_name: "Spectral-Mic".to_string(),
             threshold: 80,
             rumble_filter: false,
+            auto_level: false,
             voice_smoothing: false,
         }
     }
@@ -166,6 +169,7 @@ mod tests {
         assert_eq!(state.mic_name, "My-Mic");
         assert_eq!(state.threshold, 65);
         assert!(!state.rumble_filter);
+        assert!(!state.auto_level);
         assert!(!state.voice_smoothing);
     }
 
@@ -178,6 +182,7 @@ mod tests {
                 mic_name: "My-Mic".to_string(),
                 threshold: 65,
                 rumble_filter: true,
+                auto_level: true,
                 voice_smoothing: true,
             };
             let toml_string = toml::to_string(&state).expect("state must serialize");
@@ -188,6 +193,7 @@ mod tests {
             assert_eq!(loaded.mic_name, state.mic_name);
             assert_eq!(loaded.threshold, state.threshold);
             assert_eq!(loaded.rumble_filter, state.rumble_filter);
+            assert_eq!(loaded.auto_level, state.auto_level);
             assert_eq!(loaded.voice_smoothing, state.voice_smoothing);
         }
     }

@@ -3,6 +3,8 @@
 
 pub mod gate;
 pub mod highpass;
+pub mod leveler;
 
 pub use gate::{GateEnvelope, GatePreset};
 pub use highpass::HighPass;
+pub use leveler::Leveler;

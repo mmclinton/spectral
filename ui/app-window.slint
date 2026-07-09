@@ -23,6 +23,7 @@ export component MainWindow inherits Window {
     in-out property <[StandardListViewItem]> input_devices;
     in-out property <int> slider_value: 80;
     in-out property <bool> rumble_filter: false;
+    in-out property <bool> auto_level: false;
     in-out property <bool> voice_smoothing: false;
     in-out property <bool> is_recording: false;
     in-out property <bool> has_recording: false;
@@ -40,6 +41,7 @@ export component MainWindow inherits Window {
     callback selected_input_index_change(int);
     callback threshold_change(int);
     callback rumble_filter_change(bool);
+    callback auto_level_change(bool);
     callback voice_smoothing_change(bool);
     callback rename_clicked(string);
     callback reset_clicked(string);
@@ -391,6 +393,26 @@ export component MainWindow inherits Window {
                     y: 150px;
                     height: 30px;
                     text: "Rumble filter";
+                    font-size: 14px;
+                    color: white;
+                    vertical-alignment: center;
+                }
+
+                Switch {
+                    x: 10px;
+                    y: 190px;
+                    height: 30px;
+                    checked <=> root.auto_level;
+                    toggled => {
+                        root.auto_level_change(self.checked);
+                    }
+                }
+
+                Text {
+                    x: 70px;
+                    y: 190px;
+                    height: 30px;
+                    text: "Auto level";
                     font-size: 14px;
                     color: white;
                     vertical-alignment: center;
