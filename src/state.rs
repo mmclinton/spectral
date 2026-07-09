@@ -41,6 +41,9 @@ pub struct AppState {
     pub device_node_name: Arc<Mutex<Option<String>>>,
     /// Atomic so the real-time audio path can read it without locking.
     pub threshold_val: Arc<AtomicI32>,
+    /// High-pass rumble cut ahead of the denoiser. Atomic for the same
+    /// reason as `threshold_val`.
+    pub rumble_filter: Arc<AtomicBool>,
     /// Gate character: gentle attack/release when set, tight when not.
     /// Atomic for the same reason as `threshold_val`.
     pub voice_smoothing: Arc<AtomicBool>,
@@ -63,6 +66,7 @@ impl AppState {
             selected_device_id: Arc::new(Mutex::new(None)),
             device_node_name: Arc::new(Mutex::new(None)),
             threshold_val: Arc::new(AtomicI32::new(80)),
+            rumble_filter: Arc::new(AtomicBool::new(false)),
             voice_smoothing: Arc::new(AtomicBool::new(false)),
             mic_name: Arc::new(Mutex::new("Spectral-Mic".to_string())),
             last_error: Arc::new(Mutex::new(None)),

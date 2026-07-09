@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gate character with a soft attack and a ~0.5 s release tail; OFF uses a
   tight gate that opens instantly and falls silent in about 100 ms. The
   setting persists and, like every other setting, applies on Enable/Apply.
+- A Rumble filter toggle (a GUI switch and `spectral enable
+  --rumble-filter on|off`): a high-pass filter at 90 Hz ahead of the
+  denoiser that cuts desk thumps, handling noise, and HVAC rumble, so the
+  denoiser and its voice detector analyze a cleaner signal. Off by default.
 
 ### Changed
 - The voice gate now defaults to the tight character; through 0.4.x the

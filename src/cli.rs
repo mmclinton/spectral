@@ -19,6 +19,7 @@ pub enum CliCommand {
         device_id: Option<u32>,
         threshold: Option<i32>,
         mic_name: Option<String>,
+        rumble_filter: Option<bool>,
         voice_smoothing: Option<bool>,
     },
     Disable,
@@ -44,6 +45,10 @@ Commands:
                                      defaults to the current setting
                 --mic-name <name>    virtual mic name ([A-Za-z0-9_-], max 21);
                                      defaults to the current setting
+                --rumble-filter <on|off>
+                                     cut low-frequency rumble (below ~90 Hz)
+                                     before denoising; defaults to the current
+                                     setting
                 --voice-smoothing <on|off>
                                      gentler voice-gate attack/release with a
                                      longer tail; defaults to the current setting
@@ -97,6 +102,7 @@ where
     let mut device_id: Option<u32> = None;
     let mut threshold: Option<i32> = None;
     let mut mic_name: Option<String> = None;
+    let mut rumble_filter: Option<bool> = None;
     let mut voice_smoothing: Option<bool> = None;
 
     while let Some(arg) = args.next() {
@@ -141,6 +147,13 @@ where
                 }
                 mic_name = Some(value);
             }
+            "--rumble-filter" => {
+                if rumble_filter.is_some() {
+                    return Err("duplicate flag --rumble-filter".to_string());
+                }
+                let value = take_value(args, inline, "--rumble-filter")?;
+                rumble_filter = Some(parse_toggle(&value, "--rumble-filter")?);
+            }
             "--voice-smoothing" => {
                 if voice_smoothing.is_some() {
                     return Err("duplicate flag --voice-smoothing".to_string());
@@ -156,6 +169,7 @@ where
         device_id,
         threshold,
         mic_name,
+        rumble_filter,
         voice_smoothing,
     })
 }
@@ -198,8 +212,15 @@ pub fn run(command: CliCommand) -> ExitCode {
             device_id,
             threshold,
             mic_name,
+            rumble_filter,
             voice_smoothing,
-        } => run_enable(device_id, threshold, mic_name, voice_smoothing),
+        } => run_enable(
+            device_id,
+            threshold,
+            mic_name,
+            rumble_filter,
+            voice_smoothing,
+        ),
         CliCommand::Disable => run_disable(),
         CliCommand::Status => run_status(),
         CliCommand::Shutdown => run_shutdown(),
@@ -230,6 +251,7 @@ fn run_enable(
     device_id: Option<u32>,
     threshold: Option<i32>,
     mic_name: Option<String>,
+    rumble_filter: Option<bool>,
     voice_smoothing: Option<bool>,
 ) -> ExitCode {
     // connect_and_fetch_state spawns a daemon when none is running and
@@ -246,6 +268,7 @@ fn run_enable(
         device_id,
         mic_name,
         threshold,
+        rumble_filter,
         voice_smoothing,
     }) {
         Ok(DaemonResponse::Ok) => {
@@ -337,6 +360,10 @@ fn print_status(state: &DaemonState) {
     println!("device:           {}", describe_device(state));
     println!("mic name:         {}", state.mic_name);
     println!("threshold:        {}%", state.threshold);
+    println!(
+        "rumble filter:    {}",
+        if state.rumble_filter { "on" } else { "off" }
+    );
     println!(
         "voice smoothing:  {}",
         if state.voice_smoothing { "on" } else { "off" }
@@ -436,6 +463,7 @@ mod tests {
                 device_id: None,
                 threshold: None,
                 mic_name: None,
+                rumble_filter: None,
                 voice_smoothing: None,
             })
         );
@@ -447,6 +475,7 @@ mod tests {
             device_id: Some(5),
             threshold: Some(70),
             mic_name: Some("My-Mic_2".to_string()),
+            rumble_filter: Some(false),
             voice_smoothing: Some(true),
         });
         assert_eq!(
@@ -458,6 +487,8 @@ mod tests {
                 "70",
                 "--mic-name",
                 "My-Mic_2",
+                "--rumble-filter",
+                "off",
                 "--voice-smoothing",
                 "on"
             ]),
@@ -469,6 +500,7 @@ mod tests {
                 "--device=5",
                 "--threshold=70",
                 "--mic-name=My-Mic_2",
+                "--rumble-filter=off",
                 "--voice-smoothing=on"
             ]),
             expected
@@ -495,6 +527,8 @@ mod tests {
         assert!(p(&["enable", "--voice-smoothing", "ON"]).is_err());
         assert!(p(&["enable", "--voice-smoothing"]).is_err());
         assert!(p(&["enable", "--voice-smoothing=on", "--voice-smoothing=off"]).is_err());
+        assert!(p(&["enable", "--rumble-filter", "1"]).is_err());
+        assert!(p(&["enable", "--rumble-filter=on", "--rumble-filter=on"]).is_err());
     }
 
     #[test]

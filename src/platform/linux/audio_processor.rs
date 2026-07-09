@@ -1,6 +1,6 @@
 use super::audio_devices::{get_node_name, set_default_source};
-use super::pipewire::{NativeAudioPipeline, RNNOISE_FRAME_SIZE};
-use super::stages::{GateEnvelope, GatePreset};
+use super::pipewire::{NativeAudioPipeline, RNNOISE_FRAME_SIZE, SAMPLE_RATE};
+use super::stages::{GateEnvelope, GatePreset, HighPass};
 use crate::state::{AppState, is_valid_mic_name};
 use nnnoiseless::DenoiseState;
 use std::sync::Arc;
@@ -16,9 +16,14 @@ fn vad_cutoff(threshold: i32) -> Option<f32> {
     (t > 0).then(|| t as f32 / 100.0 * 0.95)
 }
 
+/// Below typical voice fundamentals but above mains hum's second harmonic
+/// region; deep rumble goes, voices keep their body.
+const RUMBLE_CUTOFF_HZ: f64 = 90.0;
+
 pub struct AudioProcessor {
     state: Arc<AppState>,
     denoiser: Box<DenoiseState<'static>>,
+    highpass: HighPass,
     gate: GateEnvelope,
 }
 
@@ -27,6 +32,7 @@ impl AudioProcessor {
         Self {
             state,
             denoiser: DenoiseState::new(),
+            highpass: HighPass::new(RUMBLE_CUTOFF_HZ, SAMPLE_RATE as f64, RNNOISE_FRAME_SIZE),
             gate: GateEnvelope::new(),
         }
     }
@@ -39,6 +45,14 @@ impl AudioProcessor {
         debug_assert_eq!(output.len(), RNNOISE_FRAME_SIZE);
 
         let threshold = self.state.threshold_val.load(Ordering::Relaxed);
+
+        // Pre-denoise so RNNoise and its VAD analyze a rumble-free signal.
+        let input = if self.state.rumble_filter.load(Ordering::Relaxed) {
+            self.highpass.process(input)
+        } else {
+            self.highpass.reset();
+            input
+        };
 
         // RNNoise processes audio in the i16 range [-32768.0, 32767.0] and
         // returns the frame's VAD probability (0.0-1.0).

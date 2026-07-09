@@ -22,6 +22,7 @@ export component MainWindow inherits Window {
     in-out property <int> selected_input_index: -1;
     in-out property <[StandardListViewItem]> input_devices;
     in-out property <int> slider_value: 80;
+    in-out property <bool> rumble_filter: false;
     in-out property <bool> voice_smoothing: false;
     in-out property <bool> is_recording: false;
     in-out property <bool> has_recording: false;
@@ -38,6 +39,7 @@ export component MainWindow inherits Window {
 
     callback selected_input_index_change(int);
     callback threshold_change(int);
+    callback rumble_filter_change(bool);
     callback voice_smoothing_change(bool);
     callback rename_clicked(string);
     callback reset_clicked(string);
@@ -372,6 +374,26 @@ export component MainWindow inherits Window {
                     x: 10px;
                     y: 110px;
                     title: "Voice Processing";
+                }
+
+                Switch {
+                    x: 10px;
+                    y: 150px;
+                    height: 30px;
+                    checked <=> root.rumble_filter;
+                    toggled => {
+                        root.rumble_filter_change(self.checked);
+                    }
+                }
+
+                Text {
+                    x: 70px;
+                    y: 150px;
+                    height: 30px;
+                    text: "Rumble filter";
+                    font-size: 14px;
+                    color: white;
+                    vertical-alignment: center;
                 }
 
                 Switch {

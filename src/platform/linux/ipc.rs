@@ -47,6 +47,7 @@ pub enum DaemonCommand {
         device_id: Option<u32>,
         mic_name: Option<String>,
         threshold: Option<i32>,
+        rumble_filter: Option<bool>,
         voice_smoothing: Option<bool>,
     },
     Disable,
@@ -78,7 +79,10 @@ pub struct DaemonState {
     pub mic_name: String,
     pub threshold: i32,
     /// Defaulted so a pre-0.5 daemon's payload still parses and reaches the
-    /// version check above instead of dying as a parse error.
+    /// version check above instead of dying as a parse error; likewise for
+    /// the other toggles.
+    #[serde(default)]
+    pub rumble_filter: bool,
     #[serde(default)]
     pub voice_smoothing: bool,
     pub is_playing_original: bool,
@@ -277,6 +281,7 @@ mod tests {
             serde_json::from_str(&with_version).expect("optional fields may be absent");
         assert_eq!(state.device_node_name, None);
         assert_eq!(state.last_error, None);
+        assert!(!state.rumble_filter);
         assert!(!state.voice_smoothing);
     }
 

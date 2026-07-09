@@ -111,6 +111,7 @@ struct AppliedSettings {
     device_id: std::cell::Cell<Option<u32>>,
     threshold: std::cell::Cell<i32>,
     mic_name: std::cell::RefCell<String>,
+    rumble_filter: std::cell::Cell<bool>,
     voice_smoothing: std::cell::Cell<bool>,
 }
 
@@ -121,6 +122,7 @@ fn all_settings_match(ui: &MainWindow, devices: &[AudioDevice], applied: &Applie
     device_matches_applied(ui.get_selected_input_index(), devices, &applied.device_id)
         && ui.get_slider_value() == applied.threshold.get()
         && ui.get_mic_name_text().as_str() == applied.mic_name.borrow().as_str()
+        && ui.get_rumble_filter() == applied.rumble_filter.get()
         && ui.get_voice_smoothing() == applied.voice_smoothing.get()
 }
 
@@ -193,6 +195,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                     device_node_name: None,
                     mic_name: "Spectral-Mic".to_string(),
                     threshold: 80,
+                    rumble_filter: false,
                     voice_smoothing: false,
                     is_playing_original: false,
                     is_playing_filtered: false,
@@ -240,6 +243,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
 
     ui.set_mic_name_text(daemon_state.mic_name.clone().into());
     ui.set_slider_value(daemon_state.threshold);
+    ui.set_rumble_filter(daemon_state.rumble_filter);
     ui.set_voice_smoothing(daemon_state.voice_smoothing);
 
     let last_valid_mic_name = Rc::new(std::cell::RefCell::new(daemon_state.mic_name.clone()));
@@ -257,6 +261,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         device_id: std::cell::Cell::new(daemon_state.device_id),
         threshold: std::cell::Cell::new(daemon_state.threshold),
         mic_name: std::cell::RefCell::new(daemon_state.mic_name.clone()),
+        rumble_filter: std::cell::Cell::new(daemon_state.rumble_filter),
         voice_smoothing: std::cell::Cell::new(daemon_state.voice_smoothing),
     });
     let current_status = Rc::new(std::cell::Cell::new(daemon_state.status));
@@ -289,6 +294,19 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let applied = applied.clone();
         let current_status = current_status.clone();
         move |_val| {
+            if let Some(ui) = ui_weak.upgrade() {
+                let all_match = all_settings_match(&ui, &devices.borrow(), &applied);
+                apply_pending_transition(&current_status, &ui_weak, all_match);
+            }
+        }
+    });
+
+    ui.on_rumble_filter_change({
+        let ui_weak = ui_weak.clone();
+        let devices = filtered_devices.clone();
+        let applied = applied.clone();
+        let current_status = current_status.clone();
+        move |_checked| {
             if let Some(ui) = ui_weak.upgrade() {
                 let all_match = all_settings_match(&ui, &devices.borrow(), &applied);
                 apply_pending_transition(&current_status, &ui_weak, all_match);
@@ -347,6 +365,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
             if let Some(ui) = ui_weak.upgrade() {
                 let idx = ui.get_selected_input_index();
                 let threshold = ui.get_slider_value();
+                let rumble_filter = ui.get_rumble_filter();
                 let voice_smoothing = ui.get_voice_smoothing();
                 let mic_name = ui.get_mic_name_text().to_string();
                 if mic_name.is_empty() {
@@ -363,11 +382,13 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                                 device_id: Some(device_id),
                                 mic_name: Some(mic_name.clone()),
                                 threshold: Some(threshold),
+                                rumble_filter: Some(rumble_filter),
                                 voice_smoothing: Some(voice_smoothing),
                             }) {
                                 Ok(DaemonResponse::Ok) => {
                                     applied.threshold.set(threshold);
                                     applied.device_id.set(Some(device_id));
+                                    applied.rumble_filter.set(rumble_filter);
                                     applied.voice_smoothing.set(voice_smoothing);
                                     *applied.mic_name.borrow_mut() = mic_name;
                                     current_status.set(Status::Active);
