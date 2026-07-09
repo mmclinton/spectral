@@ -73,7 +73,7 @@ rustPlatform.buildRustPackage {
   meta = with lib; {
     description = "Real-time audio noise suppression application";
     longDescription = ''
-      Spectral is a real-time audio noise suppression application powered by 
+      Spectral is a real-time audio noise suppression application powered by
       RNNoise, a hybrid DSP and neural-network-based noise suppression system.
       It creates a virtual microphone that can be used with any application,
       filtering out background noise in real-time.

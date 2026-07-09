@@ -411,7 +411,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         clear_error(&ui_weak);
                     }
                     Ok(DaemonResponse::Error(e)) => {
-                        // The daemon stops the pipeline even when module
+                        // The daemon stops the pipeline even when source
                         // teardown fails, so Inactive is still the truth.
                         eprintln!("Failed to disable cleanly: {}", e);
                         current_status.set(Status::Inactive);

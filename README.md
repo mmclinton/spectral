@@ -38,7 +38,7 @@ A real-time audio noise suppression application powered by [RNNoise](https://arx
 
 ## Architecture
 
-- **spectral** - GUI application for controlling noise suppression
+- **spectral** - GUI application for controlling noise suppression; doubles as the [headless CLI](#headless-cli) (`spectral <command>`)
 - **spectral-daemon** - Background service that manages audio processing
 - IPC communication via Unix domain sockets
 
@@ -111,9 +111,8 @@ paru -S spectral-mic   # or: yay -S spectral-mic
 ```
 
 The package is named `spectral-mic` and conflicts with the unrelated AUR
-package `spectral`, which ships the same binary name. Publication to the AUR
-begins with the first announced release; until then the PKGBUILD lives in
-[packaging/aur](packaging/aur).
+package `spectral`, which ships the same binary name. The PKGBUILD is
+maintained in this repository under [packaging/aur](packaging/aur).
 
 </details>
 
