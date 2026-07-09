@@ -105,6 +105,25 @@ fn device_matches_applied(
     }
 }
 
+/// The last settings the daemon acknowledged; staged UI edits are compared
+/// against these to drive the Active↔Pending display.
+struct AppliedSettings {
+    device_id: std::cell::Cell<Option<u32>>,
+    threshold: std::cell::Cell<i32>,
+    mic_name: std::cell::RefCell<String>,
+    voice_smoothing: std::cell::Cell<bool>,
+}
+
+/// Whether every staged control matches the applied settings. Reads the
+/// staged values from the UI properties, which Slint updates before the
+/// change callbacks fire.
+fn all_settings_match(ui: &MainWindow, devices: &[AudioDevice], applied: &AppliedSettings) -> bool {
+    device_matches_applied(ui.get_selected_input_index(), devices, &applied.device_id)
+        && ui.get_slider_value() == applied.threshold.get()
+        && ui.get_mic_name_text().as_str() == applied.mic_name.borrow().as_str()
+        && ui.get_voice_smoothing() == applied.voice_smoothing.get()
+}
+
 /// The status to display given the daemon's truth and the local view: staged
 /// but unapplied edits (a local Pending over a daemon Active) survive the
 /// poll; everything else defers to the daemon.
@@ -234,10 +253,12 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         ui.set_selected_input_index(idx as i32);
     }
 
-    let applied_threshold = Rc::new(std::cell::Cell::new(daemon_state.threshold));
-    let applied_device_id = Rc::new(std::cell::Cell::new(daemon_state.device_id));
-    let applied_mic_name = Rc::new(std::cell::RefCell::new(daemon_state.mic_name.clone()));
-    let applied_voice_smoothing = Rc::new(std::cell::Cell::new(daemon_state.voice_smoothing));
+    let applied = Rc::new(AppliedSettings {
+        device_id: std::cell::Cell::new(daemon_state.device_id),
+        threshold: std::cell::Cell::new(daemon_state.threshold),
+        mic_name: std::cell::RefCell::new(daemon_state.mic_name.clone()),
+        voice_smoothing: std::cell::Cell::new(daemon_state.voice_smoothing),
+    });
     let current_status = Rc::new(std::cell::Cell::new(daemon_state.status));
 
     update_ui_status(&ui_weak, daemon_state.status);
@@ -248,10 +269,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     ui.on_selected_input_index_change({
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
-        let applied_device_id = applied_device_id.clone();
-        let applied_threshold = applied_threshold.clone();
-        let applied_mic_name = applied_mic_name.clone();
-        let applied_voice_smoothing = applied_voice_smoothing.clone();
+        let applied = applied.clone();
         let current_status = current_status.clone();
         move |idx: i32| {
             let devices = devices.borrow();
@@ -259,14 +277,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                 && (idx as usize) < devices.len()
                 && let Some(ui) = ui_weak.upgrade()
             {
-                let device_matches = device_matches_applied(idx, &devices, &applied_device_id);
-                let threshold_matches = ui.get_slider_value() == applied_threshold.get();
-                let mic_matches =
-                    ui.get_mic_name_text().as_str() == applied_mic_name.borrow().as_str();
-                let smoothing_matches = ui.get_voice_smoothing() == applied_voice_smoothing.get();
-
-                let all_match =
-                    device_matches && threshold_matches && mic_matches && smoothing_matches;
+                let all_match = all_settings_match(&ui, &devices, &applied);
                 apply_pending_transition(&current_status, &ui_weak, all_match);
             }
         }
@@ -275,23 +286,11 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     ui.on_threshold_change({
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
-        let applied_threshold = applied_threshold.clone();
-        let applied_device_id = applied_device_id.clone();
-        let applied_mic_name = applied_mic_name.clone();
-        let applied_voice_smoothing = applied_voice_smoothing.clone();
+        let applied = applied.clone();
         let current_status = current_status.clone();
-        move |val| {
-            let devices = devices.borrow();
+        move |_val| {
             if let Some(ui) = ui_weak.upgrade() {
-                let threshold_matches = val == applied_threshold.get();
-                let mic_matches =
-                    ui.get_mic_name_text().as_str() == applied_mic_name.borrow().as_str();
-                let idx = ui.get_selected_input_index();
-                let device_matches = device_matches_applied(idx, &devices, &applied_device_id);
-                let smoothing_matches = ui.get_voice_smoothing() == applied_voice_smoothing.get();
-
-                let all_match =
-                    device_matches && threshold_matches && mic_matches && smoothing_matches;
+                let all_match = all_settings_match(&ui, &devices.borrow(), &applied);
                 apply_pending_transition(&current_status, &ui_weak, all_match);
             }
         }
@@ -300,23 +299,11 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     ui.on_voice_smoothing_change({
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
-        let applied_threshold = applied_threshold.clone();
-        let applied_device_id = applied_device_id.clone();
-        let applied_mic_name = applied_mic_name.clone();
-        let applied_voice_smoothing = applied_voice_smoothing.clone();
+        let applied = applied.clone();
         let current_status = current_status.clone();
-        move |checked| {
-            let devices = devices.borrow();
+        move |_checked| {
             if let Some(ui) = ui_weak.upgrade() {
-                let smoothing_matches = checked == applied_voice_smoothing.get();
-                let threshold_matches = ui.get_slider_value() == applied_threshold.get();
-                let mic_matches =
-                    ui.get_mic_name_text().as_str() == applied_mic_name.borrow().as_str();
-                let idx = ui.get_selected_input_index();
-                let device_matches = device_matches_applied(idx, &devices, &applied_device_id);
-
-                let all_match =
-                    device_matches && threshold_matches && mic_matches && smoothing_matches;
+                let all_match = all_settings_match(&ui, &devices.borrow(), &applied);
                 apply_pending_transition(&current_status, &ui_weak, all_match);
             }
         }
@@ -325,23 +312,11 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     ui.on_rename_clicked({
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
-        let applied_mic_name = applied_mic_name.clone();
-        let applied_threshold = applied_threshold.clone();
-        let applied_device_id = applied_device_id.clone();
-        let applied_voice_smoothing = applied_voice_smoothing.clone();
+        let applied = applied.clone();
         let current_status = current_status.clone();
-        move |new_name| {
-            let devices = devices.borrow();
+        move |_new_name| {
             if let Some(ui) = ui_weak.upgrade() {
-                let new_name_str = new_name.to_string();
-                let mic_matches = new_name_str == *applied_mic_name.borrow();
-                let threshold_matches = ui.get_slider_value() == applied_threshold.get();
-                let idx = ui.get_selected_input_index();
-                let device_matches = device_matches_applied(idx, &devices, &applied_device_id);
-                let smoothing_matches = ui.get_voice_smoothing() == applied_voice_smoothing.get();
-
-                let all_match =
-                    device_matches && threshold_matches && mic_matches && smoothing_matches;
+                let all_match = all_settings_match(&ui, &devices.borrow(), &applied);
                 apply_pending_transition(&current_status, &ui_weak, all_match);
             }
         }
@@ -350,25 +325,13 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     ui.on_reset_clicked({
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
-        let applied_mic_name = applied_mic_name.clone();
-        let applied_threshold = applied_threshold.clone();
-        let applied_device_id = applied_device_id.clone();
-        let applied_voice_smoothing = applied_voice_smoothing.clone();
+        let applied = applied.clone();
         let current_status = current_status.clone();
         let last_valid = last_valid_mic_name.clone();
         move |default_name| {
-            let devices = devices.borrow();
             if let Some(ui) = ui_weak.upgrade() {
-                let default_name_str = default_name.to_string();
-                *last_valid.borrow_mut() = default_name_str.clone();
-                let mic_matches = default_name_str == *applied_mic_name.borrow();
-                let threshold_matches = ui.get_slider_value() == applied_threshold.get();
-                let idx = ui.get_selected_input_index();
-                let device_matches = device_matches_applied(idx, &devices, &applied_device_id);
-                let smoothing_matches = ui.get_voice_smoothing() == applied_voice_smoothing.get();
-
-                let all_match =
-                    device_matches && threshold_matches && mic_matches && smoothing_matches;
+                *last_valid.borrow_mut() = default_name.to_string();
+                let all_match = all_settings_match(&ui, &devices.borrow(), &applied);
                 apply_pending_transition(&current_status, &ui_weak, all_match);
             }
         }
@@ -377,10 +340,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     ui.on_enable_clicked({
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
-        let applied_threshold = applied_threshold.clone();
-        let applied_device_id = applied_device_id.clone();
-        let applied_mic_name = applied_mic_name.clone();
-        let applied_voice_smoothing = applied_voice_smoothing.clone();
+        let applied = applied.clone();
         let current_status = current_status.clone();
         move || {
             let devices = devices.borrow();
@@ -406,10 +366,10 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                                 voice_smoothing: Some(voice_smoothing),
                             }) {
                                 Ok(DaemonResponse::Ok) => {
-                                    applied_threshold.set(threshold);
-                                    applied_device_id.set(Some(device_id));
-                                    applied_voice_smoothing.set(voice_smoothing);
-                                    *applied_mic_name.borrow_mut() = mic_name;
+                                    applied.threshold.set(threshold);
+                                    applied.device_id.set(Some(device_id));
+                                    applied.voice_smoothing.set(voice_smoothing);
+                                    *applied.mic_name.borrow_mut() = mic_name;
                                     current_status.set(Status::Active);
                                     update_ui_status(&ui_weak, Status::Active);
                                     clear_error(&ui_weak);
