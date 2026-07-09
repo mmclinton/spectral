@@ -1,5 +1,6 @@
 use super::audio_devices::{get_node_name, set_default_source};
 use super::pipewire::{NativeAudioPipeline, RNNOISE_FRAME_SIZE};
+use super::stages::GateEnvelope;
 use crate::state::{AppState, is_valid_mic_name};
 use nnnoiseless::DenoiseState;
 use std::sync::Arc;
@@ -18,7 +19,7 @@ fn vad_cutoff(threshold: i32) -> Option<f32> {
 pub struct AudioProcessor {
     state: Arc<AppState>,
     denoiser: Box<DenoiseState<'static>>,
-    vad_state: f32,
+    gate: GateEnvelope,
 }
 
 impl AudioProcessor {
@@ -26,7 +27,7 @@ impl AudioProcessor {
         Self {
             state,
             denoiser: DenoiseState::new(),
-            vad_state: 0.0,
+            gate: GateEnvelope::new(),
         }
     }
 
@@ -44,18 +45,8 @@ impl AudioProcessor {
         let vad_probability = self.denoiser.process_frame(output, input);
 
         match vad_cutoff(threshold) {
-            Some(cutoff) => {
-                // Smooth gate transitions: attack=0.50 (~20ms ramp), release=0.96 (~250ms decay)
-                if vad_probability > cutoff {
-                    self.vad_state = 0.50 * self.vad_state + 0.50;
-                } else {
-                    self.vad_state *= 0.96;
-                }
-                for sample in output.iter_mut() {
-                    *sample *= self.vad_state;
-                }
-            }
-            None => self.vad_state = 0.0,
+            Some(cutoff) => self.gate.process(output, vad_probability > cutoff),
+            None => self.gate.reset(),
         }
     }
 }

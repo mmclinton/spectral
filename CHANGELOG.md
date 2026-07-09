@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- The voice gate's gain now ramps sample-by-sample within each frame instead
+  of stepping once per 10 ms frame, removing a faint zipper on gate
+  transitions.
+
 ## [0.4.0] - 2026-07-08
 
 ### Added
