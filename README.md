@@ -30,9 +30,10 @@ A real-time audio noise suppression application powered by [RNNoise](https://arx
 
 ## Features
 
-- Real-time RNNoise denoising with an adjustable voice-activity gate
-- Optional voice processing, each a simple on/off switch: a rumble filter,
-  automatic volume leveling, and voice smoothing
+- Real-time RNNoise denoising with an adjustable voice-activity gate that
+  looks 20 ms ahead, so word onsets and endings stay intact
+- Optional voice processing, each a simple on/off switch: a rumble filter
+  and automatic volume leveling
 - Native PipeWire virtual microphone, owned by the daemon
 - Built-in voice test to compare original and filtered audio
 - Automatically set as the system default input on Enable
@@ -123,7 +124,7 @@ maintained in this repository under [packaging/aur](packaging/aur).
 1. Launch the GUI: `spectral` (the daemon starts automatically)
 2. Select your input device from the list
 3. Adjust the threshold: 0% is denoise-only, higher values gate more strictly on voice activity
-4. Optionally flip the Voice Processing switches (all off by default): **Rumble filter** cuts low-frequency noise below ~90 Hz before denoising; **Auto level** slowly evens out your voice volume (adapting only while you speak) with a built-in peak limiter; **Voice smoothing** gives the voice gate a gentler attack and a longer release tail
+4. Optionally flip the Voice Processing switches (both off by default): **Rumble filter** cuts low-frequency noise below ~90 Hz before denoising; **Auto level** slowly evens out your voice volume (adapting only while you speak) with a built-in peak limiter
 5. Click "Enable" — the virtual microphone is created and becomes the system default input
 6. Applications that pin a specific device can select the virtual mic by name (default "Spectral-Mic"); "Rename"/"Reset" stage a new name, applied on the next Enable/Apply
 
@@ -141,11 +142,10 @@ spectral shutdown             # stop the daemon
 ```
 
 `enable` accepts `--device <id>`, `--threshold <0-100>`, `--mic-name <name>`,
-`--rumble-filter <on|off>`, `--auto-level <on|off>`, and
-`--voice-smoothing <on|off>`; omitted flags keep the current settings. Device
-ids are scoped to the running PipeWire instance — the daemon remembers the
-selected device by node name, so a flagless `spectral enable` works across
-reboots and PipeWire restarts.
+`--rumble-filter <on|off>`, and `--auto-level <on|off>`; omitted flags keep
+the current settings. Device ids are scoped to the running PipeWire
+instance — the daemon remembers the selected device by node name, so a
+flagless `spectral enable` works across reboots and PipeWire restarts.
 
 Exit codes: 0 on success (including a no-op `disable`/`shutdown`), 1 on runtime
 failures, 2 on usage errors.
@@ -153,6 +153,7 @@ failures, 2 on usage errors.
 ## Troubleshooting
 
 - **Your microphone isn't listed:** click "Refresh", or see the in-app "Not seeing your device?" guide.
+- **Multi-channel audio interfaces** (e.g. an Audient EVO4 exposed as "Analog Surround 4.0"): only the first two capture channels are used — the physical inputs on common interfaces. For a single mic, you'll get the best level selecting a mono or stereo profile for the interface in your sound settings.
 - **After a PipeWire restart** (e.g. `systemctl --user restart pipewire`): the device list points at devices that no longer exist — click "Refresh" and re-select before enabling.
 - **Something failed:** errors appear under the status bar; the daemon also logs to `$XDG_RUNTIME_DIR/spectral-daemon.log`.
 - **Voice-test recordings** are saved under `~/.local/state/spectral/recordings`.

@@ -1149,7 +1149,7 @@ export component MainWindow inherits Window {
 
                             // Input Threshold
                             Rectangle {
-                                height: 130px;
+                                height: 165px;
                                 background: #0D1117;
                                 border-color: #30363D;
                                 border-width: 1px;
@@ -1167,7 +1167,7 @@ export component MainWindow inherits Window {
                                     }
 
                                     Text {
-                                        text: "Your microphone audio is always denoised. For every 10 ms frame, the denoiser also reports its confidence (0.0–1.0) that the frame contains voice. The slider maps 1–100% to a confidence cutoff of up to 0.95: frames above the cutoff pass the gate, frames below are muted. At 0% the gate is off and you get denoising only. Use \"Apply\" to save changes while the mic is active.";
+                                        text: "Your microphone audio is always denoised. For every 10 ms frame, the denoiser also reports its confidence (0.0–1.0) that the frame contains voice; the slider maps 1–100% to a confidence cutoff of up to 0.95. The gate looks 20 ms ahead so it is already open when a word starts, stays open for 200 ms after you stop so natural pauses survive, and then fades to a quiet −20 dB floor instead of muting to silence. At 0% the gate is off and you get denoising only. Use \"Apply\" to save changes while the mic is active.";
                                         font-size: 13px;
                                         color: #C9D1D9;
                                         wrap: word-wrap;
@@ -1177,7 +1177,7 @@ export component MainWindow inherits Window {
 
                             // Voice Processing
                             Rectangle {
-                                height: 195px;
+                                height: 150px;
                                 background: #0D1117;
                                 border-color: #30363D;
                                 border-width: 1px;
@@ -1195,7 +1195,7 @@ export component MainWindow inherits Window {
                                     }
 
                                     Text {
-                                        text: "Three optional switches, all off by default. Rumble filter: a high-pass filter at 90 Hz ahead of the denoiser — cuts desk thumps, handling noise, and HVAC rumble. Auto level: slowly evens out your voice volume toward a consistent level, adapting only while you speak so silence is never amplified, with a built-in peak limiter. Voice smoothing: gives the voice gate a soft attack and a longer release tail; when off, the gate opens instantly and falls silent in about 0.1 s. Switches apply on Enable/Apply, like every other setting.";
+                                        text: "Two optional switches, both off by default. Rumble filter: a high-pass filter at 90 Hz ahead of the denoiser — cuts desk thumps, handling noise, and HVAC rumble. Auto level: slowly evens out your voice volume toward a consistent level, adapting only while you speak so silence is never amplified, with a built-in peak limiter. Switches apply on Enable/Apply, like every other setting.";
                                         font-size: 13px;
                                         color: #C9D1D9;
                                         wrap: word-wrap;
