@@ -38,7 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   AUR install instructions added, and new troubleshooting, known-limitations,
   and non-goals sections. A follow-up pass added a rendered table of
   contents, collapsed the per-distro install instructions, and dropped the
-  renderer notes (self-documented in the flake and source).
+  renderer notes (self-documented in the flake and source). A header pass
+  centered the project icon with CI and license badges beneath it; the table
+  of contents is now hand-written, because the frontmatter-generated one
+  always renders above all other content.
 - The desktop entry is now a committed file installed by the Nix package
   (previously generated at build time), so all packaging shares one source
   of truth.
@@ -54,6 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Every push now runs `nix flake check` (build + tests, clippy with denied
   warnings, formatting) on Codeberg via Forgejo Actions on a self-hosted
   runner, with a status badge in the README.
+- The flake's apps carry `meta` descriptions, so flake evaluation (locally
+  and in every CI log) is warning-clean.
 
 ## [0.3.0] - 2026-07-08
 
