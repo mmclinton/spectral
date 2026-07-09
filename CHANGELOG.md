@@ -30,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   including at threshold 0).
 
 ### Fixed
+- Devices with more than two capture channels now downmix only the first
+  two. USB interfaces exposing surround capture profiles (for example the
+  Audient EVO4's 4-channel mode) put the physical preamps on the front pair
+  and loopback/monitor returns on the rest; averaging all channels
+  attenuated the mic by up to 12 dB, mixed in an unused preamp's noise
+  floor, and could bleed system audio into the virtual mic.
 - The voice gate's gain now ramps sample-by-sample within each frame instead
   of stepping once per 10 ms frame, removing a faint zipper on gate
   transitions.

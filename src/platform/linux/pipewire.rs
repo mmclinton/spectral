@@ -465,13 +465,11 @@ fn run_pipeline(
 
 /// Mix N channels down to mono.
 ///
-/// This function handles any number of input channels (1-8) and produces
-/// a mono output scaled to the i16 range expected by RNNoise.
-///
-/// TODO: Validate audio quality for various channel configurations:
-/// - Mono (1 channel): Should pass through directly
-/// - Stereo (2 channels): Standard L+R/2 mixing
-/// - Surround (5.1/7.1): May need weighted mixing for better voice capture
+/// Mono downmix scaled to the i16 range RNNoise expects. Only the first two
+/// channels are averaged: on USB interfaces exposing more (the EVO4's
+/// surround-4.0 profile is FL FR RL RR), the front pair is the physical
+/// preamps while the rest carry loopback/monitor returns — averaging those
+/// in buries the mic under attenuation and system-audio bleed.
 #[inline]
 fn mix_to_mono(input: &[f32], channels: usize, output: &mut [f32]) {
     if channels == 1 {
@@ -485,15 +483,15 @@ fn mix_to_mono(input: &[f32], channels: usize, output: &mut [f32]) {
     }
 
     let frame_count = input.len() / channels;
-    let channel_divisor = channels as f32;
+    let used = channels.min(2);
+    let channel_divisor = used as f32;
 
     for i in 0..frame_count {
         if i >= output.len() {
             break;
         }
 
-        // TODO: Consider weighted mixing for surround sound (center channel boost for voice)
-        let sum: f32 = (0..channels)
+        let sum: f32 = (0..used)
             .map(|ch| {
                 let idx = i * channels + ch;
                 if idx < input.len() { input[idx] } else { 0.0 }
@@ -665,5 +663,14 @@ mod tests {
         let mut out = vec![0.0f32; 1];
         mix_to_mono(&[1.0, 1.0], 1, &mut out);
         assert_eq!(out, [32768.0]);
+    }
+
+    #[test]
+    fn mix_to_mono_ignores_channels_beyond_the_front_pair() {
+        // 4-channel frames [FL FR RL RR]: the rear pair (e.g. an
+        // interface's loopback return) must not affect the mix.
+        let mut out = vec![0.0f32; 2];
+        mix_to_mono(&[1.0, 0.5, -1.0, -1.0, 0.25, 0.25, 1.0, 1.0], 4, &mut out);
+        assert_eq!(out, [24576.0, 8192.0]);
     }
 }
