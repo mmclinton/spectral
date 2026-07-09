@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-08
+
 ### Added
 - Headless CLI: `spectral enable|disable|status|devices|shutdown` control the
   daemon without the GUI (bare `spectral` still opens it). `enable` accepts
@@ -235,7 +237,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nix is the only officially supported installation method
 - Requires PipeWire (with the PulseAudio compatibility layer) and WirePlumber
 
-[Unreleased]: https://codeberg.org/mmc/spectral/compare/v0.3.0...HEAD
+[Unreleased]: https://codeberg.org/mmc/spectral/compare/v0.4.0...HEAD
+[0.4.0]: https://codeberg.org/mmc/spectral/compare/v0.3.0...v0.4.0
 [0.3.0]: https://codeberg.org/mmc/spectral/compare/v0.2.3...v0.3.0
 [0.2.3]: https://codeberg.org/mmc/spectral/compare/v0.2.2...v0.2.3
 [0.2.2]: https://codeberg.org/mmc/spectral/compare/v0.2.1...v0.2.2
