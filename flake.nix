@@ -183,11 +183,13 @@
           apps.default = {
             type = "app";
             program = "${spectral}/bin/spectral";
+            meta.description = "Spectral GUI control panel";
           };
 
           apps.daemon = {
             type = "app";
             program = "${spectral}/bin/spectral-daemon";
+            meta.description = "Spectral audio-processing daemon";
           };
         }
       );
