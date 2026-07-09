@@ -66,8 +66,10 @@ Device ids are scoped to the running PipeWire instance; the daemon
 remembers the selected device by node name, so a flagless `enable`
 works across reboots and PipeWire restarts.
 
-Exit codes: 0 success (including a no-op disable/shutdown),
-1 runtime failure, 2 usage error.";
+Exit codes:
+  0  success (including a no-op disable or shutdown)
+  1  runtime failure
+  2  usage error";
 
 pub fn parse<A: IntoIterator<Item = OsString>>(args: A) -> Result<CliCommand, String> {
     let mut args = args.into_iter().map(|arg| {
