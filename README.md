@@ -1,15 +1,35 @@
----
-gitea: none
-include_toc: "true"
----
+<div align="center">
+  <img src="./assets/spectral.png" alt="Spectral icon" width="200">
+  <p>
+    <a href="https://codeberg.org/mmc/spectral/actions?workflow=ci.yml">
+      <img src="https://codeberg.org/mmc/spectral/badges/workflows/ci.yml/badge.svg?branch=main" alt="CI status">
+    </a>
+    <a href="LICENSE">
+      <img src="https://img.shields.io/badge/license-GPL--3.0--only-blue" alt="License: GPL-3.0-only">
+    </a>
+  </p>
+</div>
 
 # Spectral
-
-[![CI](https://codeberg.org/mmc/spectral/badges/workflows/ci.yml/badge.svg?branch=main)](https://codeberg.org/mmc/spectral/actions?workflow=ci.yml)
 
 A real-time audio noise suppression application powered by [RNNoise](https://arxiv.org/pdf/1709.08243), a hybrid DSP and neural-network–based noise suppression system originally developed by Xiph.org.
 
 **Status:** Functional on Linux via PipeWire. The application consists of a GUI (`spectral`) and a background daemon (`spectral-daemon`) that handles audio processing.
+
+<details>
+<summary>Table of Contents</summary>
+
+- [Features](#features)
+- [Architecture](#architecture)
+- [Installation](#installation)
+- [Usage](#usage)
+  - [Headless CLI](#headless-cli)
+- [Troubleshooting](#troubleshooting)
+- [Known limitations](#known-limitations)
+- [Non-goals](#non-goals)
+- [License](#license)
+
+</details>
 
 ## Features
 
