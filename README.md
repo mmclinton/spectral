@@ -31,6 +31,8 @@ A real-time audio noise suppression application powered by [RNNoise](https://arx
 ## Features
 
 - Real-time RNNoise denoising with an adjustable voice-activity gate
+- Optional voice processing, each a simple on/off switch: a rumble filter,
+  automatic volume leveling, and voice smoothing
 - Native PipeWire virtual microphone, owned by the daemon
 - Built-in voice test to compare original and filtered audio
 - Automatically set as the system default input on Enable
@@ -121,8 +123,9 @@ maintained in this repository under [packaging/aur](packaging/aur).
 1. Launch the GUI: `spectral` (the daemon starts automatically)
 2. Select your input device from the list
 3. Adjust the threshold: 0% is denoise-only, higher values gate more strictly on voice activity
-4. Click "Enable" — the virtual microphone is created and becomes the system default input
-5. Applications that pin a specific device can select the virtual mic by name (default "Spectral-Mic"); "Rename"/"Reset" stage a new name, applied on the next Enable/Apply
+4. Optionally flip the Voice Processing switches (all off by default): **Rumble filter** cuts low-frequency noise below ~90 Hz before denoising; **Auto level** slowly evens out your voice volume (adapting only while you speak) with a built-in peak limiter; **Voice smoothing** gives the voice gate a gentler attack and a longer release tail
+5. Click "Enable" — the virtual microphone is created and becomes the system default input
+6. Applications that pin a specific device can select the virtual mic by name (default "Spectral-Mic"); "Rename"/"Reset" stage a new name, applied on the next Enable/Apply
 
 ### Headless CLI
 
@@ -132,15 +135,17 @@ The `spectral` binary doubles as a command-line client:
 spectral devices              # list input devices and their current ids
 spectral enable --device 62   # create the virtual mic (spawns the daemon if needed)
 spectral enable               # re-enable with the remembered settings
-spectral status               # show state, device, mic name, threshold
+spectral status               # show state, device, mic name, threshold, toggles
 spectral disable              # tear the virtual mic down
 spectral shutdown             # stop the daemon
 ```
 
-`enable` accepts `--device <id>`, `--threshold <0-100>`, and `--mic-name <name>`;
-omitted flags keep the current settings. Device ids are scoped to the running
-PipeWire instance — the daemon remembers the selected device by node name, so a
-flagless `spectral enable` works across reboots and PipeWire restarts.
+`enable` accepts `--device <id>`, `--threshold <0-100>`, `--mic-name <name>`,
+`--rumble-filter <on|off>`, `--auto-level <on|off>`, and
+`--voice-smoothing <on|off>`; omitted flags keep the current settings. Device
+ids are scoped to the running PipeWire instance — the daemon remembers the
+selected device by node name, so a flagless `spectral enable` works across
+reboots and PipeWire restarts.
 
 Exit codes: 0 on success (including a no-op `disable`/`shutdown`), 1 on runtime
 failures, 2 on usage errors.
