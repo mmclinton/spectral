@@ -59,6 +59,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runner, with a status badge in the README.
 - The flake's apps carry `meta` descriptions, so flake evaluation (locally
   and in every CI log) is warning-clean.
+- Removed the `spectral-teardown` dev-shell helper: `spectral shutdown`
+  stops the daemon, the native PipeWire mic dies with the process, and the
+  daemon already recovers from stale socket and pid files on its next start.
 
 ## [0.3.0] - 2026-07-08
 
