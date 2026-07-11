@@ -38,6 +38,8 @@ in
 rustPlatform.buildRustPackage {
   inherit pname version;
 
+  __structuredAttrs = true;
+
   src = ./..;
 
   cargoLock = {
@@ -55,7 +57,7 @@ rustPlatform.buildRustPackage {
   # Consumed by the dev shell so the library list lives only here.
   passthru = { inherit runtimeLibs; };
 
-  LIBCLANG_PATH = "${llvmPackages.libclang.lib}/lib";
+  env.LIBCLANG_PATH = "${llvmPackages.libclang.lib}/lib";
 
   postInstall = ''
     install -Dm644 assets/page.codeberg.mmc.Spectral.desktop $out/share/applications/page.codeberg.mmc.Spectral.desktop
