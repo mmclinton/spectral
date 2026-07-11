@@ -1,6 +1,6 @@
 # Maintainer: mmc <codeberg.wilder850@simplelogin.com>
 pkgname=spectral-mic
-pkgver=0.4.0
+pkgver=0.5.0
 pkgrel=1
 pkgdesc="Real-time microphone noise suppression via a virtual PipeWire source (RNNoise)"
 arch=('x86_64')
@@ -29,10 +29,7 @@ makedepends=('rust' 'clang' 'pkgconf')
 conflicts=('spectral')
 options=(!debug)      # the release profile already strips symbols
 source=("$pkgname-$pkgver.tar.gz::https://codeberg.org/mmc/spectral/archive/v$pkgver.tar.gz")
-# PLACEHOLDER: no v0.4.0 tag exists yet. Before the first AUR publication,
-# recompute from the pushed tag tarball and regenerate .SRCINFO:
-#   curl -sL https://codeberg.org/mmc/spectral/archive/v$pkgver.tar.gz | sha256sum
-sha256sums=('SKIP')
+sha256sums=('b94639024a26e9c8b9056177cc64c1e56eccd04eaae176d1f69997741c5d38f2')
 
 prepare() {
   cd spectral
