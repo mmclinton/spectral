@@ -31,6 +31,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Auto level now reduces gain four times faster than it raises it (12
   versus 3 dB/s), the standard gain-rider convention: a sudden loud passage
   is tamed in under a second while quiet passages still come up gently.
+- The default input threshold is now 50% instead of 80%: the rebuilt gate's
+  lookahead, hold, and hysteresis make the stricter default unnecessary.
+  Fresh installs only — a saved threshold is never touched.
+- The Help view is rewritten: dedicated Rumble Filter and Auto Level
+  sections explain each stage and when to enable it, the Input Threshold
+  section gains a slider-scale diagram, and the "What is Spectral?" intro
+  and status-color tip are removed.
 
 ### Fixed
 - Devices with more than two capture channels now downmix only the first
