@@ -10,7 +10,10 @@
   makeFontsConf,
   libxkbcommon,
   wayland,
-  xorg,
+  libx11,
+  libxcursor,
+  libxi,
+  libxrandr,
   fontconfig,
   freetype,
   pipewire,
@@ -23,10 +26,10 @@ let
   runtimeLibs = [
     libxkbcommon
     wayland
-    xorg.libX11
-    xorg.libXcursor
-    xorg.libXi
-    xorg.libXrandr
+    libx11
+    libxcursor
+    libxi
+    libxrandr
     fontconfig
     freetype
     pipewire
