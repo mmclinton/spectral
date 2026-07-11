@@ -251,8 +251,6 @@ fn run_enable(
     rumble_filter: Option<bool>,
     auto_level: Option<bool>,
 ) -> ExitCode {
-    // connect_and_fetch_state spawns a daemon when none is running and
-    // replaces one whose state no longer parses (an old version).
     let (mut client, _) = match daemon_launch::connect_and_fetch_state() {
         Ok(pair) => pair,
         Err(e) => {

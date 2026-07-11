@@ -1,12 +1,10 @@
 name: ci
 on:
   push:
-    branches: ['**']
+    branches: ["**"]
 
 jobs:
   check:
-    # Self-hosted host-mode runner with Nix on PATH; Codeberg's
-    # hosted runners may not fit this build inside their 10-minute cap.
     runs-on: self-hosted
     steps:
       - uses: https://github.com/actions/checkout@v4

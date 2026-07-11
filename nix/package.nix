@@ -55,7 +55,6 @@ rustPlatform.buildRustPackage {
 
   buildInputs = runtimeLibs;
 
-  # Consumed by the dev shell so the library list lives only here.
   passthru = { inherit runtimeLibs; };
 
   env.LIBCLANG_PATH = "${llvmPackages.libclang.lib}/lib";
@@ -66,7 +65,6 @@ rustPlatform.buildRustPackage {
     install -Dm644 assets/spectral.png $out/share/icons/hicolor/512x512/apps/page.codeberg.mmc.Spectral.png
     install -Dm644 THIRD-PARTY.md $out/share/licenses/spectral/THIRD-PARTY.md
 
-    # Wrap binaries with runtime library paths and fallback font.
     wrapProgram $out/bin/spectral \
       --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath runtimeLibs}" \
       --set FONTCONFIG_FILE "${makeFontsConf { fontDirectories = [ jetbrains-mono ]; }}"

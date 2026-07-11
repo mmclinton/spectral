@@ -54,8 +54,6 @@
               rustToolchain
               pkgs.pkg-config
               pkgs.clang
-              # Release/publishing workflow: nixpkgs PRs, AUR .SRCINFO
-              # regeneration, metainfo validation, tarball hash pinning.
               pkgs.gh
               pkgs.pacman
               pkgs.appstream
@@ -64,7 +62,6 @@
             ++ spectral.passthru.runtimeLibs;
 
             LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-            # Lets `makepkg --printsrcinfo` run without a system makepkg.conf.
             MAKEPKG_CONF = "${pkgs.pacman}/etc/makepkg.conf";
             LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath spectral.passthru.runtimeLibs;
             RUST_BACKTRACE = "1";
