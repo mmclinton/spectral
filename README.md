@@ -109,6 +109,18 @@ If you prefer manual control over installation:
 <details>
 <summary><strong>Arch Linux (AUR)</strong></summary>
 
+> **Not yet on the AUR.** The AUR has suspended new-account registrations —
+> and with them first-time package submissions — during its June 2026 malware
+> cleanup. `spectral-mic` will be submitted as soon as registrations reopen;
+> until then the helper command below is a stand-in. The package already
+> builds from the in-repo PKGBUILD:
+>
+> ```bash
+> git clone https://codeberg.org/mmc/spectral.git
+> cd spectral/packaging/aur
+> makepkg -si
+> ```
+
 ```bash
 paru -S spectral-mic   # or: yay -S spectral-mic
 ```
