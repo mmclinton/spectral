@@ -65,7 +65,7 @@ impl AppState {
             status: Arc::new(Mutex::new(Status::Inactive)),
             selected_device_id: Arc::new(Mutex::new(None)),
             device_node_name: Arc::new(Mutex::new(None)),
-            threshold_val: Arc::new(AtomicI32::new(80)),
+            threshold_val: Arc::new(AtomicI32::new(50)),
             rumble_filter: Arc::new(AtomicBool::new(false)),
             auto_level: Arc::new(AtomicBool::new(false)),
             mic_name: Arc::new(Mutex::new("Spectral-Mic".to_string())),

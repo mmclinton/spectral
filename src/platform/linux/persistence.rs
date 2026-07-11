@@ -24,7 +24,7 @@ impl Default for PersistedState {
             device_id: None,
             device_node_name: None,
             mic_name: "Spectral-Mic".to_string(),
-            threshold: 80,
+            threshold: 50,
             rumble_filter: false,
             auto_level: false,
         }
