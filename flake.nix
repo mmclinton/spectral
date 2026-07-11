@@ -82,8 +82,10 @@
                 runHook postBuild
               '';
               doCheck = false;
-              # Deliberately no install hooks: the package's postInstall wraps
-              # binaries that a lint-only derivation never produces.
+              # Deliberately no install hooks or checks: the package's
+              # postInstall and versionCheckHook expect binaries that a
+              # lint-only derivation never produces.
+              doInstallCheck = false;
               installPhase = "touch $out";
             });
 

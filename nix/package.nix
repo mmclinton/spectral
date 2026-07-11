@@ -18,6 +18,7 @@
   freetype,
   pipewire,
   jetbrains-mono,
+  versionCheckHook,
 }:
 let
   pname = "spectral";
@@ -74,6 +75,11 @@ rustPlatform.buildRustPackage {
       --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath runtimeLibs}" \
       --prefix PATH : "${lib.makeBinPath [ pipewire ]}"
   '';
+
+  # Fails the build when the binary's version disagrees with `version`
+  # above — catches a missed spot in the 3-place release bump.
+  nativeInstallCheckInputs = [ versionCheckHook ];
+  doInstallCheck = true;
 
   meta = with lib; {
     description = "Real-time audio noise suppression application";
