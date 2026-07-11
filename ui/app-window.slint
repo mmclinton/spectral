@@ -1091,34 +1091,6 @@ export component MainWindow inherits Window {
                             spacing: 16px;
                             padding: 10px;
 
-                            // What is Spectral
-                            Rectangle {
-                                height: 85px;
-                                background: #0D1117;
-                                border-color: #30363D;
-                                border-width: 1px;
-                                border-radius: 6px;
-
-                                VerticalLayout {
-                                    padding: 15px;
-                                    spacing: 8px;
-
-                                    Text {
-                                        text: "What is Spectral?";
-                                        font-size: 16px;
-                                        font-weight: 700;
-                                        color: #0085FC;
-                                    }
-
-                                    Text {
-                                        text: "Spectral runs a chosen microphone through the RNNoise denoiser and exposes the result as a virtual PipeWire microphone that any application can use.";
-                                        font-size: 13px;
-                                        color: #C9D1D9;
-                                        wrap: word-wrap;
-                                    }
-                                }
-                            }
-
                             // Getting Started
                             Rectangle {
                                 height: 120px;
@@ -1149,7 +1121,7 @@ export component MainWindow inherits Window {
 
                             // Input Threshold
                             Rectangle {
-                                height: 165px;
+                                height: 250px;
                                 background: #0D1117;
                                 border-color: #30363D;
                                 border-width: 1px;
@@ -1167,38 +1139,17 @@ export component MainWindow inherits Window {
                                     }
 
                                     Text {
-                                        text: "Your microphone audio is always denoised. For every 10 ms frame, the denoiser also reports its confidence (0.0–1.0) that the frame contains voice; the slider maps 1–100% to a confidence cutoff of up to 0.95. The gate looks 20 ms ahead so it is already open when a word starts, stays open for 200 ms after you stop so natural pauses survive, and then fades to a quiet −20 dB floor instead of muting to silence. At 0% the gate is off and you get denoising only. Use \"Apply\" to save changes while the mic is active.";
+                                        text: "Your microphone audio is always denoised. For every 10 ms frame, the denoiser also reports its confidence that the frame contains voice; the slider sets how much confidence the gate demands before it opens. The gate looks 20 ms ahead so word onsets stay intact, holds for 200 ms after you stop so natural pauses survive, then fades to a quiet −20 dB floor instead of muting. At 0% the gate is off — denoising only. Use \"Apply\" to save changes while the mic is active.";
                                         font-size: 13px;
                                         color: #C9D1D9;
                                         wrap: word-wrap;
                                     }
-                                }
-                            }
-
-                            // Voice Processing
-                            Rectangle {
-                                height: 150px;
-                                background: #0D1117;
-                                border-color: #30363D;
-                                border-width: 1px;
-                                border-radius: 6px;
-
-                                VerticalLayout {
-                                    padding: 15px;
-                                    spacing: 8px;
 
                                     Text {
-                                        text: "Voice Processing";
-                                        font-size: 16px;
-                                        font-weight: 700;
-                                        color: #0085FC;
-                                    }
-
-                                    Text {
-                                        text: "Two optional switches, both off by default. Rumble filter: a high-pass filter at 90 Hz ahead of the denoiser — cuts desk thumps, handling noise, and HVAC rumble. Auto level: slowly evens out your voice volume toward a consistent level, adapting only while you speak so silence is never amplified, with a built-in peak limiter. Switches apply on Enable/Apply, like every other setting.";
+                                        text: "0%          25%          50%          75%         100%\n●────────────┼────────────●────────────┼────────────●\noff                    default                 strict\n(denoise only) ← opens easily · demands clear voice →";
                                         font-size: 13px;
                                         color: #C9D1D9;
-                                        wrap: word-wrap;
+                                        wrap: no-wrap;
                                     }
                                 }
                             }
@@ -1231,6 +1182,62 @@ export component MainWindow inherits Window {
                                 }
                             }
 
+                            // Rumble Filter
+                            Rectangle {
+                                height: 190px;
+                                background: #0D1117;
+                                border-color: #30363D;
+                                border-width: 1px;
+                                border-radius: 6px;
+
+                                VerticalLayout {
+                                    padding: 15px;
+                                    spacing: 8px;
+
+                                    Text {
+                                        text: "Rumble Filter";
+                                        font-size: 16px;
+                                        font-weight: 700;
+                                        color: #0085FC;
+                                    }
+
+                                    Text {
+                                        text: "A rumble filter removes low-frequency energy that sits below the human voice — desk thumps, handling noise, HVAC and traffic rumble. Spectral applies a 2nd-order Butterworth high-pass at 90 Hz ahead of the denoiser, so RNNoise analyzes an already-cleaner frame. These are the conventional values: 90 Hz sits below typical voice fundamentals yet above the mains-hum harmonic region, and the Butterworth alignment is maximally flat, so deep rumble falls away at 12 dB per octave while voices keep their body. Consider enabling it if your mic picks up desk vibration, footsteps, or a persistent low hum.";
+                                        font-size: 13px;
+                                        color: #C9D1D9;
+                                        wrap: word-wrap;
+                                    }
+                                }
+                            }
+
+                            // Auto Level
+                            Rectangle {
+                                height: 205px;
+                                background: #0D1117;
+                                border-color: #30363D;
+                                border-width: 1px;
+                                border-radius: 6px;
+
+                                VerticalLayout {
+                                    padding: 15px;
+                                    spacing: 8px;
+
+                                    Text {
+                                        text: "Auto Level";
+                                        font-size: 16px;
+                                        font-weight: 700;
+                                        color: #0085FC;
+                                    }
+
+                                    Text {
+                                        text: "Auto leveling rides your microphone gain so your voice arrives at a consistent loudness whether you lean in or sit back. Spectral tracks speech loudness toward −18 dBFS — the common speech mix level — cutting fast at 12 dB/s and boosting slowly at 3 dB/s within a −12/+18 dB window, with an instant-attack peak limiter at −1 dBFS as the safety ceiling. These follow AGC convention: fast cuts tame sudden loudness in under a second; slow boosts avoid pumping up room noise during quiet passages. Adaptation is frozen while you are not speaking, so silence is never amplified. Consider enabling it if your distance to the mic varies or apps say you are too quiet.";
+                                        font-size: 13px;
+                                        color: #C9D1D9;
+                                        wrap: word-wrap;
+                                    }
+                                }
+                            }
+
                             // Voice Test
                             Rectangle {
                                 height: 100px;
@@ -1255,29 +1262,6 @@ export component MainWindow inherits Window {
                                         font-size: 13px;
                                         color: #C9D1D9;
                                         wrap: word-wrap;
-                                    }
-                                }
-                            }
-
-                            // Tip
-                            Rectangle {
-                                height: 50px;
-                                background: #0D1117;
-                                border-color: #58A6FF;
-                                border-width: 1px;
-                                border-radius: 6px;
-
-                                HorizontalLayout {
-                                    padding: 12px;
-                                    spacing: 8px;
-
-                                    Text {
-                                        text: "Tip: Status colors — green Active, yellow Pending Changes (staged settings not yet applied), red Inactive.";
-                                        font-size: 13px;
-                                        font-italic: true;
-                                        color: #58A6FF;
-                                        wrap: word-wrap;
-                                        vertical-alignment: center;
                                     }
                                 }
                             }
