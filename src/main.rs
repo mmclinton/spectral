@@ -1,3 +1,8 @@
+//! The Slint GUI control panel — a thin client over the daemon socket. It
+//! does no audio work: controls send commands, and an always-on poll
+//! reconciles the window with the daemon's state. Headless subcommands are
+//! dispatched to [`cli`] before any UI comes up.
+
 mod cli;
 mod daemon_launch;
 

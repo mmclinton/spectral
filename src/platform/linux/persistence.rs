@@ -1,19 +1,30 @@
+//! XDG-compliant TOML persistence for daemon settings, plus the on-disk
+//! locations of the voice-test recordings.
+
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, ErrorKind};
 use std::path::PathBuf;
 
+/// Settings that survive daemon restarts, stored as TOML under the XDG
+/// config dir. New fields must be `#[serde(default)]` so files written by
+/// older versions still load.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PersistedState {
     /// PipeWire ids are scoped to one server instance; the node name below is
     /// the durable handle across reboots and PipeWire restarts.
     pub device_id: Option<u32>,
+    /// The selected device's PipeWire `node.name` — the durable handle.
     #[serde(default)]
     pub device_node_name: Option<String>,
+    /// Display name for the virtual mic node.
     pub mic_name: String,
+    /// Voice-gate threshold as shown in the UI.
     pub threshold: i32,
+    /// Whether the high-pass rumble filter is enabled.
     #[serde(default)]
     pub rumble_filter: bool,
+    /// Whether the auto-level stage is enabled.
     #[serde(default)]
     pub auto_level: bool,
 }
@@ -64,6 +75,9 @@ fn get_safe_state_base() -> Result<PathBuf, io::Error> {
     safe_base_dir("XDG_STATE_HOME", &[".local", "state"])
 }
 
+/// Path of the settings file, `$XDG_CONFIG_HOME/spectral/state.toml` (or the
+/// `~/.config` fallback); degrades to `/tmp` when no valid base exists so
+/// the daemon keeps running with ephemeral settings rather than dying.
 pub fn get_config_path() -> PathBuf {
     get_safe_config_base()
         .unwrap_or_else(|e| {
@@ -77,6 +91,8 @@ pub fn get_config_path() -> PathBuf {
         .join("state.toml")
 }
 
+/// Directory holding the voice-test recordings, under the XDG state dir
+/// (recordings are regenerable audio, not configuration); created on demand.
 pub fn get_recordings_dir() -> PathBuf {
     let recordings_dir = get_safe_state_base()
         .unwrap_or_else(|e| {
@@ -120,14 +136,17 @@ pub fn remove_legacy_recordings() {
     }
 }
 
+/// Location of the raw (pre-processing) voice-test capture.
 pub fn get_original_recording_path() -> PathBuf {
     get_recordings_dir().join("original_output.wav")
 }
 
+/// Location of the processed voice-test capture.
 pub fn get_filtered_recording_path() -> PathBuf {
     get_recordings_dir().join("filtered_output.wav")
 }
 
+/// Loads persisted settings, returning defaults when no file exists yet.
 pub fn load_state() -> Result<PersistedState, io::Error> {
     let path = get_config_path();
 
@@ -139,6 +158,7 @@ pub fn load_state() -> Result<PersistedState, io::Error> {
     toml::from_str(&contents).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
 }
 
+/// Writes settings as TOML, creating the config directory if needed.
 pub fn save_state(state: &PersistedState) -> Result<(), io::Error> {
     let path = get_config_path();
 

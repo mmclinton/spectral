@@ -35,6 +35,7 @@ const CEILING: f32 = 29_206.0;
 // substantially release after a peak.
 const LIMITER_RELEASE: f32 = 1.0 / 4800.0;
 
+/// The auto-level stage: the slow AGC gain plus the fast limiter gain.
 pub struct Leveler {
     gain: f32,
     limiter_gain: f32,
@@ -50,6 +51,7 @@ impl Default for Leveler {
 }
 
 impl Leveler {
+    /// Starts both gains at unity.
     pub fn new() -> Self {
         Self::default()
     }

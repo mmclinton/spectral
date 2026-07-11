@@ -1,3 +1,7 @@
+//! The long-lived backend: owns the virtual mic and all audio state,
+//! persists settings, and serves GUI/CLI clients on the Unix socket with
+//! one handler thread per connection. SIGTERM/SIGINT tear everything down.
+
 use spectral_lib::audio_devices::{find_node_id, get_device_channels, get_node_name};
 use spectral_lib::audio_processor::VirtualMic;
 use spectral_lib::ipc::{

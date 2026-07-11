@@ -1,3 +1,6 @@
+//! The per-frame processing chain (high-pass → RNNoise → leveler → gate)
+//! and the [`VirtualMic`] that owns the pipeline running it.
+
 use super::audio_devices::{get_node_name, set_default_source};
 use super::pipewire::{NativeAudioPipeline, RNNOISE_FRAME_SIZE, SAMPLE_RATE};
 use super::stages::{HighPass, Leveler, VoiceGate};
@@ -20,6 +23,9 @@ fn vad_cutoff(threshold: i32) -> Option<f32> {
 /// region; deep rumble goes, voices keep their body.
 const RUMBLE_CUTOFF_HZ: f64 = 90.0;
 
+/// The complete per-frame DSP chain, owned by the pipeline thread. Reads
+/// its settings from [`AppState`] atomics each frame, so toggles apply live
+/// without locking the audio path.
 pub struct AudioProcessor {
     state: Arc<AppState>,
     denoiser: Box<DenoiseState<'static>>,
@@ -29,6 +35,8 @@ pub struct AudioProcessor {
 }
 
 impl AudioProcessor {
+    /// Builds the chain with fresh stage state; allocation happens here,
+    /// never in [`AudioProcessor::process_frame`].
     pub fn new(state: Arc<AppState>) -> Self {
         Self {
             state,
@@ -73,6 +81,8 @@ impl AudioProcessor {
     }
 }
 
+/// The daemon's handle on the virtual microphone; `stop` (or drop) ends the
+/// pipeline thread, which removes the mic from the graph.
 pub struct VirtualMic {
     audio_pipeline: Option<NativeAudioPipeline>,
 }

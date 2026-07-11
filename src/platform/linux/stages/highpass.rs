@@ -6,6 +6,8 @@
 // snapping to zero keeps the recursion out of denormal range.
 const STATE_FLOOR: f32 = 1e-9;
 
+/// One biquad's coefficients and recursion state, with a reusable output
+/// buffer so processing stays allocation-free.
 pub struct HighPass {
     b0: f32,
     b1: f32,

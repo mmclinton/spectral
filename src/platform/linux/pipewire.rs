@@ -29,6 +29,7 @@ use std::time::Duration;
 /// Audio sample rate in Hz (48kHz is standard for PipeWire)
 pub const SAMPLE_RATE: u32 = 48000;
 
+/// The virtual mic emits mono; capture is downmixed before processing.
 pub const OUTPUT_CHANNELS: u32 = 1;
 
 /// RNNoise requires exactly 480 samples (10ms at 48kHz) per frame.
@@ -83,6 +84,9 @@ impl PipelineData {
     }
 }
 
+/// Handle to the dedicated audio thread running the PipeWire mainloop.
+/// Every PipeWire object — capture stream, virtual mic node, feed link —
+/// lives on that thread and dies with it.
 pub struct NativeAudioPipeline {
     running: Arc<AtomicBool>,
     failure: Arc<Mutex<Option<String>>>,
@@ -160,6 +164,8 @@ impl NativeAudioPipeline {
         }
     }
 
+    /// Signals the pipeline thread to quit and joins it; a second call is
+    /// a no-op.
     pub fn stop(&mut self) {
         self.running.store(false, Ordering::SeqCst);
 

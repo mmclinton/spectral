@@ -1,3 +1,7 @@
+//! Unix-socket IPC between clients (GUI, CLI) and the daemon: one JSON
+//! [`DaemonCommand`] per line, answered by one JSON [`DaemonResponse`] per
+//! line, on `$XDG_RUNTIME_DIR/spectral-daemon.sock`.
+
 use crate::state::Status;
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
@@ -39,25 +43,41 @@ mod pid_file {
     }
 }
 
+/// A request a client sends the daemon; each gets one [`DaemonResponse`].
 #[derive(Debug, Serialize, Deserialize)]
 pub enum DaemonCommand {
-    /// `None` fields mean "keep the daemon's current setting"; the device is
-    /// then resolved from the remembered node name (ids are per-instance).
+    /// Brings the virtual mic up. `None` fields mean "keep the daemon's
+    /// current setting"; the device is then resolved from the remembered
+    /// node name (ids are per-instance).
     Enable {
+        /// PipeWire id of the capture device to use.
         device_id: Option<u32>,
+        /// Display name for the virtual mic node.
         mic_name: Option<String>,
+        /// Voice-gate threshold.
         threshold: Option<i32>,
+        /// High-pass rumble filter on/off.
         rumble_filter: Option<bool>,
+        /// Auto-level stage on/off.
         auto_level: Option<bool>,
     },
+    /// Tears the virtual mic down.
     Disable,
+    /// Asks for a full [`DaemonState`] snapshot.
     GetState,
+    /// Stops the daemon process itself.
     Shutdown,
+    /// Starts capturing the voice test (raw and processed side by side).
     StartRecording,
+    /// Finalizes the voice-test recording files.
     StopRecording,
+    /// Plays back the raw voice-test capture.
     PlayOriginal,
+    /// Stops raw-capture playback.
     StopOriginal,
+    /// Plays back the processed voice-test capture.
     PlayFiltered,
+    /// Stops processed-capture playback.
     StopFiltered,
 }
 
@@ -68,32 +88,48 @@ pub enum DaemonCommand {
 /// their restart-and-upgrade path.
 pub const PROTOCOL_VERSION: u32 = 2;
 
+/// The daemon's full observable state; the GUI reconciles its controls and
+/// status display from this snapshot on every poll.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DaemonState {
     /// Must equal [`PROTOCOL_VERSION`]; absent (pre-0.4 daemons) or
     /// different means the daemon predates this client.
     pub protocol_version: u32,
+    /// Current lifecycle state of the virtual mic.
     pub status: Status,
+    /// PipeWire id of the configured capture device, if any.
     pub device_id: Option<u32>,
+    /// The configured device's durable `node.name`.
     pub device_node_name: Option<String>,
+    /// Display name of the virtual mic node.
     pub mic_name: String,
+    /// Voice-gate threshold.
     pub threshold: i32,
     /// Defaulted so a pre-0.5 daemon's payload still parses and reaches the
     /// version check above instead of dying as a parse error; likewise for
     /// `auto_level`.
     #[serde(default)]
     pub rumble_filter: bool,
+    /// Auto-level stage on/off; defaulted for the same reason.
     #[serde(default)]
     pub auto_level: bool,
+    /// Whether the raw voice-test capture is currently playing.
     pub is_playing_original: bool,
+    /// Whether the processed voice-test capture is currently playing.
     pub is_playing_filtered: bool,
+    /// Why the mic is down, if it is; cleared on a successful
+    /// enable/disable.
     pub last_error: Option<String>,
 }
 
+/// The daemon's single reply to a [`DaemonCommand`].
 #[derive(Debug, Serialize, Deserialize)]
 pub enum DaemonResponse {
+    /// The command succeeded with nothing to return.
     Ok,
+    /// The snapshot answering [`DaemonCommand::GetState`].
     State(DaemonState),
+    /// The command failed; a human-readable reason.
     Error(String),
 }
 
@@ -136,11 +172,15 @@ pub fn wait_for_daemon_exit() -> Result<(), std::io::Error> {
     Ok(())
 }
 
+/// A client's end of the daemon socket: one blocking request/response
+/// exchange at a time.
 pub struct DaemonClient {
     stream: UnixStream,
 }
 
 impl DaemonClient {
+    /// Connects to the daemon socket without retrying; see
+    /// [`DaemonClient::connect_with_retry`] for the spawn-tolerant variant.
     pub fn connect() -> Result<Self, std::io::Error> {
         let socket_path = get_socket_path()?;
         let stream = UnixStream::connect(socket_path)?;
@@ -161,6 +201,7 @@ impl DaemonClient {
         }
     }
 
+    /// Sends one command and blocks until its response arrives.
     pub fn send_command(
         &mut self,
         command: DaemonCommand,
@@ -178,6 +219,7 @@ impl DaemonClient {
     }
 }
 
+/// The daemon's listening end; dropping it removes the socket and pid files.
 pub struct DaemonServer {
     listener: UnixListener,
     socket_path: PathBuf,
@@ -185,6 +227,8 @@ pub struct DaemonServer {
 }
 
 impl DaemonServer {
+    /// Claims the socket and pid file: refuses while another daemon is
+    /// alive, sweeps both files when they were left behind by a dead one.
     pub fn bind() -> Result<Self, std::io::Error> {
         let socket_path = get_socket_path()?;
         let pid_file_path = get_pid_file_path()?;
@@ -220,6 +264,7 @@ impl DaemonServer {
         })
     }
 
+    /// Accepts one pending client, if any (the listener is non-blocking).
     pub fn accept(&self) -> Result<DaemonConnection, std::io::Error> {
         let (stream, _) = self.listener.accept()?;
         Ok(DaemonConnection { stream })
@@ -233,11 +278,14 @@ impl Drop for DaemonServer {
     }
 }
 
+/// One accepted client connection, served on its own handler thread.
 pub struct DaemonConnection {
     stream: UnixStream,
 }
 
 impl DaemonConnection {
+    /// Reads the next command line, timing out after 30 s so a silent
+    /// client cannot pin its handler thread forever.
     pub fn read_command(&mut self) -> Result<DaemonCommand, std::io::Error> {
         self.stream
             .set_read_timeout(Some(Duration::from_secs(30)))?;
@@ -259,6 +307,7 @@ impl DaemonConnection {
         })
     }
 
+    /// Writes one JSON response line and flushes it.
     pub fn send_response(&mut self, response: DaemonResponse) -> Result<(), std::io::Error> {
         let json = serde_json::to_string(&response)?;
         writeln!(self.stream, "{}", json)?;

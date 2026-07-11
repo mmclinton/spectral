@@ -1,3 +1,7 @@
+//! PipeWire registry queries: enumerating input sources, resolving node
+//! names, and pointing the session manager's default source at the mic.
+//! Each query opens its own short-lived PipeWire connection.
+
 use crate::state::{AudioDevice, lock_or_recover};
 use pipewire as pw;
 use pw::core::PW_ID_CORE;
@@ -62,6 +66,8 @@ where
     Ok(items)
 }
 
+/// Enumerates `Audio/Source` nodes, skipping monitor sources; display names
+/// prefer `node.nick` over the longer `node.description`.
 pub fn get_input_devices() -> Result<Vec<AudioDevice>, Box<dyn Error>> {
     collect_globals(|global| {
         if global.type_ != ObjectType::Node {

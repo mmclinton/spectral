@@ -33,6 +33,8 @@ const FLOOR: f32 = 0.1;
 // cannot chatter the gate.
 const CLOSE_RATIO: f32 = 2.0 / 3.0;
 
+/// Per-instance gate state: the lookahead delay line plus the open/close
+/// decision machinery described in the module docs.
 pub struct VoiceGate {
     delay: [Vec<f32>; LOOKAHEAD_FRAMES],
     queued_voice: [bool; LOOKAHEAD_FRAMES],

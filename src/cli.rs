@@ -12,6 +12,7 @@ use spectral_lib::state::{Status, is_valid_mic_name};
 use std::ffi::OsString;
 use std::process::ExitCode;
 
+/// The action selected by the argument list; `Gui` is the flagless default.
 #[derive(Debug, PartialEq)]
 pub enum CliCommand {
     Gui,
@@ -71,6 +72,9 @@ Exit codes:
   1  runtime failure
   2  usage error";
 
+/// Parses the arguments after argv\[0\]; an `Err` is a usage-error message
+/// destined for exit code 2. Both `--flag value` and `--flag=value` forms
+/// are accepted.
 pub fn parse<A: IntoIterator<Item = OsString>>(args: A) -> Result<CliCommand, String> {
     let mut args = args.into_iter().map(|arg| {
         arg.into_string()
@@ -198,6 +202,8 @@ where
     }
 }
 
+/// Executes any non-GUI command, mapping outcomes to the exit codes the
+/// help text documents.
 pub fn run(command: CliCommand) -> ExitCode {
     match command {
         // Handled by main(); listed so the match stays exhaustive.

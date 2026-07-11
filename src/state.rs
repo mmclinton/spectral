@@ -1,3 +1,6 @@
+//! Shared daemon state and the vocabulary types both binaries exchange:
+//! device descriptions, the mic lifecycle status, and mic-name validation.
+
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicI32};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -12,9 +15,12 @@ pub fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// An audio input source as enumerated from the PipeWire registry.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AudioDevice {
+    /// PipeWire node id — valid only for the current server instance.
     pub id: u32,
+    /// Human-readable description shown in device pickers.
     pub name: String,
     /// Number of audio channels (1=mono, 2=stereo, etc.)
     /// TODO: Validate channel handling for devices with >2 channels (e.g., multichannel interfaces)
@@ -26,15 +32,24 @@ fn default_channels() -> u32 {
     2 // Default to stereo for backwards compatibility
 }
 
+/// The virtual mic's lifecycle state.
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub enum Status {
+    /// No virtual mic exists.
     Inactive,
+    /// The pipeline is running and the virtual mic is available.
     Active,
+    /// Mid-transition: an enable or disable has started but not settled.
     Pending,
 }
 
+/// The daemon's shared state. Each field is independently `Arc`-wrapped so
+/// the IPC handler threads and the audio pipeline can clone exactly the
+/// pieces they need instead of contending on one big lock.
 pub struct AppState {
+    /// Current lifecycle state of the virtual mic.
     pub status: Arc<Mutex<Status>>,
+    /// PipeWire id of the chosen capture device, if one is selected.
     pub selected_device_id: Arc<Mutex<Option<u32>>>,
     /// The selected device's PipeWire node.name — the durable handle; ids are
     /// scoped to one server instance.
@@ -47,6 +62,7 @@ pub struct AppState {
     /// VAD-frozen automatic gain riding with a peak limiter. Atomic for the
     /// same reason as `threshold_val`.
     pub auto_level: Arc<AtomicBool>,
+    /// Display name for the virtual mic node.
     pub mic_name: Arc<Mutex<String>>,
     /// Why the mic is not active: set on pipeline death or a failed
     /// enable/disable, cleared when an enable or disable succeeds.
@@ -60,6 +76,8 @@ impl Default for AppState {
 }
 
 impl AppState {
+    /// Creates state with the built-in defaults: inactive, threshold 50,
+    /// both voice stages off, mic named "Spectral-Mic".
     pub fn new() -> Self {
         Self {
             status: Arc::new(Mutex::new(Status::Inactive)),
@@ -73,17 +91,24 @@ impl AppState {
         }
     }
 
+    /// Replaces the mic's lifecycle status.
     pub fn update_status(&self, new_status: Status) {
         *lock_or_recover(&self.status) = new_status;
     }
 
+    /// Records why the mic is down, or clears the record with `None`.
     pub fn set_last_error(&self, error: Option<String>) {
         *lock_or_recover(&self.last_error) = error;
     }
 }
 
+/// Upper bound for user-chosen virtual-mic names, in characters.
 pub const MIC_NAME_MAX_LEN: usize = 21;
 
+/// Validates a user-chosen mic name: non-empty, at most
+/// [`MIC_NAME_MAX_LEN`] characters, ASCII alphanumerics plus `_` and `-` —
+/// the name is embedded in PipeWire node properties, so it stays
+/// conservative.
 pub fn is_valid_mic_name(name: &str) -> bool {
     let len = name.chars().count();
     len > 0
