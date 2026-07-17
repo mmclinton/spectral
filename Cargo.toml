@@ -23,6 +23,14 @@ path = "src/main.rs"
 name = "spectral-daemon"
 path = "src/bin/spectral-daemon.rs"
 
+[lints.rust]
+# Matches the flake's clippy gate (--deny warnings): bare cargo build/clippy
+# hits the same wall as nix flake check.
+warnings = { level = "deny", priority = -1 }
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+
 [dependencies]
 slint = { version = "=1.15.0", default-features = false, features = [
     "compat-1-2",
