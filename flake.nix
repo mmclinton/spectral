@@ -58,6 +58,7 @@
               pkgs.pacman
               pkgs.appstream
               pkgs.curl
+              pkgs.cargo-deny
             ]
             ++ spectral.passthru.runtimeLibs;
 

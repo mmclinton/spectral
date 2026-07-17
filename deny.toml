@@ -1,0 +1,58 @@
+# Supply-chain policy for `cargo deny check`.
+# Advisories fetch the RustSec DB over the network, which is why this is a
+# release-Stage-0 / on-demand gate, not a nix flake check.
+
+[graph]
+# Only what we ship; drops windows/macos/android arms of slint's dep tree.
+targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
+
+[advisories]
+yanked = "deny"
+# Unmaintained-crate advisories only fail for direct dependencies — those we
+# can act on. slint's pinned GUI stack drags in a steady stream of
+# unmaintained transitive crates (atty, paste, rustybuzz, ttf-parser, ...)
+# with no safe upgrade; per-ID ignores for them would grow forever and train
+# rubber-stamping. Vulnerabilities still deny everywhere in the tree.
+unmaintained = "workspace"
+ignore = [
+  # 2026-07-17: quick-xml < 0.41 DoS-class issues (quadratic duplicate-
+  # attribute check; unbounded NsReader allocation). Both locked versions
+  # (0.36.2, 0.37.5) sit behind zbus_xml's semver range in the AT-SPI
+  # accessibility stack, pinned by slint =1.15.0 — cargo update cannot
+  # cross to 0.41. Exposure is XML from the local session D-Bus (trusted
+  # desktop session), not network input. Revisit on a slint bump.
+  "RUSTSEC-2026-0194",
+  "RUSTSEC-2026-0195",
+]
+
+[licenses]
+# The binary is GPL-3.0-only, so any GPL-3.0-compatible license is
+# acceptable; this list is exactly the atoms present in Cargo.lock today.
+# BSD-3-Clause (nnnoiseless) additionally requires the THIRD-PARTY.md notice.
+allow = [
+  "0BSD",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "CC0-1.0",
+  "GPL-3.0-only", # spectral itself + the GPL arm of slint's tri-license
+  "ISC",
+  "MIT",
+  "NCSA",
+  "Unicode-3.0",
+  "Unlicense",
+  "Zlib",
+]
+confidence-threshold = 0.8
+
+[bans]
+# slint's tree ships known duplicates (smol_str 0.2 + 0.3); deny would be
+# unactionable, so surface without failing.
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
