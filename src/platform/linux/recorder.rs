@@ -468,10 +468,17 @@ impl NativePlayer {
         thread_exited && self.running.load(Ordering::SeqCst)
     }
 
-    /// Why the player died, if it has.
+    /// Why the player died, if it has. A clean end-of-clip exit is not a
+    /// death: reaching EOF finishes the thread with `running` still set, so
+    /// without this short-circuit that normal completion would be reported as
+    /// an unexpected exit. Only an exit that is neither EOF nor a recorded
+    /// error (e.g. a thread panic) is genuinely unexpected.
     pub fn failure(&self) -> Option<String> {
         if let Some(msg) = lock_or_recover(&self.failure).clone() {
             return Some(msg);
+        }
+        if self.eof.load(Ordering::SeqCst) {
+            return None;
         }
         let thread_exited = self.thread.as_ref().is_some_and(JoinHandle::is_finished);
         (self.running.load(Ordering::SeqCst) && thread_exited)
@@ -775,5 +782,59 @@ mod tests {
         assert_eq!(WAV_SPEC.sample_rate, SAMPLE_RATE);
         assert_eq!(WAV_SPEC.bits_per_sample, 32);
         assert_eq!(WAV_SPEC.sample_format, hound::SampleFormat::Float);
+    }
+
+    /// Build a `NativePlayer` whose thread has already exited, so the
+    /// liveness predicates can be exercised without a PipeWire mainloop.
+    /// `running` stays `true` to mirror a real thread that returned on its
+    /// own (EOF or panic) rather than being told to stop.
+    fn exited_player(eof: bool, failure: Option<String>) -> NativePlayer {
+        let handle = thread::spawn(|| {});
+        while !handle.is_finished() {
+            thread::yield_now();
+        }
+        NativePlayer {
+            running: Arc::new(AtomicBool::new(true)),
+            failure: Arc::new(Mutex::new(failure)),
+            eof: Arc::new(AtomicBool::new(eof)),
+            thread: Some(handle),
+        }
+    }
+
+    /// Reaching the end of the clip finishes the player thread with `running`
+    /// still set; that clean exit must not masquerade as a failure. Guards
+    /// the "Playback stopped: player thread exited unexpectedly" regression.
+    #[test]
+    fn eof_exit_is_a_clean_end_not_a_failure() {
+        let player = exited_player(true, None);
+        assert!(player.is_finished(), "EOF must count as finished");
+        assert_eq!(
+            player.failure(),
+            None,
+            "a normal end-of-clip exit is not a failure"
+        );
+    }
+
+    /// A thread that vanished without reaching EOF and without recording an
+    /// error (e.g. a panic) is genuinely unexpected and must still surface.
+    #[test]
+    fn exit_without_eof_or_recorded_error_is_reported() {
+        let player = exited_player(false, None);
+        assert_eq!(
+            player.failure().as_deref(),
+            Some("player thread exited unexpectedly"),
+            "an exit that is neither EOF nor a recorded error is unexpected"
+        );
+    }
+
+    /// A recorded stream/core error always wins, even once EOF has been set,
+    /// so a real fault is never hidden behind the clean-exit short-circuit.
+    #[test]
+    fn recorded_error_takes_precedence_over_eof() {
+        let player = exited_player(true, Some("playback stream error: boom".to_string()));
+        assert_eq!(
+            player.failure().as_deref(),
+            Some("playback stream error: boom")
+        );
     }
 }
