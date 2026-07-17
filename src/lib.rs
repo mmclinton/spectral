@@ -19,4 +19,4 @@ pub use platform::linux::persistence;
 #[cfg(target_os = "linux")]
 pub use platform::linux::pipewire;
 #[cfg(target_os = "linux")]
-pub use platform::linux::recorder::NativeRecorder;
+pub use platform::linux::recorder::{NativePlayer, NativeRecorder, PlaybackKind};

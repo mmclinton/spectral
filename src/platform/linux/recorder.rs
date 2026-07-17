@@ -1,14 +1,14 @@
-//! Native PipeWire WAV recorder for the voice-test A/B path.
+//! Native PipeWire WAV recorder and player for the voice-test A/B path.
 //!
-//! A self-contained type that mirrors `NativeAudioPipeline`'s proven
-//! lifecycle: a dedicated mainloop thread, an `mpsc` ready-handshake with
-//! [`super::pipewire::PIPELINE_READY_TIMEOUT`], a `running:
-//! Arc<AtomicBool>` flag, a `failure: Arc<Mutex<Option<String>>>` slot
-//! (first error wins), and a `Drop` that calls `stop()`. Replaces the
-//! former `pw-record` shell-out so the daemon no longer depends on the
-//! PipeWire *tools* package at runtime — only the libraries it links.
+//! Two self-contained types that mirror `NativeAudioPipeline`'s proven
+//! lifecycle: a dedicated mainloop thread per subsystem, an `mpsc`
+//! ready-handshake with [`super::pipewire::PIPELINE_READY_TIMEOUT`], a
+//! `running: Arc<AtomicBool>` flag, a `failure: Arc<Mutex<Option<String>>>`
+//! slot (first error wins), and a `Drop` that calls `stop()`. Replaces the
+//! former `pw-record`/`pw-play` shell-out so the daemon no longer depends on
+//! the PipeWire *tools* package at runtime — only the libraries it links.
 //!
-//! WAV encoding uses `hound` (pure Rust, already transitively in
+//! WAV encoding/decoding uses `hound` (pure Rust, already transitively in
 //! `Cargo.lock` via `nnnoiseless`); see <https://docs.rs/hound>.
 //!
 //! Both files are mono 48 kHz 32-bit float (matching `pw-record --channels 1
@@ -37,7 +37,7 @@ use std::time::Duration;
 /// PipeWire's mono channel position.
 const MONO: u32 = pipewire::spa::sys::SPA_AUDIO_CHANNEL_MONO;
 
-/// WAV spec used by the recorder: mono, 48 kHz, 32-bit float.
+/// WAV spec shared by recorder and player: mono, 48 kHz, 32-bit float.
 const WAV_SPEC: hound::WavSpec = hound::WavSpec {
     channels: 1,
     sample_rate: SAMPLE_RATE,
@@ -56,6 +56,16 @@ fn record_failure(slot: &Mutex<Option<String>>, msg: String) {
     if guard.is_none() {
         *guard = Some(msg);
     }
+}
+
+/// Which side a [`NativePlayer`] is playing back. Playback is mutually
+/// exclusive in the daemon, so a single slot carries this tag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlaybackKind {
+    /// The raw (pre-processing) capture.
+    Original,
+    /// The processed (post-mic) capture.
+    Filtered,
 }
 
 // ---------------------------------------------------------------------------
@@ -381,6 +391,286 @@ fn open_wav_writer(
 }
 
 // ---------------------------------------------------------------------------
+// NativePlayer
+// ---------------------------------------------------------------------------
+
+/// Handle to the player thread owning one playback stream.
+pub struct NativePlayer {
+    running: Arc<AtomicBool>,
+    failure: Arc<Mutex<Option<String>>>,
+    eof: Arc<AtomicBool>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl NativePlayer {
+    /// Load `path` and start playing it back on the default sink. Up-front
+    /// WAV spec validation: a foreign 44.1 kHz / stereo / PCM file would
+    /// otherwise pitch-shift or clip silently.
+    pub fn start(path: &Path) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let samples = load_wav(path)?;
+
+        let running = Arc::new(AtomicBool::new(true));
+        let running_clone = running.clone();
+        let failure = Arc::new(Mutex::new(None));
+        let failure_clone = failure.clone();
+        let eof = Arc::new(AtomicBool::new(false));
+        let eof_clone = eof.clone();
+        let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
+
+        let thread = thread::spawn(move || {
+            if let Err(e) = run_player(
+                samples,
+                running_clone,
+                &ready_tx,
+                &failure_clone,
+                &eof_clone,
+            ) {
+                record_failure(&failure_clone, format!("player error: {e}"));
+                let _ = ready_tx.send(Err(e.to_string()));
+                eprintln!("[NativePlayer] error: {e}");
+            }
+        });
+
+        match ready_rx.recv_timeout(PIPELINE_READY_TIMEOUT) {
+            Ok(Ok(())) => Ok(Self {
+                running,
+                failure,
+                eof,
+                thread: Some(thread),
+            }),
+            Ok(Err(e)) => {
+                let _ = thread.join();
+                Err(format!("Player setup failed: {e}").into())
+            }
+            Err(_) => {
+                running.store(false, Ordering::SeqCst);
+                Err(format!(
+                    "Player did not become ready within {:?}",
+                    PIPELINE_READY_TIMEOUT
+                )
+                .into())
+            }
+        }
+    }
+
+    /// Failure-aware liveness: returns true once the thread has exited for
+    /// *any* reason — EOF reached, a stream/core error, or an unexpected
+    /// thread exit while `running` is still set. EOF-only would be a
+    /// liveness regression versus the previous `try_wait` on a child.
+    pub fn is_finished(&self) -> bool {
+        if self.eof.load(Ordering::SeqCst) {
+            return true;
+        }
+        if self.failure().is_some() {
+            return true;
+        }
+        let thread_exited = self.thread.as_ref().is_some_and(JoinHandle::is_finished);
+        thread_exited && self.running.load(Ordering::SeqCst)
+    }
+
+    /// Why the player died, if it has.
+    pub fn failure(&self) -> Option<String> {
+        if let Some(msg) = lock_or_recover(&self.failure).clone() {
+            return Some(msg);
+        }
+        let thread_exited = self.thread.as_ref().is_some_and(JoinHandle::is_finished);
+        (self.running.load(Ordering::SeqCst) && thread_exited)
+            .then(|| "player thread exited unexpectedly".to_string())
+    }
+
+    /// Signal the player thread to quit and join it. A second call is a
+    /// no-op.
+    pub fn stop(&mut self) {
+        self.running.store(false, Ordering::SeqCst);
+        if let Some(handle) = self.thread.take()
+            && handle.join().is_err()
+        {
+            eprintln!("Player thread panicked during shutdown");
+        }
+    }
+}
+
+impl Drop for NativePlayer {
+    fn drop(&mut self) {
+        if self.thread.is_some() {
+            self.stop();
+        }
+    }
+}
+
+struct PlayerData {
+    samples: Vec<f32>,
+    cursor: usize,
+}
+
+fn run_player(
+    samples: Vec<f32>,
+    running: Arc<AtomicBool>,
+    ready_tx: &mpsc::Sender<Result<(), String>>,
+    failure: &Arc<Mutex<Option<String>>>,
+    eof: &Arc<AtomicBool>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pipewire::init();
+
+    let mainloop = MainLoopBox::new(None)?;
+    let context = ContextBox::new(mainloop.loop_(), None)?;
+    let core = context.connect(None)?;
+
+    let format_pod = build_audio_format_pod(AudioFormat::F32LE, SAMPLE_RATE, 1, Some(&[MONO]))?;
+    let pod = Pod::from_bytes(&format_pod).ok_or("Failed to build player format pod")?;
+
+    let core_failure = failure.clone();
+    let _core_listener = core
+        .add_listener_local()
+        .error(move |id, _seq, res, message| {
+            record_failure(
+                &core_failure,
+                format!("PipeWire error on object {id}: {res} {message}"),
+            );
+        })
+        .register();
+
+    let props = properties! {
+        *pipewire::keys::MEDIA_TYPE => "Audio",
+        *pipewire::keys::MEDIA_CATEGORY => "Playback",
+        *pipewire::keys::MEDIA_ROLE => "Communication",
+        *pipewire::keys::NODE_NAME => "spectral-playback",
+        *pipewire::keys::NODE_DESCRIPTION => "Spectral Voice-Test Playback",
+    };
+
+    let stream = StreamBox::new(&core, "spectral-playback", props)?;
+
+    let data = Rc::new(RefCell::new(PlayerData { samples, cursor: 0 }));
+    let ready = Rc::new(Cell::new(false));
+    let failure_for_cb = failure.clone();
+    let ready_for_cb = ready.clone();
+    let _listener = stream
+        .add_local_listener_with_user_data(data)
+        .state_changed(move |_stream, _data, _old, new| match new {
+            StreamState::Error(msg) => {
+                record_failure(&failure_for_cb, format!("playback stream error: {msg}"));
+            }
+            StreamState::Paused | StreamState::Streaming => ready_for_cb.set(true),
+            _ => {}
+        })
+        .process({
+            let eof = eof.clone();
+            move |stream, data| process_playback(stream, data, &eof)
+        })
+        .register()?;
+
+    // AUTOCONNECT so it lands on the default sink, MAP_BUFFERS, RT_PROCESS:
+    // the callback only reads from a preloaded Vec — no I/O, RT-safe.
+    stream.connect(
+        Direction::Output,
+        None,
+        StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS | StreamFlags::RT_PROCESS,
+        &mut [pod],
+    )?;
+
+    let mut ready_sent = false;
+    while running.load(Ordering::SeqCst) {
+        let res = mainloop.loop_().iterate(Duration::from_millis(10));
+        if res < 0 {
+            record_failure(failure, format!("main loop iterate failed: errno {}", -res));
+            break;
+        }
+        if lock_or_recover(failure).is_some() {
+            break;
+        }
+        if eof.load(Ordering::SeqCst) {
+            break;
+        }
+        if !ready_sent && ready.get() {
+            ready_sent = true;
+            let _ = ready_tx.send(Ok(()));
+        }
+    }
+
+    if !ready_sent {
+        let msg = lock_or_recover(failure)
+            .clone()
+            .unwrap_or_else(|| "player stopped before becoming ready".to_string());
+        let _ = ready_tx.send(Err(msg));
+    }
+
+    mainloop.quit();
+    Ok(())
+}
+
+/// Write f32 frames from the preloaded sample Vec into the output buffer.
+/// On exhaustion, fill silence and set `eof` so the main loop can quit and
+/// [`NativePlayer::is_finished`] reports true. Mirrors `process_source_buffer`
+/// in `pipewire.rs`.
+fn process_playback(
+    stream: &pipewire::stream::Stream,
+    data: &mut Rc<RefCell<PlayerData>>,
+    eof: &Arc<AtomicBool>,
+) {
+    let Some(mut buffer) = stream.dequeue_buffer() else {
+        return;
+    };
+    let requested = buffer.requested() as usize;
+    let datas = buffer.datas_mut();
+    if datas.is_empty() {
+        return;
+    }
+    let Some(slice) = datas[0].data() else { return };
+
+    let max_samples = slice.len() / 4;
+    let mut state = data.borrow_mut();
+    let available = state.samples.len().saturating_sub(state.cursor);
+
+    let wrote = if available > 0 {
+        let n = available.min(max_samples);
+        for i in 0..n {
+            let s = state.samples[state.cursor + i];
+            slice[i * 4..i * 4 + 4].copy_from_slice(&s.to_le_bytes());
+        }
+        state.cursor += n;
+        n
+    } else {
+        eof.store(true, Ordering::SeqCst);
+        let n = if requested > 0 {
+            requested.min(max_samples)
+        } else {
+            max_samples
+        };
+        slice[..n * 4].fill(0);
+        n
+    };
+
+    let chunk = datas[0].chunk_mut();
+    *chunk.offset_mut() = 0;
+    *chunk.size_mut() = (wrote * 4) as u32;
+    *chunk.stride_mut() = 4;
+}
+
+/// Open `path` and validate its spec is mono 48 kHz 32-bit float, then
+/// collect `samples::<f32>()` stopping at the first `Err` — a recording
+/// killed mid-write has a truncated payload and hound yields `Err` past the
+/// valid tail.
+fn load_wav(path: &Path) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+    let reader = hound::WavReader::open(path)?;
+    let spec = reader.spec();
+    if spec != WAV_SPEC {
+        return Err(format!(
+            "Unsupported WAV spec: {:?} (expected mono 48 kHz 32-bit float)",
+            spec
+        )
+        .into());
+    }
+    let mut out: Vec<f32> = Vec::new();
+    for sample in reader.into_samples::<f32>() {
+        match sample {
+            Ok(s) => out.push(s),
+            Err(_) => break,
+        }
+    }
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
 // Tests (no PipeWire needed)
 // ---------------------------------------------------------------------------
 
@@ -419,8 +709,66 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    #[test]
+    fn player_loads_truncated_wav_without_panicking() {
+        let path = tmp_wav_path("spectral_recorder_truncated.wav");
+        let samples: Vec<f32> = (0..2000).map(|i| (i as f32) / 2000.0).collect();
+
+        // Write a valid WAV, finalize, then chop the tail off the file so
+        // the data chunk claims more than is actually present.
+        {
+            let mut writer =
+                hound::WavWriter::new(BufWriter::new(File::create(&path).unwrap()), WAV_SPEC)
+                    .unwrap();
+            for &s in &samples {
+                writer.write_sample(s).unwrap();
+            }
+            writer.finalize().unwrap();
+        }
+        let full_len = std::fs::metadata(&path).unwrap().len();
+        let chopped = full_len - 1024;
+        let f = OpenOptions::new().write(true).open(&path).unwrap();
+        f.set_len(chopped).unwrap();
+        drop(f);
+
+        // load_wav must stop at the first Err and return the partial Vec.
+        let loaded = load_wav(&path).expect("truncated WAV should still load partially");
+        assert!(loaded.len() < samples.len(), "expected a partial load");
+        assert!(
+            !loaded.is_empty(),
+            "expected some samples before the truncation"
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn player_rejects_wrong_spec() {
+        let path = tmp_wav_path("spectral_recorder_44k.wav");
+        let bad_spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 44100,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        {
+            let mut writer =
+                hound::WavWriter::new(BufWriter::new(File::create(&path).unwrap()), bad_spec)
+                    .unwrap();
+            writer.write_sample(0.0_f32).unwrap();
+            writer.finalize().unwrap();
+        }
+        let err = load_wav(&path).expect_err("44.1 kHz file must be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Unsupported WAV spec") && msg.contains("44100"),
+            "expected a clear spec-rejection error, got: {msg}"
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
     /// Sanity check that our constant matches the same value hound would
-    /// build for the recorder — keeps the spec from drifting.
+    /// build for the recorder — keeps the two halves from drifting.
     #[test]
     fn wav_spec_matches_pw_record_defaults() {
         assert_eq!(WAV_SPEC.channels, 1);
