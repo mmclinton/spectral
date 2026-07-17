@@ -44,7 +44,7 @@ pub const MAX_INPUT_CHANNELS: u32 = 8;
 pub const RNNOISE_SCALE_FACTOR: f32 = 32768.0;
 
 /// Maximum time to wait for the pipeline thread to finish its PipeWire setup.
-const PIPELINE_READY_TIMEOUT: Duration = Duration::from_secs(5);
+pub(crate) const PIPELINE_READY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Backstop bound on the capture→feed buffer (1 s of mono audio). The linked
 /// virtual-mic node drives its own graph section, so the feed drains
@@ -199,7 +199,7 @@ impl Drop for NativeAudioPipeline {
     }
 }
 
-fn build_audio_format_pod(
+pub(crate) fn build_audio_format_pod(
     format: AudioFormat,
     rate: u32,
     channels: u32,

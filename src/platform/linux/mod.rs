@@ -11,4 +11,5 @@ pub mod audio_processor;
 pub mod ipc;
 pub mod persistence;
 pub mod pipewire;
+pub mod recorder;
 pub mod stages;
