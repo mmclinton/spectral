@@ -86,6 +86,20 @@
               installPhase = "touch $out";
             });
 
+            tests = spectral.overrideAttrs (old: {
+              pname = "spectral-tests";
+              buildPhase = ''
+                runHook preBuild
+                cargo test --locked
+                runHook postBuild
+              '';
+              doCheck = false;
+              # Same rationale as the clippy check: a test-only derivation
+              # produces no binaries for install hooks to verify.
+              doInstallCheck = false;
+              installPhase = "touch $out";
+            });
+
             fmt =
               pkgs.runCommand "spectral-fmt"
                 {
