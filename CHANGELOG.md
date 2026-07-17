@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Voice-test recording and playback are now native PipeWire streams
+  inside the daemon instead of spawned `pw-record`/`pw-play` child
+  processes. This removes two runtime install dependencies (the
+  PipeWire *tools* package) and eliminates the orphan-subprocess and
+  silent-link-failure classes of bugs: a vanished capture target is now
+  a hard error (`node.dont-reconnect`), and Shutdown/SIGTERM tear down
+  the recorder and player cleanly with WAVs finalized instead of leaving
+  `pw-record` running forever. The on-disk WAV format, IPC wire format,
+  and GUI behavior are unchanged.
+
 ## [0.5.0] - 2026-07-11
 
 ### Added
