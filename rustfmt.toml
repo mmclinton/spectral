@@ -1,0 +1,3 @@
+# Explicit pin of the defaults rustfmt already derives from edition 2024,
+# so a toolchain that mis-detects the edition can never reformat the tree.
+style_edition = "2024"
