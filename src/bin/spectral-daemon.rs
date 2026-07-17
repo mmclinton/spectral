@@ -12,31 +12,18 @@ use spectral_lib::persistence::{
     remove_legacy_recordings, save_state,
 };
 use spectral_lib::state::{AppState, Status, is_valid_mic_name, lock_or_recover};
-use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use spectral_lib::{NativePlayer, NativeRecorder, PlaybackKind};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-fn path_to_str(path: &Path) -> Result<String, std::io::Error> {
-    path.to_str().map(|s| s.to_owned()).ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("Path contains non-UTF8 characters: {:?}", path),
-        )
-    })
-}
-
 fn main() {
     let state = Arc::new(AppState::new());
     let virtual_mic: Arc<Mutex<Option<VirtualMic>>> = Arc::new(Mutex::new(None));
 
-    let recording_original: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
-    let recording_filtered: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
-
-    let playback_original: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
-    let playback_filtered: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
+    let recorder: Arc<Mutex<Option<NativeRecorder>>> = Arc::new(Mutex::new(None));
+    let player: Arc<Mutex<Option<(PlaybackKind, NativePlayer)>>> = Arc::new(Mutex::new(None));
 
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
@@ -108,21 +95,12 @@ fn main() {
             Ok(mut conn) => {
                 let state = state.clone();
                 let virtual_mic = virtual_mic.clone();
-                let recording_original = recording_original.clone();
-                let recording_filtered = recording_filtered.clone();
-                let playback_original = playback_original.clone();
-                let playback_filtered = playback_filtered.clone();
+                let recorder = recorder.clone();
+                let player = player.clone();
 
                 let handle = thread::spawn(move || {
-                    if let Err(e) = handle_client(
-                        &mut conn,
-                        state,
-                        virtual_mic,
-                        recording_original,
-                        recording_filtered,
-                        playback_original,
-                        playback_filtered,
-                    ) && e.kind() != std::io::ErrorKind::WouldBlock
+                    if let Err(e) = handle_client(&mut conn, state, virtual_mic, recorder, player)
+                        && e.kind() != std::io::ErrorKind::WouldBlock
                         && e.kind() != std::io::ErrorKind::TimedOut
                     {
                         eprintln!("Client handler error: {}", e);
@@ -154,6 +132,21 @@ fn main() {
     signal_handle.close();
 
     let _ = signal_thread.join();
+}
+
+/// Stop and tear down the player slot iff it currently holds `kind`. A
+/// no-op when the slot is empty or holds the other kind. The slot's Drop
+/// would stop the thread anyway, but taking it here joins eagerly so the
+/// audio thread is gone before the next command runs.
+fn stop_player_of_kind(player: &Mutex<Option<(PlaybackKind, NativePlayer)>>, kind: PlaybackKind) {
+    let mut guard = lock_or_recover(player);
+    if let Some((k, mut p)) = guard.take() {
+        if k == kind {
+            p.stop();
+        } else {
+            *guard = Some((k, p));
+        }
+    }
 }
 
 /// An Enable command's settings; `None` means "keep the current setting".
@@ -277,10 +270,8 @@ fn handle_client(
     conn: &mut spectral_lib::ipc::DaemonConnection,
     state: Arc<AppState>,
     virtual_mic: Arc<Mutex<Option<VirtualMic>>>,
-    recording_original: Arc<Mutex<Option<Child>>>,
-    recording_filtered: Arc<Mutex<Option<Child>>>,
-    playback_original: Arc<Mutex<Option<Child>>>,
-    playback_filtered: Arc<Mutex<Option<Child>>>,
+    recorder: Arc<Mutex<Option<NativeRecorder>>>,
+    player: Arc<Mutex<Option<(PlaybackKind, NativePlayer)>>>,
 ) -> Result<(), std::io::Error> {
     // LOCK ORDERING CONVENTION:
     // To prevent deadlocks, always acquire locks in this order
@@ -291,10 +282,8 @@ fn handle_client(
     // 4. virtual_mic
     // 5. state.status
     // 6. state.last_error
-    // 7. recording_original
-    // 8. recording_filtered
-    // 9. playback_original
-    // 10. playback_filtered
+    // 7. recorder
+    // 8. player
     //
     // Important: Release locks as soon as possible by limiting scope.
     // Never hold multiple locks longer than necessary.
@@ -348,43 +337,50 @@ fn handle_client(
 
                         let status = *lock_or_recover(&state.status);
 
-                        let is_playing_original = {
-                            let mut guard = lock_or_recover(&playback_original);
-                            if let Some(ref mut proc) = *guard {
-                                match proc.try_wait() {
-                                    Ok(Some(_)) => {
-                                        *guard = None;
-                                        false
+                        // Reap player liveness: a finished player is torn
+                        // down and its failure (if any) surfaces into
+                        // last_error, mirroring the mic dead-detection
+                        // above.
+                        let mut is_playing_original = false;
+                        let mut is_playing_filtered = false;
+                        {
+                            let mut guard = lock_or_recover(&player);
+                            if let Some((kind, p)) = guard.as_ref() {
+                                if p.is_finished() {
+                                    if let Some(msg) = p.failure() {
+                                        state.set_last_error(Some(format!(
+                                            "Playback stopped: {msg}"
+                                        )));
                                     }
-                                    Ok(None) => true,
-                                    Err(_) => {
-                                        *guard = None;
-                                        false
+                                    if let Some((_, mut finished)) = guard.take() {
+                                        finished.stop();
+                                    }
+                                } else {
+                                    match kind {
+                                        PlaybackKind::Original => is_playing_original = true,
+                                        PlaybackKind::Filtered => is_playing_filtered = true,
                                     }
                                 }
-                            } else {
-                                false
                             }
-                        };
+                        }
 
-                        let is_playing_filtered = {
-                            let mut guard = lock_or_recover(&playback_filtered);
-                            if let Some(ref mut proc) = *guard {
-                                match proc.try_wait() {
-                                    Ok(Some(_)) => {
-                                        *guard = None;
-                                        false
-                                    }
-                                    Ok(None) => true,
-                                    Err(_) => {
-                                        *guard = None;
-                                        false
-                                    }
+                        // Reap recorder failures into last_error for
+                        // visibility. Recorders are not surfaced in
+                        // DaemonState (no recording-active field exists
+                        // today and adding one changes the wire format,
+                        // out of scope), but a failed recording still
+                        // deserves to be torn down and reported.
+                        {
+                            let mut guard = lock_or_recover(&recorder);
+                            if let Some(r) = guard.as_ref()
+                                && let Some(msg) = r.failure()
+                            {
+                                state.set_last_error(Some(format!("Recording stopped: {msg}")));
+                                if let Some(mut finished) = guard.take() {
+                                    finished.stop();
                                 }
-                            } else {
-                                false
                             }
-                        };
+                        }
 
                         let threshold = state.threshold_val.load(Ordering::Relaxed);
                         let rumble_filter = state.rumble_filter.load(Ordering::Relaxed);
@@ -431,186 +427,125 @@ fn handle_client(
                             }
                         };
 
-                        let original_path = get_original_recording_path();
-                        let filtered_path = get_filtered_recording_path();
-                        let original_path_str = path_to_str(&original_path)?;
-                        let filtered_path_str = path_to_str(&filtered_path)?;
-
-                        if let Some(mut proc) = lock_or_recover(&recording_original).take() {
-                            let _ = proc.kill();
-                            let _ = proc.wait();
-                        }
-                        if let Some(mut proc) = lock_or_recover(&recording_filtered).take() {
-                            let _ = proc.kill();
-                            let _ = proc.wait();
-                        }
-
-                        let original_proc = Command::new("pw-record")
-                            .args([
-                                "--target",
-                                &source_node,
-                                "--rate",
-                                "48000",
-                                "--channels",
-                                "1",
-                                "--format",
-                                "f32",
-                                &original_path_str,
-                            ])
-                            .stdin(Stdio::null())
-                            .stdout(Stdio::inherit())
-                            .stderr(Stdio::inherit())
-                            .spawn();
-
-                        // The virtual mic node itself is the filtered signal.
-                        let filtered_proc = Command::new("pw-record")
-                            .args([
-                                "--target",
-                                &mic_name,
-                                "--rate",
-                                "48000",
-                                "--channels",
-                                "1",
-                                "--format",
-                                "f32",
-                                &filtered_path_str,
-                            ])
-                            .stdin(Stdio::null())
-                            .stdout(Stdio::inherit())
-                            .stderr(Stdio::inherit())
-                            .spawn();
-
-                        match (original_proc, filtered_proc) {
-                            (Ok(orig), Ok(filt)) => {
-                                *lock_or_recover(&recording_original) = Some(orig);
-                                *lock_or_recover(&recording_filtered) = Some(filt);
-                                DaemonResponse::Ok
-                            }
-                            (Err(e), filt) => {
-                                eprintln!("[Recording] Failed to start original pw-record: {}", e);
-                                if let Ok(mut p) = filt {
-                                    let _ = p.kill();
-                                    let _ = p.wait();
+                        // The filtered side captures the virtual mic node,
+                        // so the mic must be up and healthy. Without this
+                        // guard a recording with the mic disabled would
+                        // silently produce an empty/truncated filtered file
+                        // (or hit the recorder's dont-reconnect error).
+                        {
+                            let mic_guard = lock_or_recover(&virtual_mic);
+                            let mic_ok = mic_guard
+                                .as_ref()
+                                .is_some_and(|mic| mic.failure().is_none());
+                            if !mic_ok {
+                                DaemonResponse::Error(
+                                    "Cannot record filtered side: virtual mic is not active"
+                                        .to_string(),
+                                )
+                            } else {
+                                // Kill any in-flight recorder first: a second
+                                // StartRecording (second IPC client, or GUI
+                                // restarted mid-recording) would otherwise put
+                                // two live writers on the same paths and
+                                // truncate under the old writer.
+                                if let Some(mut prev) = lock_or_recover(&recorder).take() {
+                                    prev.stop();
                                 }
-                                DaemonResponse::Error(format!("Failed to start recording: {}", e))
-                            }
-                            (Ok(mut orig), Err(e)) => {
-                                eprintln!("[Recording] Failed to start filtered pw-record: {}", e);
-                                let _ = orig.kill();
-                                let _ = orig.wait();
-                                DaemonResponse::Error(format!("Failed to start recording: {}", e))
+
+                                let original_path = get_original_recording_path();
+                                let filtered_path = get_filtered_recording_path();
+                                match NativeRecorder::start(
+                                    &source_node,
+                                    &mic_name,
+                                    original_path,
+                                    filtered_path,
+                                ) {
+                                    Ok(r) => {
+                                        *lock_or_recover(&recorder) = Some(r);
+                                        DaemonResponse::Ok
+                                    }
+                                    Err(e) => {
+                                        eprintln!("[Recording] NativeRecorder::start: {}", e);
+                                        DaemonResponse::Error(format!(
+                                            "Failed to start recording: {}",
+                                            e
+                                        ))
+                                    }
+                                }
                             }
                         }
                     }
                     DaemonCommand::StopRecording => {
-                        if let Some(mut proc) = lock_or_recover(&recording_original).take() {
-                            let _ = proc.kill();
-                            let _ = proc.wait();
+                        if let Some(mut r) = lock_or_recover(&recorder).take() {
+                            r.stop();
                         }
-                        if let Some(mut proc) = lock_or_recover(&recording_filtered).take() {
-                            let _ = proc.kill();
-                            let _ = proc.wait();
-                        }
-
                         DaemonResponse::Ok
                     }
                     DaemonCommand::PlayOriginal => {
-                        if let Some(mut proc) = lock_or_recover(&playback_original).take() {
-                            let _ = proc.kill();
-                            let _ = proc.wait();
-                        }
-                        if let Some(mut proc) = lock_or_recover(&playback_filtered).take() {
-                            let _ = proc.kill();
-                            let _ = proc.wait();
-                        }
+                        stop_player_of_kind(&player, PlaybackKind::Original);
+                        stop_player_of_kind(&player, PlaybackKind::Filtered);
 
                         let original_path = get_original_recording_path();
                         if !original_path.exists() {
                             DaemonResponse::Error("No recording found".to_string())
                         } else {
-                            let original_path_str = match path_to_str(&original_path) {
-                                Ok(s) => s,
-                                Err(e) => {
-                                    conn.send_response(DaemonResponse::Error(format!(
-                                        "Invalid path: {}",
-                                        e
-                                    )))?;
-                                    continue;
-                                }
-                            };
-                            match Command::new("pw-play")
-                                .arg(&original_path_str)
-                                .stdin(Stdio::null())
-                                .stdout(Stdio::null())
-                                .stderr(Stdio::null())
-                                .spawn()
-                            {
-                                Ok(proc) => {
-                                    *lock_or_recover(&playback_original) = Some(proc);
+                            match NativePlayer::start(&original_path) {
+                                Ok(p) => {
+                                    *lock_or_recover(&player) = Some((PlaybackKind::Original, p));
                                     DaemonResponse::Ok
                                 }
-                                Err(e) => DaemonResponse::Error(format!("Failed to play: {}", e)),
+                                Err(e) => {
+                                    eprintln!("[Playback] NativePlayer::start: {}", e);
+                                    DaemonResponse::Error(format!("Failed to play: {}", e))
+                                }
                             }
                         }
                     }
                     DaemonCommand::StopOriginal => {
-                        if let Some(mut proc) = lock_or_recover(&playback_original).take() {
-                            let _ = proc.kill();
-                            let _ = proc.wait();
-                        }
+                        stop_player_of_kind(&player, PlaybackKind::Original);
                         DaemonResponse::Ok
                     }
                     DaemonCommand::PlayFiltered => {
-                        // Stop any existing playback first
-                        if let Some(mut proc) = lock_or_recover(&playback_original).take() {
-                            let _ = proc.kill();
-                            let _ = proc.wait();
-                        }
-                        if let Some(mut proc) = lock_or_recover(&playback_filtered).take() {
-                            let _ = proc.kill();
-                            let _ = proc.wait();
-                        }
+                        stop_player_of_kind(&player, PlaybackKind::Original);
+                        stop_player_of_kind(&player, PlaybackKind::Filtered);
 
                         let filtered_path = get_filtered_recording_path();
                         if !filtered_path.exists() {
                             DaemonResponse::Error("No recording found".to_string())
                         } else {
-                            let filtered_path_str = match path_to_str(&filtered_path) {
-                                Ok(s) => s,
-                                Err(e) => {
-                                    conn.send_response(DaemonResponse::Error(format!(
-                                        "Invalid path: {}",
-                                        e
-                                    )))?;
-                                    continue;
-                                }
-                            };
-                            match Command::new("pw-play")
-                                .arg(&filtered_path_str)
-                                .stdin(Stdio::null())
-                                .stdout(Stdio::null())
-                                .stderr(Stdio::null())
-                                .spawn()
-                            {
-                                Ok(proc) => {
-                                    *lock_or_recover(&playback_filtered) = Some(proc);
+                            match NativePlayer::start(&filtered_path) {
+                                Ok(p) => {
+                                    *lock_or_recover(&player) = Some((PlaybackKind::Filtered, p));
                                     DaemonResponse::Ok
                                 }
-                                Err(e) => DaemonResponse::Error(format!("Failed to play: {}", e)),
+                                Err(e) => {
+                                    eprintln!("[Playback] NativePlayer::start: {}", e);
+                                    DaemonResponse::Error(format!("Failed to play: {}", e))
+                                }
                             }
                         }
                     }
                     DaemonCommand::StopFiltered => {
-                        if let Some(mut proc) = lock_or_recover(&playback_filtered).take() {
-                            let _ = proc.kill();
-                            let _ = proc.wait();
-                        }
+                        stop_player_of_kind(&player, PlaybackKind::Filtered);
                         DaemonResponse::Ok
                     }
                     DaemonCommand::Shutdown => {
                         let mut mic_guard = lock_or_recover(&virtual_mic);
                         if let Some(mic) = mic_guard.take() {
                             mic.stop();
+                        }
+                        drop(mic_guard);
+
+                        // Tear down recorder and player before exit(0) so
+                        // WAVs are finalized (data-size header written) and
+                        // audio threads join cleanly. Without this,
+                        // exit(0) skips Drop → hound's reader sees a
+                        // zero-length data chunk → silent empty playback.
+                        if let Some(mut r) = lock_or_recover(&recorder).take() {
+                            r.stop();
+                        }
+                        if let Some((_, mut p)) = lock_or_recover(&player).take() {
+                            p.stop();
                         }
 
                         conn.send_response(DaemonResponse::Ok)?;

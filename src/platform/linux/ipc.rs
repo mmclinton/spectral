@@ -118,6 +118,11 @@ pub struct DaemonState {
     /// Whether the processed voice-test capture is currently playing.
     pub is_playing_filtered: bool,
     /// Why the mic is down, if it is; cleared on a successful
+    /// enable/disable. Overloaded for recorder/player failures too: a
+    /// crashed `NativeRecorder` or `NativePlayer` surfaces its reason here
+    /// on the next `GetState` poll (those subsystems are not represented
+    /// elsewhere in this struct). Stretches the field's "why the mic is
+    /// down" contract intentionally, and persists until the next
     /// enable/disable.
     pub last_error: Option<String>,
 }

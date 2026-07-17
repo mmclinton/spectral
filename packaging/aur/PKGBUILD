@@ -10,7 +10,7 @@ depends=(
   'gcc-libs'
   'glibc'
   'libpipewire'
-  'pipewire'          # the media graph itself + pw-record/pw-play
+  'pipewire'          # the media graph itself (WirePlumber drives it)
   'wireplumber'       # session manager: owns the "default" metadata object
   'fontconfig'
   'freetype2'

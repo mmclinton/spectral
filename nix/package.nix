@@ -70,8 +70,7 @@ rustPlatform.buildRustPackage {
       --set FONTCONFIG_FILE "${makeFontsConf { fontDirectories = [ jetbrains-mono ]; }}"
 
     wrapProgram $out/bin/spectral-daemon \
-      --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath runtimeLibs}" \
-      --prefix PATH : "${lib.makeBinPath [ pipewire ]}"
+      --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath runtimeLibs}"
   '';
 
   # Fails the build when the binary's version disagrees with `version`
