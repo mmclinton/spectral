@@ -4,8 +4,6 @@
   lib,
   rustPlatform,
   pkg-config,
-  clang,
-  llvmPackages,
   makeWrapper,
   makeFontsConf,
   libxkbcommon,
@@ -15,7 +13,6 @@
   libxi,
   libxrandr,
   fontconfig,
-  freetype,
   pipewire,
   jetbrains-mono,
   versionCheckHook,
@@ -24,16 +21,23 @@ let
   pname = "spectral";
   version = "0.6.0";
 
-  runtimeLibs = [
+  # Linked at build time (DT_NEEDED) — resolved through the RUNPATH the
+  # cc-wrapper writes, no environment help needed.
+  linkedLibs = [
+    fontconfig
+    pipewire
+  ];
+
+  # Loaded via dlopen at runtime by winit (x11-dl, xkbcommon-dl) and
+  # wayland-sys — invisible to the linker, so the GUI wrapper must put
+  # them on LD_LIBRARY_PATH.
+  dlopenLibs = [
     libxkbcommon
     wayland
     libx11
     libxcursor
     libxi
     libxrandr
-    fontconfig
-    freetype
-    pipewire
   ];
 in
 rustPlatform.buildRustPackage {
@@ -49,15 +53,13 @@ rustPlatform.buildRustPackage {
 
   nativeBuildInputs = [
     pkg-config
-    clang
+    rustPlatform.bindgenHook
     makeWrapper
   ];
 
-  buildInputs = runtimeLibs;
+  buildInputs = linkedLibs;
 
-  passthru = { inherit runtimeLibs; };
-
-  env.LIBCLANG_PATH = "${llvmPackages.libclang.lib}/lib";
+  passthru = { inherit linkedLibs dlopenLibs; };
 
   postInstall = ''
     install -Dm644 assets/page.codeberg.mmc.Spectral.desktop $out/share/applications/page.codeberg.mmc.Spectral.desktop
@@ -66,11 +68,8 @@ rustPlatform.buildRustPackage {
     install -Dm644 THIRD-PARTY.md $out/share/licenses/spectral/THIRD-PARTY.md
 
     wrapProgram $out/bin/spectral \
-      --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath runtimeLibs}" \
+      --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath dlopenLibs}" \
       --set FONTCONFIG_FILE "${makeFontsConf { fontDirectories = [ jetbrains-mono ]; }}"
-
-    wrapProgram $out/bin/spectral-daemon \
-      --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath runtimeLibs}"
   '';
 
   # Fails the build when the binary's version disagrees with `version`

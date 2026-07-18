@@ -50,21 +50,21 @@
           packages.spectral = spectral;
 
           devShells.default = pkgs.mkShell {
+            nativeBuildInputs = [ pkgs.rustPlatform.bindgenHook ];
+
             buildInputs = [
               rustToolchain
               pkgs.pkg-config
-              pkgs.clang
               pkgs.gh
               pkgs.pacman
               pkgs.appstream
               pkgs.curl
               pkgs.cargo-deny
             ]
-            ++ spectral.passthru.runtimeLibs;
+            ++ spectral.passthru.linkedLibs;
 
-            LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
             MAKEPKG_CONF = "${pkgs.pacman}/etc/makepkg.conf";
-            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath spectral.passthru.runtimeLibs;
+            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath spectral.passthru.dlopenLibs;
             RUST_BACKTRACE = "1";
           };
 
@@ -80,9 +80,6 @@
                 runHook postBuild
               '';
               doCheck = false;
-              # Deliberately no install hooks or checks: the package's
-              # postInstall and versionCheckHook expect binaries that a
-              # lint-only derivation never produces.
               doInstallCheck = false;
               installPhase = "touch $out";
             });
@@ -95,8 +92,6 @@
                 runHook postBuild
               '';
               doCheck = false;
-              # Same rationale as the clippy check: a test-only derivation
-              # produces no binaries for install hooks to verify.
               doInstallCheck = false;
               installPhase = "touch $out";
             });
