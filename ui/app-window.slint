@@ -293,43 +293,56 @@ export component MainWindow inherits Window {
                 }
 
                 // Input field with buttons
-                Rectangle {
+                HorizontalLayout {
                     x: 10px;
                     y: 50px;
                     width: 360px;
                     height: 30px;
-                    background: #30363D;
-                    border-color: root.mic_name_invalid_flash ? #FF4444 : #30363D;
-                    border-width: root.mic_name_invalid_flash ? 2px : 1px;
-                    border-radius: 5px;
+                    spacing: 8px;
 
-                    Timer {
-                        interval: 400ms;
-                        running: root.mic_name_invalid_flash;
-                        triggered => {
-                            root.mic_name_invalid_flash = false;
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        background: #30363D;
+                        border-color: root.mic_name_invalid_flash ? #FF4444 : #30363D;
+                        border-width: root.mic_name_invalid_flash ? 2px : 1px;
+                        border-radius: 5px;
+                        clip: true;
+
+                        Timer {
+                            interval: 400ms;
+                            running: root.mic_name_invalid_flash;
+                            triggered => {
+                                root.mic_name_invalid_flash = false;
+                            }
                         }
-                    }
 
-                    mic_name := TextInput {
-                        x: 15px;
-                        y: 0px;
-                        height: 30px;
-                        text <=> root.mic_name_text;
-                        font-size: 14px;
-                        color: white;
-                        vertical-alignment: center;
-                        edited() => {
-                            root.mic_name_text_changed(self.text);
+                        mic_name := TextInput {
+                            x: 10px;
+                            width: max(parent.width - 20px, self.preferred-width);
+                            height: parent.height;
+                            text <=> root.mic_name_text;
+                            font-size: 14px;
+                            color: white;
+                            vertical-alignment: center;
+                            // TextInput never scrolls on its own; keep the cursor
+                            // visible per the upstream TextInput reference pattern
+                            private property <length> margin: 10px;
+                            cursor-position-changed(cursor-position) => {
+                                if cursor-position.x + self.x < self.margin {
+                                    self.x = - cursor-position.x + self.margin;
+                                } else if cursor-position.x + self.x > parent.width - self.margin - self.text-cursor-width {
+                                    self.x = parent.width - cursor-position.x - self.margin - self.text-cursor-width;
+                                }
+                            }
+                            edited() => {
+                                root.mic_name_text_changed(self.text);
+                            }
                         }
                     }
 
                     // Rename button
                     Rectangle {
-                        x: 200px;
-                        y: 0px;
-                        width: 89px;
-                        height: 30px;
+                        width: 80px;
                         background: #5E5E5E;
                         border-color: #30363D;
                         border-width: 1px;
@@ -347,10 +360,7 @@ export component MainWindow inherits Window {
 
                     // Reset button
                     Rectangle {
-                        x: 288px;
-                        y: 0px;
-                        width: 72px;
-                        height: 30px;
+                        width: 64px;
                         background: #5E5E5E;
                         border-color: #30363D;
                         border-width: 1px;
