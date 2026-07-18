@@ -276,7 +276,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         show_error(&ui_weak, &msg);
     }
 
-    ui.on_selected_input_index_change({
+    ui.on_selected_input_index_changed({
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
         let applied = applied.clone();
@@ -293,7 +293,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    ui.on_threshold_change({
+    ui.on_threshold_changed({
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
         let applied = applied.clone();
@@ -306,7 +306,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    ui.on_rumble_filter_change({
+    ui.on_rumble_filter_changed({
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
         let applied = applied.clone();
@@ -319,7 +319,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    ui.on_auto_level_change({
+    ui.on_auto_level_changed({
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
         let applied = applied.clone();

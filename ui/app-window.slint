@@ -38,10 +38,10 @@ export component MainWindow inherits Window {
     in-out property <bool> show_help_popup: false;
     in-out property <bool> mic_name_invalid_flash: false;
 
-    callback selected_input_index_change(int);
-    callback threshold_change(int);
-    callback rumble_filter_change(bool);
-    callback auto_level_change(bool);
+    callback selected_input_index_changed(int);
+    callback threshold_changed(int);
+    callback rumble_filter_changed(bool);
+    callback auto_level_changed(bool);
     callback rename_clicked(string);
     callback reset_clicked(string);
     callback enable_clicked();
@@ -168,7 +168,7 @@ export component MainWindow inherits Window {
                 changed(value) => {
                     root.slider_value = value;
                     // Don't auto-apply - the GUI recomputes its local pending status
-                    root.threshold_change(value)
+                    root.threshold_changed(value)
                 }
             }
 
@@ -226,7 +226,7 @@ export component MainWindow inherits Window {
                             model: root.input_devices;
                             current_item <=> root.selected_input_index;
                             current_item_changed => {
-                                root.selected_input_index_change(self.current_item);
+                                root.selected_input_index_changed(self.current_item);
                             }
                         }
                     }
@@ -393,7 +393,7 @@ export component MainWindow inherits Window {
                     height: 30px;
                     checked <=> root.rumble_filter;
                     toggled => {
-                        root.rumble_filter_change(self.checked);
+                        root.rumble_filter_changed(self.checked);
                     }
                 }
 
@@ -413,7 +413,7 @@ export component MainWindow inherits Window {
                     height: 30px;
                     checked <=> root.auto_level;
                     toggled => {
-                        root.auto_level_change(self.checked);
+                        root.auto_level_changed(self.checked);
                     }
                 }
 
