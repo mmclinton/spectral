@@ -191,9 +191,11 @@ pub fn wait_for_daemon_exit() -> Result<(), std::io::Error> {
 }
 
 /// A client's end of the daemon socket: one blocking request/response
-/// exchange at a time.
+/// exchange at a time. The read buffer lives with the connection: a
+/// per-call `BufReader` could read ahead past one line and silently drop
+/// the buffered rest when it goes out of scope.
 pub struct DaemonClient {
-    stream: UnixStream,
+    reader: BufReader<UnixStream>,
 }
 
 impl DaemonClient {
@@ -203,7 +205,9 @@ impl DaemonClient {
         let socket_path = get_socket_path()?;
         let stream = UnixStream::connect(socket_path)?;
         stream.set_read_timeout(Some(CLIENT_READ_TIMEOUT))?;
-        Ok(Self { stream })
+        Ok(Self {
+            reader: BufReader::new(stream),
+        })
     }
 
     /// Connect, retrying while a freshly spawned daemon starts up; ENOENT
@@ -226,12 +230,11 @@ impl DaemonClient {
         command: DaemonCommand,
     ) -> Result<DaemonResponse, std::io::Error> {
         let json = serde_json::to_string(&command)?;
-        writeln!(self.stream, "{}", json)?;
-        self.stream.flush()?;
+        writeln!(self.reader.get_mut(), "{}", json)?;
+        self.reader.get_mut().flush()?;
 
-        let mut reader = BufReader::new(&self.stream);
         let mut response_line = String::new();
-        reader.read_line(&mut response_line)?;
+        self.reader.read_line(&mut response_line)?;
 
         serde_json::from_str(&response_line)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
@@ -304,7 +307,9 @@ impl DaemonServer {
     /// Accepts one pending client, if any (the listener is non-blocking).
     pub fn accept(&self) -> Result<DaemonConnection, std::io::Error> {
         let (stream, _) = self.listener.accept()?;
-        Ok(DaemonConnection { stream })
+        Ok(DaemonConnection {
+            reader: BufReader::new(stream),
+        })
     }
 }
 
@@ -315,21 +320,23 @@ impl Drop for DaemonServer {
     }
 }
 
-/// One accepted client connection, served on its own handler thread.
+/// One accepted client connection, served on its own handler thread. The
+/// read buffer lives with the connection so a client that pipelines two
+/// commands cannot lose the second to a discarded per-call `BufReader`.
 pub struct DaemonConnection {
-    stream: UnixStream,
+    reader: BufReader<UnixStream>,
 }
 
 impl DaemonConnection {
     /// Reads the next command line, timing out after 30 s so a silent
     /// client cannot pin its handler thread forever.
     pub fn read_command(&mut self) -> Result<DaemonCommand, std::io::Error> {
-        self.stream
+        self.reader
+            .get_ref()
             .set_read_timeout(Some(Duration::from_secs(30)))?;
 
-        let mut reader = BufReader::new(&self.stream);
         let mut line = String::new();
-        reader.read_line(&mut line)?;
+        self.reader.read_line(&mut line)?;
 
         if line.trim().is_empty() {
             return Err(std::io::Error::new(
@@ -347,8 +354,8 @@ impl DaemonConnection {
     /// Writes one JSON response line and flushes it.
     pub fn send_response(&mut self, response: DaemonResponse) -> Result<(), std::io::Error> {
         let json = serde_json::to_string(&response)?;
-        writeln!(self.stream, "{}", json)?;
-        self.stream.flush()
+        writeln!(self.reader.get_mut(), "{}", json)?;
+        self.reader.get_mut().flush()
     }
 }
 
