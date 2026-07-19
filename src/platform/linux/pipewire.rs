@@ -51,6 +51,12 @@ pub(crate) const PIPELINE_READY_TIMEOUT: Duration = Duration::from_secs(5);
 /// continuously and this should be unreachable in practice.
 const OUTPUT_BUFFER_CAP: usize = SAMPLE_RATE as usize;
 
+/// Largest per-callback delivery the buffers reserve for, in samples per
+/// channel — PipeWire's default `clock.max-quantum`. A graph configured
+/// beyond it still works (the Vec grows once), but every stock
+/// configuration stays allocation-free on the RT path.
+const MAX_QUANTUM: usize = 8192;
+
 /// Ready = both streams up and the feed link created; the daemon's Enable
 /// blocks on this inside PIPELINE_READY_TIMEOUT.
 #[derive(Default)]
@@ -73,10 +79,19 @@ impl PipelineData {
         // Clamp channels to valid range
         // TODO: Validate that channel clamping produces acceptable audio quality
         let channels = input_channels.clamp(1, MAX_INPUT_CHANNELS);
+        // Full worst-case reservations: the process callbacks push into
+        // these on the RT thread, so growth there would mean an RT-path
+        // malloc at exactly the wrong moment (e.g. a stalled consumer).
+        // Input holds at most one leftover partial frame plus one maximal
+        // delivery; output is trimmed to OUTPUT_BUFFER_CAP only after a
+        // whole delivery is processed, so it transiently exceeds the cap
+        // by up to one delivery's worth of mono frames.
+        let input_capacity = (MAX_QUANTUM + RNNOISE_FRAME_SIZE) * channels as usize;
+        let output_capacity = OUTPUT_BUFFER_CAP + MAX_QUANTUM;
         Self {
             processor,
-            input_buffer: Vec::with_capacity(RNNOISE_FRAME_SIZE * channels as usize * 4),
-            output_buffer: Vec::with_capacity(RNNOISE_FRAME_SIZE * 4),
+            input_buffer: Vec::with_capacity(input_capacity),
+            output_buffer: Vec::with_capacity(output_capacity),
             input_channels: channels,
             mono_scratch: vec![0.0; RNNOISE_FRAME_SIZE],
             processed_scratch: vec![0.0; RNNOISE_FRAME_SIZE],
@@ -638,6 +653,28 @@ mod tests {
         );
         assert!(positioned.is_ok(), "Positioned pod should build");
         assert!(!positioned.unwrap().is_empty(), "Pod should have content");
+    }
+
+    /// The RT process callbacks must never grow these Vecs; the
+    /// constructor has to reserve the worst case each one can reach.
+    #[test]
+    fn pipeline_buffers_are_fully_reserved_up_front() {
+        use crate::state::AppState;
+        use std::sync::Arc;
+
+        for channels in [1, 2, MAX_INPUT_CHANNELS] {
+            let processor = AudioProcessor::new(Arc::new(AppState::new()));
+            let data = PipelineData::new(processor, channels);
+            let ch = channels as usize;
+            assert!(
+                data.input_buffer.capacity() >= (MAX_QUANTUM + RNNOISE_FRAME_SIZE) * ch,
+                "input capacity too small for {channels} channels"
+            );
+            assert!(
+                data.output_buffer.capacity() >= OUTPUT_BUFFER_CAP + MAX_QUANTUM,
+                "output capacity below the cap plus one delivery"
+            );
+        }
     }
 
     #[test]
