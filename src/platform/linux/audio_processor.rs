@@ -85,6 +85,7 @@ impl AudioProcessor {
 /// pipeline thread, which removes the mic from the graph.
 pub struct VirtualMic {
     audio_pipeline: Option<NativeAudioPipeline>,
+    node_name: String,
 }
 
 impl VirtualMic {
@@ -124,7 +125,15 @@ impl VirtualMic {
 
         Ok(Self {
             audio_pipeline: Some(audio_pipeline),
+            node_name: virtual_name.to_string(),
         })
+    }
+
+    /// The PipeWire node name this mic was created with — the name a
+    /// recording stream must target. `state.mic_name` can already hold a
+    /// newer, not-yet-applied name while this mic is still the live one.
+    pub fn node_name(&self) -> &str {
+        &self.node_name
     }
 
     /// Why the underlying pipeline died, if it has.

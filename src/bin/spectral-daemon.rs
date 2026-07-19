@@ -424,7 +424,6 @@ fn handle_client(
                     }
                     DaemonCommand::StartRecording => {
                         let device_id = *lock_or_recover(&state.selected_device_id);
-                        let mic_name = lock_or_recover(&state.mic_name).clone();
 
                         let Some(device_id) = device_id else {
                             conn.send_response(DaemonResponse::Error(
@@ -450,17 +449,17 @@ fn handle_client(
                         // guard a recording with the mic disabled would
                         // silently produce an empty/truncated filtered file
                         // (or hit the recorder's dont-reconnect error).
+                        // The target name comes from the live mic itself:
+                        // state.mic_name can already hold a newer name from
+                        // an Enable that has not recreated the mic yet, and
+                        // recording against that name would miss the node.
                         {
                             let mic_guard = lock_or_recover(&virtual_mic);
-                            let mic_ok = mic_guard
+                            let live_mic_name = mic_guard
                                 .as_ref()
-                                .is_some_and(|mic| mic.failure().is_none());
-                            if !mic_ok {
-                                DaemonResponse::Error(
-                                    "Cannot record filtered side: virtual mic is not active"
-                                        .to_string(),
-                                )
-                            } else {
+                                .filter(|mic| mic.failure().is_none())
+                                .map(|mic| mic.node_name().to_string());
+                            if let Some(mic_name) = live_mic_name {
                                 // Kill any in-flight recorder first: a second
                                 // StartRecording (second IPC client, or GUI
                                 // restarted mid-recording) would otherwise put
@@ -490,6 +489,11 @@ fn handle_client(
                                         ))
                                     }
                                 }
+                            } else {
+                                DaemonResponse::Error(
+                                    "Cannot record filtered side: virtual mic is not active"
+                                        .to_string(),
+                                )
                             }
                         }
                     }
