@@ -123,19 +123,37 @@ pub fn get_input_devices() -> Result<Vec<AudioDevice>, Box<dyn Error>> {
     })
 }
 
-/// Get the channel count for a specific device by ID.
-/// Returns the channel count if found, or a default of 2 (stereo) if not found.
+/// Extract a node's channel count from its registry props, falling back to
+/// 2 (stereo) when `audio.channels` is absent — the same fallback
+/// `get_input_devices` applies.
+fn channels_from_props(props: &DictRef) -> u32 {
+    props
+        .get("audio.channels")
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(2)
+}
+
+/// Resolve a node's `node.name` and channel count by id in one registry
+/// pass — enable needs both, and querying them separately would open two
+/// PipeWire connections for one snapshot.
 ///
-/// TODO: Validate this fallback behavior - should we error instead of defaulting?
-pub fn get_device_channels(device_id: u32) -> u32 {
-    match get_input_devices() {
-        Ok(devices) => devices
-            .iter()
-            .find(|d| d.id == device_id)
-            .map(|d| d.channels)
-            .unwrap_or(2),
-        Err(_) => 2,
-    }
+/// # Errors
+/// Returns an error if the PipeWire connection fails or no node with that
+/// id exposes a `node.name`.
+pub fn get_node_details(node_id: u32) -> Result<(String, u32), Box<dyn Error>> {
+    let details = collect_globals(move |global| {
+        if global.type_ != ObjectType::Node || global.id != node_id {
+            return None;
+        }
+        let props = global.props.as_ref()?;
+        let name = props.get("node.name")?.to_string();
+        Some((name, channels_from_props(props)))
+    })?;
+
+    details
+        .into_iter()
+        .next()
+        .ok_or_else(|| format!("Could not find node.name for node {node_id}").into())
 }
 
 /// Point the configured default input at `node_name` — the persisted
@@ -228,24 +246,29 @@ pub fn set_default_source(node_name: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Resolve an `Audio/Source` node's current registry id by its `node.name`.
-/// Ids are scoped to one PipeWire instance, so the name is the durable
-/// handle. A missing node is `Ok(None)`, not an error.
+/// Resolve an `Audio/Source` node's current registry id and channel count
+/// by its `node.name`. Ids are scoped to one PipeWire instance, so the name
+/// is the durable handle. A missing node is `Ok(None)`, not an error.
 ///
 /// # Errors
 /// Returns an error if the PipeWire connection fails.
-pub fn find_node_id(node_name: &str) -> Result<Option<u32>, Box<dyn Error>> {
+pub fn find_node(node_name: &str) -> Result<Option<(u32, u32)>, Box<dyn Error>> {
     let node_name = node_name.to_string();
-    let ids = collect_globals(move |global| {
+    let nodes = collect_globals(move |global| {
         if global.type_ != ObjectType::Node {
             return None;
         }
         let props = global.props.as_ref()?;
         (props.get("media.class") == Some("Audio/Source")
             && props.get("node.name") == Some(node_name.as_str()))
-        .then_some(global.id)
+        .then(|| (global.id, channels_from_props(props)))
     })?;
-    Ok(ids.into_iter().next())
+    Ok(nodes.into_iter().next())
+}
+
+/// [`find_node`] reduced to the id, for callers that only need presence.
+pub fn find_node_id(node_name: &str) -> Result<Option<u32>, Box<dyn Error>> {
+    Ok(find_node(node_name)?.map(|(id, _)| id))
 }
 
 /// Get the PipeWire node name for a device by its ID, straight from the

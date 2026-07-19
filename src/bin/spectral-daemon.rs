@@ -2,7 +2,7 @@
 //! persists settings, and serves GUI/CLI clients on the Unix socket with
 //! one handler thread per connection. SIGTERM/SIGINT tear everything down.
 
-use spectral_lib::audio_devices::{find_node_id, get_device_channels, get_node_name};
+use spectral_lib::audio_devices::{find_node, get_node_details, get_node_name};
 use spectral_lib::audio_processor::VirtualMic;
 use spectral_lib::ipc::{
     DaemonCommand, DaemonResponse, DaemonServer, DaemonState, PROTOCOL_VERSION,
@@ -198,9 +198,9 @@ fn handle_enable(
     let rumble_filter =
         rumble_filter.unwrap_or_else(|| state.rumble_filter.load(Ordering::Relaxed));
     let auto_level = auto_level.unwrap_or_else(|| state.auto_level.load(Ordering::Relaxed));
-    let (device_id, device_node_name) = match device_id {
-        Some(id) => match get_node_name(id) {
-            Ok(name) => (id, name),
+    let (device_id, device_node_name, channels) = match device_id {
+        Some(id) => match get_node_details(id) {
+            Ok((name, channels)) => (id, name, channels),
             Err(e) => {
                 return DaemonResponse::Error(format!(
                     "Cannot use device {id}: {e} (stale id? refresh the device list or run `spectral devices`)"
@@ -210,8 +210,8 @@ fn handle_enable(
         None => {
             let remembered = lock_or_recover(&state.device_node_name).clone();
             match remembered {
-                Some(name) => match find_node_id(&name) {
-                    Ok(Some(id)) => (id, name),
+                Some(name) => match find_node(&name) {
+                    Ok(Some((id, channels))) => (id, name, channels),
                     Ok(None) => {
                         return DaemonResponse::Error(format!(
                             "Remembered device \"{name}\" is not present — run `spectral devices` and pass --device"
@@ -240,7 +240,7 @@ fn handle_enable(
 
     if let Err(e) = save_state(&PersistedState {
         device_id: Some(device_id),
-        device_node_name: Some(device_node_name),
+        device_node_name: Some(device_node_name.clone()),
         mic_name: mic_name.clone(),
         threshold,
         rumble_filter,
@@ -254,9 +254,7 @@ fn handle_enable(
         mic.stop();
     }
 
-    // TODO: Validate channel detection for dynamically connected devices
-    let channels = get_device_channels(device_id);
-    match VirtualMic::create(state.clone(), device_id, &mic_name, channels) {
+    match VirtualMic::create(state.clone(), &device_node_name, &mic_name, channels) {
         Ok(mic) => {
             *mic_guard = Some(mic);
             state.update_status(Status::Active);

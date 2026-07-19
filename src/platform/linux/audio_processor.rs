@@ -1,7 +1,7 @@
 //! The per-frame processing chain (high-pass → RNNoise → leveler → gate)
 //! and the [`VirtualMic`] that owns the pipeline running it.
 
-use super::audio_devices::{get_node_name, set_default_source};
+use super::audio_devices::set_default_source;
 use super::pipewire::{NativeAudioPipeline, RNNOISE_FRAME_SIZE, SAMPLE_RATE};
 use super::stages::{HighPass, Leveler, VoiceGate};
 use crate::state::{AppState, is_valid_mic_name};
@@ -89,21 +89,18 @@ pub struct VirtualMic {
 }
 
 impl VirtualMic {
-    /// Create a new virtual microphone with noise reduction. The pipeline
-    /// thread owns every PipeWire object involved (mic node, streams, feed
-    /// link), so the mic disappears with the daemon by construction.
-    ///
-    /// # Arguments
-    /// * `state` - Application state
-    /// * `source_device_id` - PipeWire node ID of the source device
-    /// * `virtual_name` - Name for the virtual microphone
-    /// * `input_channels` - Number of channels on the input device (1=mono, 2=stereo, etc.)
+    /// Create a new virtual microphone named `virtual_name` with noise
+    /// reduction, capturing `source_node_name` with `input_channels`
+    /// channels — both already resolved by the caller in one registry pass.
+    /// The pipeline thread owns every PipeWire object involved (mic node,
+    /// streams, feed link), so the mic disappears with the daemon by
+    /// construction.
     ///
     /// TODO: Validate behavior with mono input devices (USB mics, built-in laptop mics)
     /// TODO: Validate behavior with multichannel interfaces (>2 channels)
     pub fn create(
         state: Arc<AppState>,
-        source_device_id: u32,
+        source_node_name: &str,
         virtual_name: &str,
         input_channels: u32,
     ) -> Result<Self, Box<dyn std::error::Error>> {
@@ -111,10 +108,9 @@ impl VirtualMic {
             return Err(format!("Invalid mic name: {:?}", virtual_name).into());
         }
         let processor = AudioProcessor::new(state.clone());
-        let source_node_name = get_node_name(source_device_id)?;
 
         let audio_pipeline =
-            NativeAudioPipeline::start(processor, &source_node_name, virtual_name, input_channels)
+            NativeAudioPipeline::start(processor, source_node_name, virtual_name, input_channels)
                 .map_err(|e| format!("Failed to start audio pipeline: {}", e))?;
 
         // The mic node exists once the pipeline is ready, so the configured
