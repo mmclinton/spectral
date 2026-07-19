@@ -387,12 +387,17 @@ fn run_pipeline(
 
     // The session manager configures the mic node and the feed stream
     // asynchronously; watch the registry for their ports, then link them.
+    // The port list exists only to create that one link: once it is up,
+    // collection stops and the list is dropped — otherwise it would grow
+    // for the pipeline's lifetime as devices hot-plug.
     let mic_node_id: Rc<Cell<Option<u32>>> = Rc::new(Cell::new(None));
     let ports: Rc<RefCell<Vec<(u32, u32, String)>>> = Rc::new(RefCell::new(Vec::new()));
+    let link_established = Rc::new(Cell::new(false));
 
     let registry = core.get_registry()?;
     let mic_node_slot = mic_node_id.clone();
     let ports_slot = ports.clone();
+    let link_established_slot = link_established.clone();
     let mic_node_name = virtual_name.to_string();
     let _registry_listener = registry
         .add_listener_local()
@@ -402,7 +407,7 @@ fn run_pipeline(
                 ObjectType::Node if props.get("node.name") == Some(mic_node_name.as_str()) => {
                     mic_node_slot.set(Some(global.id));
                 }
-                ObjectType::Port => {
+                ObjectType::Port if !link_established_slot.get() => {
                     if let (Some(node), Some(direction)) =
                         (props.get("node.id"), props.get("port.direction"))
                         && let Ok(node) = node.parse::<u32>()
@@ -460,6 +465,8 @@ fn run_pipeline(
                             "link.input.port" => mic_port.to_string(),
                         },
                     )?);
+                    link_established.set(true);
+                    ports.borrow_mut().clear();
                 }
             }
         }
@@ -563,11 +570,19 @@ fn process_capture_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCe
             }
 
             // Process complete frames (480 samples per channel) in the
-            // preallocated scratch buffers — the RT thread must not allocate.
+            // preallocated scratch buffers — the RT thread must not
+            // allocate. Frames advance by offset with one drain at the end:
+            // draining per frame would shift the whole remainder each
+            // iteration, quadratic in the number of buffered frames.
             let frame_size = RNNOISE_FRAME_SIZE * channels;
-            while input_buffer.len() >= frame_size {
+            let mut consumed = 0;
+            while input_buffer.len() - consumed >= frame_size {
                 // Convert N channels to mono and scale to i16 range for RNNoise
-                mix_to_mono(&input_buffer[..frame_size], channels, mono_scratch);
+                mix_to_mono(
+                    &input_buffer[consumed..consumed + frame_size],
+                    channels,
+                    mono_scratch,
+                );
                 processor.process_frame(mono_scratch, processed_scratch);
 
                 // Scale back to f32 PCM range [-1.0, 1.0]
@@ -576,8 +591,9 @@ fn process_capture_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCe
                 }
 
                 output_buffer.extend_from_slice(processed_scratch);
-                input_buffer.drain(..frame_size);
+                consumed += frame_size;
             }
+            input_buffer.drain(..consumed);
             cap_buffer(output_buffer, OUTPUT_BUFFER_CAP);
         }
     }
