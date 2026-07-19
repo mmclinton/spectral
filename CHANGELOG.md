@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-07-18
+
+### Fixed
+- The Rename and Reset buttons no longer overlap the virtual-mic name
+  field. The row is a real layout now: the buttons sit beside the field,
+  match the rounded fluent look of every other button with centered
+  labels, and the invalid-name flash border is fully visible around the
+  field instead of disappearing behind them.
+
+### Changed
+- The virtual-mic name limit is 20 characters (was 21), sized so a
+  max-length name always fits the name field without scrolling. The CLI
+  and daemon error messages now derive from the shared constant. A
+  previously saved name that exceeds the new limit resets to the default
+  at daemon startup, as before.
+
 ## [0.6.0] - 2026-07-17
 
 ### Changed
@@ -298,6 +314,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nix is the only officially supported installation method
 - Requires PipeWire (with the PulseAudio compatibility layer) and WirePlumber
 
+[0.6.1]: https://codeberg.org/mmc/spectral/compare/v0.6.0...v0.6.1
 [0.6.0]: https://codeberg.org/mmc/spectral/compare/v0.5.0...v0.6.0
 [0.5.0]: https://codeberg.org/mmc/spectral/compare/v0.4.0...v0.5.0
 [0.4.0]: https://codeberg.org/mmc/spectral/compare/v0.3.0...v0.4.0
