@@ -4,6 +4,7 @@
 
 use crate::state::Status;
 use serde::{Deserialize, Serialize};
+use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
@@ -22,7 +23,7 @@ const CLIENT_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 mod pid_file {
     use std::fs;
-    use std::io::{self, Read, Write};
+    use std::io::{self, Read, Seek, SeekFrom, Write};
     use std::path::Path;
 
     pub fn read_pid(path: &Path) -> Option<u32> {
@@ -36,8 +37,13 @@ mod pid_file {
             .and_then(|s| s.trim().parse().ok())
     }
 
-    pub fn write_pid(path: &Path) -> io::Result<()> {
-        let mut file = fs::File::create(path)?;
+    /// Rewrites `file` (already opened and locked by the caller) with our
+    /// pid. Opened without truncate so a losing racer can't clobber the
+    /// winner's pid before the lock decides ownership; truncation happens
+    /// here, under the lock.
+    pub fn write_pid_to(mut file: &fs::File) -> io::Result<()> {
+        file.set_len(0)?;
+        file.seek(SeekFrom::Start(0))?;
         write!(file, "{}", std::process::id())
     }
 
@@ -232,41 +238,58 @@ impl DaemonClient {
     }
 }
 
-/// The daemon's listening end; dropping it removes the socket and pid files.
+/// The daemon's listening end; holds an exclusive lock on the pid file for
+/// the daemon's lifetime, and dropping it removes the socket and pid files.
 pub struct DaemonServer {
     listener: UnixListener,
     socket_path: PathBuf,
     pid_file_path: PathBuf,
+    /// Held, never read: the OS lock on the pid file is what serializes
+    /// daemon startup, and it lives exactly as long as this handle.
+    _pid_lock: File,
 }
 
 impl DaemonServer {
-    /// Claims the socket and pid file: refuses while another daemon is
-    /// alive, sweeps both files when they were left behind by a dead one.
+    /// Claims the pid file and socket. An exclusive lock on the pid file —
+    /// not the recorded pid's liveness — decides ownership: two daemons
+    /// racing the old liveness check could interleave so the second
+    /// unlinked the first's freshly bound socket, leaving an invisible
+    /// zombie daemon. The kernel drops the lock on process exit, including
+    /// the Shutdown path's `exit(0)` that skips `Drop`, so a crashed or
+    /// shut-down daemon never blocks the next one.
     pub fn bind() -> Result<Self, std::io::Error> {
         let socket_path = get_socket_path()?;
         let pid_file_path = get_pid_file_path()?;
 
-        // Check if another daemon is already running via PID file
-        if let Some(existing_pid) = pid_file::read_pid(&pid_file_path) {
-            if pid_file::is_process_running(existing_pid) {
+        let pid_file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .truncate(false)
+            .open(&pid_file_path)?;
+        match pid_file.try_lock() {
+            Ok(()) => {}
+            Err(TryLockError::WouldBlock) => {
+                let holder = pid_file::read_pid(&pid_file_path)
+                    .map(|pid| format!(" (PID {pid})"))
+                    .unwrap_or_default();
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::AddrInUse,
-                    format!("Another daemon is already running (PID {})", existing_pid),
+                    format!("Another daemon is already running{holder}"),
                 ));
             }
-            pid_file::cleanup(&pid_file_path);
+            Err(TryLockError::Error(e)) => return Err(e),
         }
+        pid_file::write_pid_to(&pid_file)?;
 
-        let listener = match UnixListener::bind(&socket_path) {
-            Ok(listener) => listener,
-            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-                std::fs::remove_file(&socket_path)?;
-                UnixListener::bind(&socket_path)?
-            }
+        // Under the held lock any existing socket file is stale by
+        // definition; sweep it and bind fresh.
+        match std::fs::remove_file(&socket_path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(e),
-        };
-
-        pid_file::write_pid(&pid_file_path)?;
+        }
+        let listener = UnixListener::bind(&socket_path)?;
 
         listener.set_nonblocking(true)?;
 
@@ -274,6 +297,7 @@ impl DaemonServer {
             listener,
             socket_path,
             pid_file_path,
+            _pid_lock: pid_file,
         })
     }
 
