@@ -102,8 +102,9 @@ impl AppState {
     }
 }
 
-/// Upper bound for user-chosen virtual-mic names, in characters.
-pub const MIC_NAME_MAX_LEN: usize = 21;
+/// Upper bound for user-chosen virtual-mic names, in characters. Sized so
+/// a max-length name fits the GUI name field without scrolling.
+pub const MIC_NAME_MAX_LEN: usize = 20;
 
 /// Validates a user-chosen mic name: non-empty, at most
 /// [`MIC_NAME_MAX_LEN`] characters, ASCII alphanumerics plus `_` and `-` —

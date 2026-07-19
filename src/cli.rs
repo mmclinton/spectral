@@ -8,7 +8,7 @@ use spectral_lib::ipc::{
     DaemonClient, DaemonCommand, DaemonResponse, DaemonState, PROTOCOL_VERSION,
     wait_for_daemon_exit,
 };
-use spectral_lib::state::{Status, is_valid_mic_name};
+use spectral_lib::state::{MIC_NAME_MAX_LEN, Status, is_valid_mic_name};
 use std::ffi::OsString;
 use std::process::ExitCode;
 
@@ -44,7 +44,7 @@ Commands:
                                      defaults to the remembered device
                 --threshold <0-100>  voice gate threshold (0 = denoise only);
                                      defaults to the current setting
-                --mic-name <name>    virtual mic name ([A-Za-z0-9_-], max 21);
+                --mic-name <name>    virtual mic name ([A-Za-z0-9_-], max 20);
                                      defaults to the current setting
                 --rumble-filter <on|off>
                                      cut low-frequency rumble (below ~90 Hz)
@@ -149,7 +149,7 @@ where
                 let value = take_value(args, inline, "--mic-name")?;
                 if !is_valid_mic_name(&value) {
                     return Err(format!(
-                        "invalid --mic-name '{value}': only [A-Za-z0-9_-] allowed, 1-21 chars"
+                        "invalid --mic-name '{value}': only [A-Za-z0-9_-] allowed, 1-{MIC_NAME_MAX_LEN} chars"
                     ));
                 }
                 mic_name = Some(value);
@@ -537,7 +537,7 @@ mod tests {
     fn invalid_values_rejected() {
         assert!(p(&["enable", "--device", "abc"]).is_err());
         assert!(p(&["enable", "--mic-name", "bad name!"]).is_err());
-        assert!(p(&["enable", "--mic-name", &"x".repeat(22)]).is_err());
+        assert!(p(&["enable", "--mic-name", &"x".repeat(MIC_NAME_MAX_LEN + 1)]).is_err());
     }
 
     #[test]
