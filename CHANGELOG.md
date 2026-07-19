@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The real-time capture path reserves its staging buffers in full up
   front, so a stalled consumer or a large graph quantum can no longer
   trigger a memory allocation inside the RT audio callback.
+- PipeWire registry queries (device listing, enable-time device
+  resolution, default-source configuration) now fail with an error when
+  the PipeWire connection dies mid-query instead of waiting forever —
+  previously this could permanently wedge the daemon and freeze the GUI.
 
 ## [0.6.1] - 2026-07-18
 

@@ -42,6 +42,14 @@ where
     let loop_clone = mainloop.clone();
     let pending_clone = pending.clone();
 
+    // Quitting only on `done` would hang forever if the connection dies
+    // mid-roundtrip (the daemon calls this while holding the virtual-mic
+    // lock, so a hang here wedges every later command). Any core/proxy
+    // error therefore aborts the query.
+    let error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let error_clone = error.clone();
+    let error_loop = mainloop.clone();
+
     let _core_listener = core
         .add_listener_local()
         .done(move |id, seq| {
@@ -55,12 +63,23 @@ where
                 }
             }
         })
+        .error(move |id, _seq, res, message| {
+            let mut slot = lock_or_recover(&error_clone);
+            if slot.is_none() {
+                *slot = Some(format!("PipeWire error on object {id}: {res} {message}"));
+            }
+            error_loop.quit();
+        })
         .register();
 
     let seq = core.sync(0)?;
     *lock_or_recover(&pending) = Some(seq);
 
     mainloop.run();
+
+    if let Some(msg) = lock_or_recover(&error).take() {
+        return Err(msg.into());
+    }
 
     let items = std::mem::take(&mut *lock_or_recover(&found));
     Ok(items)
@@ -149,6 +168,12 @@ pub fn set_default_source(node_name: &str) -> Result<(), Box<dyn Error>> {
     let loop_clone = mainloop.clone();
     let pending_clone = pending.clone();
 
+    // Same rationale as collect_globals: without an error path out of the
+    // loop, a connection that dies mid-roundtrip hangs this thread forever.
+    let error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let error_clone = error.clone();
+    let error_loop = mainloop.clone();
+
     let _core_listener = core
         .add_listener_local()
         .done(move |id, seq| {
@@ -162,12 +187,23 @@ pub fn set_default_source(node_name: &str) -> Result<(), Box<dyn Error>> {
                 }
             }
         })
+        .error(move |id, _seq, res, message| {
+            let mut slot = lock_or_recover(&error_clone);
+            if slot.is_none() {
+                *slot = Some(format!("PipeWire error on object {id}: {res} {message}"));
+            }
+            error_loop.quit();
+        })
         .register();
 
     // Roundtrip 1: enumerate the globals so the session manager's "default"
     // metadata object is discovered.
     *lock_or_recover(&pending) = Some(core.sync(0)?);
     mainloop.run();
+
+    if let Some(msg) = lock_or_recover(&error).take() {
+        return Err(msg.into());
+    }
 
     let global = metadata_global
         .borrow_mut()
@@ -184,6 +220,10 @@ pub fn set_default_source(node_name: &str) -> Result<(), Box<dyn Error>> {
     // Roundtrip 2: flush the write before the connection drops.
     *lock_or_recover(&pending) = Some(core.sync(0)?);
     mainloop.run();
+
+    if let Some(msg) = lock_or_recover(&error).take() {
+        return Err(msg.into());
+    }
 
     Ok(())
 }
