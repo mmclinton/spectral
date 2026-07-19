@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicI32};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 /// The process-wide locking policy: recover from poisoned mutexes instead of
 /// panicking. The long-lived daemon prefers potentially stale data over a
@@ -43,30 +43,31 @@ pub enum Status {
     Pending,
 }
 
-/// The daemon's shared state. Each field is independently `Arc`-wrapped so
-/// the IPC handler threads and the audio pipeline can clone exactly the
-/// pieces they need instead of contending on one big lock.
+/// The daemon's shared state, shared as a whole behind one
+/// `Arc<AppState>`. Each field carries its own lock (or is atomic, for the
+/// values the real-time audio path reads) so threads contend per value,
+/// never on one big lock.
 pub struct AppState {
     /// Current lifecycle state of the virtual mic.
-    pub status: Arc<Mutex<Status>>,
+    pub status: Mutex<Status>,
     /// PipeWire id of the chosen capture device, if one is selected.
-    pub selected_device_id: Arc<Mutex<Option<u32>>>,
+    pub selected_device_id: Mutex<Option<u32>>,
     /// The selected device's PipeWire node.name — the durable handle; ids are
     /// scoped to one server instance.
-    pub device_node_name: Arc<Mutex<Option<String>>>,
+    pub device_node_name: Mutex<Option<String>>,
     /// Atomic so the real-time audio path can read it without locking.
-    pub threshold_val: Arc<AtomicI32>,
+    pub threshold_val: AtomicI32,
     /// High-pass rumble cut ahead of the denoiser. Atomic for the same
     /// reason as `threshold_val`.
-    pub rumble_filter: Arc<AtomicBool>,
+    pub rumble_filter: AtomicBool,
     /// VAD-frozen automatic gain riding with a peak limiter. Atomic for the
     /// same reason as `threshold_val`.
-    pub auto_level: Arc<AtomicBool>,
+    pub auto_level: AtomicBool,
     /// Display name for the virtual mic node.
-    pub mic_name: Arc<Mutex<String>>,
+    pub mic_name: Mutex<String>,
     /// Why the mic is not active: set on pipeline death or a failed
     /// enable/disable, cleared when an enable or disable succeeds.
-    pub last_error: Arc<Mutex<Option<String>>>,
+    pub last_error: Mutex<Option<String>>,
 }
 
 impl Default for AppState {
@@ -80,14 +81,14 @@ impl AppState {
     /// both voice stages off, mic named "Spectral-Mic".
     pub fn new() -> Self {
         Self {
-            status: Arc::new(Mutex::new(Status::Inactive)),
-            selected_device_id: Arc::new(Mutex::new(None)),
-            device_node_name: Arc::new(Mutex::new(None)),
-            threshold_val: Arc::new(AtomicI32::new(50)),
-            rumble_filter: Arc::new(AtomicBool::new(false)),
-            auto_level: Arc::new(AtomicBool::new(false)),
-            mic_name: Arc::new(Mutex::new("Spectral-Mic".to_string())),
-            last_error: Arc::new(Mutex::new(None)),
+            status: Mutex::new(Status::Inactive),
+            selected_device_id: Mutex::new(None),
+            device_node_name: Mutex::new(None),
+            threshold_val: AtomicI32::new(50),
+            rumble_filter: AtomicBool::new(false),
+            auto_level: AtomicBool::new(false),
+            mic_name: Mutex::new("Spectral-Mic".to_string()),
+            last_error: Mutex::new(None),
         }
     }
 
