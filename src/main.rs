@@ -110,6 +110,18 @@ fn device_matches_applied(
     }
 }
 
+/// Where the previously selected device lands in a refreshed list: an index
+/// is only meaningful within one list, so the selection carries across a
+/// refresh by device id, not by position. No previous selection — or a
+/// device that vanished — resolves to -1 (nothing selected).
+fn reresolve_selection(old: &[AudioDevice], old_idx: i32, new: &[AudioDevice]) -> i32 {
+    usize::try_from(old_idx)
+        .ok()
+        .and_then(|idx| old.get(idx))
+        .and_then(|device| new.iter().position(|d| d.id == device.id))
+        .map_or(-1, |idx| idx as i32)
+}
+
 /// The last settings the daemon acknowledged; staged UI edits are compared
 /// against these to drive the Active↔Pending display.
 struct AppliedSettings {
@@ -516,12 +528,12 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         let model = VecModel::from(items);
                         ui.set_input_devices(ModelRc::new(Rc::new(model)));
 
-                        let selected_idx = ui.get_selected_input_index();
-                        if selected_idx >= 0 && (selected_idx as usize) < filtered.len() {
-                            ui.set_selected_input_index(selected_idx);
-                        } else {
-                            ui.set_selected_input_index(-1);
-                        }
+                        let new_idx = reresolve_selection(
+                            &devices.borrow(),
+                            ui.get_selected_input_index(),
+                            &filtered,
+                        );
+                        ui.set_selected_input_index(new_idx);
 
                         *devices.borrow_mut() = filtered;
                         clear_error(&ui_weak);
@@ -634,6 +646,35 @@ fn run_app() -> Result<(), Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refresh_carries_the_selection_by_device_id_not_by_index() {
+        let dev = |id: u32, name: &str| AudioDevice {
+            id,
+            name: name.to_string(),
+            channels: 2,
+        };
+        let old = [dev(10, "A"), dev(20, "B"), dev(30, "C")];
+        let cases = [
+            // Unchanged list: selection stays put.
+            (1, vec![dev(10, "A"), dev(20, "B"), dev(30, "C")], 1),
+            // Reordered list: follow the id, not the position.
+            (1, vec![dev(20, "B"), dev(10, "A")], 0),
+            // The selected device vanished: clear the selection.
+            (2, vec![dev(10, "A"), dev(20, "B")], -1),
+            // Nothing was selected: nothing to carry over.
+            (-1, vec![dev(10, "A")], -1),
+            // Defensive: an out-of-range index clears rather than panics.
+            (9, vec![dev(10, "A")], -1),
+        ];
+        for (old_idx, new, expected) in cases {
+            assert_eq!(
+                reresolve_selection(&old, old_idx, &new),
+                expected,
+                "old_idx {old_idx}"
+            );
+        }
+    }
 
     #[test]
     fn reconcile_prefers_daemon_truth_except_for_staged_edits() {

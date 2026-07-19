@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CLI both auto-starting one) can no longer race each other into a state
   where a hidden second daemon survives without a socket: an OS-level
   lock on the pid file now decides ownership.
+- Refreshing the device list keeps the selection on the same device even
+  when the list's order or contents changed; previously the selection
+  could silently land on a different device. A selected device that
+  disappeared now clears the selection.
 
 ## [0.6.1] - 2026-07-18
 
