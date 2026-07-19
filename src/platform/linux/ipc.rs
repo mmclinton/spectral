@@ -13,6 +13,13 @@ const DAEMON_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const DAEMON_EXIT_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
+/// Client-side ceiling on waiting for a response, matching the server's
+/// per-connection read timeout. A legitimately slow command (Enable's ~5 s
+/// pipeline handshake, possibly queued behind another client's) stays well
+/// inside it; only a genuinely wedged daemon trips it. Without this the
+/// GUI's event-loop thread would block forever on a dead daemon.
+const CLIENT_READ_TIMEOUT: Duration = Duration::from_secs(30);
+
 mod pid_file {
     use std::fs;
     use std::io::{self, Read, Write};
@@ -189,6 +196,7 @@ impl DaemonClient {
     pub fn connect() -> Result<Self, std::io::Error> {
         let socket_path = get_socket_path()?;
         let stream = UnixStream::connect(socket_path)?;
+        stream.set_read_timeout(Some(CLIENT_READ_TIMEOUT))?;
         Ok(Self { stream })
     }
 

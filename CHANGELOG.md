@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resolution, default-source configuration) now fail with an error when
   the PipeWire connection dies mid-query instead of waiting forever —
   previously this could permanently wedge the daemon and freeze the GUI.
+- GUI and CLI requests to the daemon time out after 30 seconds instead
+  of blocking indefinitely when the daemon stops responding.
 
 ## [0.6.1] - 2026-07-18
 
