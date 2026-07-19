@@ -1,6 +1,6 @@
 pkgbase = spectral-mic
 	pkgdesc = Real-time microphone noise suppression via a virtual PipeWire source (RNNoise)
-	pkgver = 0.6.0
+	pkgver = 0.6.1
 	pkgrel = 1
 	url = https://codeberg.org/mmc/spectral
 	arch = x86_64
@@ -25,7 +25,7 @@ pkgbase = spectral-mic
 	depends = xdg-utils
 	conflicts = spectral
 	options = !debug
-	source = spectral-mic-0.6.0.tar.gz::https://codeberg.org/mmc/spectral/archive/v0.6.0.tar.gz
-	sha256sums = 77619fe7f08dc9a65e261771551bb9a84ce0627c02341694e076c21761ded95f
+	source = spectral-mic-0.6.1.tar.gz::https://codeberg.org/mmc/spectral/archive/v0.6.1.tar.gz
+	sha256sums = c5629ce458a40f7a28157ef66216869573be5dd780d1f15a37d4aab20038e2e1
 
 pkgname = spectral-mic
