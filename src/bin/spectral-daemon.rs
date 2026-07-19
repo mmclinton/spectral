@@ -340,18 +340,19 @@ fn handle_client(
                         // Reap player liveness: a finished player is torn
                         // down and its failure (if any) surfaces into
                         // last_error, mirroring the mic dead-detection
-                        // above.
+                        // above. The message is only recorded once the
+                        // guard is dropped: last_error (#6) precedes the
+                        // player (#8) in the lock order, so it must never
+                        // be acquired while #8 is held.
                         let mut is_playing_original = false;
                         let mut is_playing_filtered = false;
-                        {
+                        let player_error = {
                             let mut guard = lock_or_recover(&player);
+                            let mut error = None;
                             if let Some((kind, p)) = guard.as_ref() {
                                 if p.is_finished() {
-                                    if let Some(msg) = p.failure() {
-                                        state.set_last_error(Some(format!(
-                                            "Playback stopped: {msg}"
-                                        )));
-                                    }
+                                    error =
+                                        p.failure().map(|msg| format!("Playback stopped: {msg}"));
                                     if let Some((_, mut finished)) = guard.take() {
                                         finished.stop();
                                     }
@@ -362,6 +363,10 @@ fn handle_client(
                                     }
                                 }
                             }
+                            error
+                        };
+                        if let Some(msg) = player_error {
+                            state.set_last_error(Some(msg));
                         }
 
                         // Reap recorder failures into last_error for
@@ -369,17 +374,24 @@ fn handle_client(
                         // DaemonState (no recording-active field exists
                         // today and adding one changes the wire format,
                         // out of scope), but a failed recording still
-                        // deserves to be torn down and reported.
-                        {
+                        // deserves to be torn down and reported. Same
+                        // ordering discipline: record after dropping the
+                        // recorder guard (#7 is held, #6 must not be).
+                        let recorder_error = {
                             let mut guard = lock_or_recover(&recorder);
                             if let Some(r) = guard.as_ref()
                                 && let Some(msg) = r.failure()
                             {
-                                state.set_last_error(Some(format!("Recording stopped: {msg}")));
                                 if let Some(mut finished) = guard.take() {
                                     finished.stop();
                                 }
+                                Some(format!("Recording stopped: {msg}"))
+                            } else {
+                                None
                             }
+                        };
+                        if let Some(msg) = recorder_error {
+                            state.set_last_error(Some(msg));
                         }
 
                         let threshold = state.threshold_val.load(Ordering::Relaxed);
