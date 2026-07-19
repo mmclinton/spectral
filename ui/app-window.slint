@@ -317,8 +317,8 @@ export component MainWindow inherits Window {
                         }
 
                         mic_name := TextInput {
-                            x: 10px;
-                            width: max(parent.width - 20px, self.preferred-width);
+                            x: 8px;
+                            width: max(parent.width - 16px, self.preferred-width);
                             height: parent.height;
                             text <=> root.mic_name_text;
                             font-size: 14px;
@@ -326,7 +326,7 @@ export component MainWindow inherits Window {
                             vertical-alignment: center;
                             // TextInput never scrolls on its own; keep the cursor
                             // visible per the upstream TextInput reference pattern
-                            private property <length> margin: 10px;
+                            private property <length> margin: 8px;
                             cursor-position-changed(cursor-position) => {
                                 if cursor-position.x + self.x < self.margin {
                                     self.x = - cursor-position.x + self.margin;
@@ -340,8 +340,10 @@ export component MainWindow inherits Window {
                         }
                     }
 
+                    // fluent Button pads its label 12px each side; "Rename" at
+                    // 14px JetBrains Mono needs ~75px before the label centers
                     Button {
-                        width: 64px;
+                        width: 76px;
                         text: "Rename";
                         clicked => {
                             mic_name.clear-focus();
@@ -350,7 +352,7 @@ export component MainWindow inherits Window {
                     }
 
                     Button {
-                        width: 64px;
+                        width: 76px;
                         text: "Reset";
                         clicked => {
                             mic_name.clear-focus();
