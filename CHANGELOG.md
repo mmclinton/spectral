@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when the list's order or contents changed; previously the selection
   could silently land on a different device. A selected device that
   disappeared now clears the selection.
+- Settings are saved atomically (temp file plus rename), so a crash or
+  power loss mid-save can no longer corrupt `state.toml`. An unreadable
+  settings file is now reported in the daemon log instead of silently
+  resetting everything to defaults.
 
 ## [0.6.1] - 2026-07-18
 

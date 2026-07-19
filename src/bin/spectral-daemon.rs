@@ -42,7 +42,13 @@ fn main() {
         }
     });
 
-    let mut persisted = load_state().unwrap_or_default();
+    let mut persisted = match load_state() {
+        Ok(persisted) => persisted,
+        Err(e) => {
+            eprintln!("[daemon] failed to load persisted settings, using defaults: {e}");
+            PersistedState::default()
+        }
+    };
     if !is_valid_mic_name(&persisted.mic_name) {
         eprintln!(
             "Persisted mic_name {:?} is invalid, resetting to default",

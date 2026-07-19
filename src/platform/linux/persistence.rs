@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, ErrorKind};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Settings that survive daemon restarts, stored as TOML under the XDG
 /// config dir. New fields must be `#[serde(default)]` so files written by
@@ -166,10 +166,19 @@ pub fn save_state(state: &PersistedState) -> Result<(), io::Error> {
         fs::create_dir_all(parent)?;
     }
 
+    write_state_to(&path, state)
+}
+
+/// Serializes `state` to `path` through a same-directory temp file and a
+/// rename, so a crash or power loss mid-write can never leave a torn
+/// half-file behind (rename is atomic within one filesystem on POSIX).
+fn write_state_to(path: &Path, state: &PersistedState) -> Result<(), io::Error> {
     let toml_string =
         toml::to_string(state).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))?;
 
-    fs::write(&path, toml_string)
+    let tmp = path.with_extension("toml.tmp");
+    fs::write(&tmp, toml_string)?;
+    fs::rename(&tmp, path)
 }
 
 #[cfg(test)]
@@ -189,6 +198,32 @@ mod tests {
         assert_eq!(state.threshold, 65);
         assert!(!state.rumble_filter);
         assert!(!state.auto_level);
+    }
+
+    #[test]
+    fn save_replaces_the_file_atomically_and_cleans_up_its_temp() {
+        let dir = std::env::temp_dir().join("spectral_persistence_atomic_save");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("state.toml");
+
+        write_state_to(&path, &PersistedState::default()).unwrap();
+        let loaded: PersistedState = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(loaded.mic_name, "Spectral-Mic");
+        assert!(
+            !path.with_extension("toml.tmp").exists(),
+            "temp file must be renamed away"
+        );
+
+        // Rename over an existing file replaces it in one step.
+        let updated = PersistedState {
+            threshold: 75,
+            ..PersistedState::default()
+        };
+        write_state_to(&path, &updated).unwrap();
+        let loaded: PersistedState = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(loaded.threshold, 75);
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
