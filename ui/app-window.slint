@@ -340,41 +340,23 @@ export component MainWindow inherits Window {
                         }
                     }
 
-                    // Rename button
-                    Rectangle {
-                        width: 80px;
-                        background: #5E5E5E;
-                        border-color: #30363D;
-                        border-width: 1px;
-
-                        Button {
-                            width: parent.width;
-                            height: parent.height;
-                            text: "Rename";
-                            clicked => {
-                                mic_name.clear-focus();
-                                root.rename_clicked(mic_name.text);
-                            }
+                    Button {
+                        width: 64px;
+                        text: "Rename";
+                        clicked => {
+                            mic_name.clear-focus();
+                            root.rename_clicked(mic_name.text);
                         }
                     }
 
-                    // Reset button
-                    Rectangle {
+                    Button {
                         width: 64px;
-                        background: #5E5E5E;
-                        border-color: #30363D;
-                        border-width: 1px;
-
-                        Button {
-                            width: parent.width;
-                            height: parent.height;
-                            text: "Reset";
-                            clicked => {
-                                mic_name.clear-focus();
-                                if (mic_name.text != root.default_mic_name) {
-                                    mic_name.text = root.default_mic_name;
-                                    root.reset_clicked(root.default_mic_name);
-                                }
+                        text: "Reset";
+                        clicked => {
+                            mic_name.clear-focus();
+                            if (mic_name.text != root.default_mic_name) {
+                                mic_name.text = root.default_mic_name;
+                                root.reset_clicked(root.default_mic_name);
                             }
                         }
                     }
