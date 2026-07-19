@@ -50,6 +50,14 @@ const WAV_SPEC: hound::WavSpec = hound::WavSpec {
 /// second at most, since hound's reader trusts the data-size header.
 const FLUSH_INTERVAL_SAMPLES: u64 = SAMPLE_RATE as u64;
 
+/// Hard daemon-side cap on one recording: 60 s per stream. The GUI stops
+/// recordings at 15 s, so this backstop only fires when no client is left
+/// to send StopRecording (e.g. the GUI died mid-recording) — bounding disk
+/// use instead of writing until the disk is full. Reaching it goes through
+/// the failure slot so the GetState reap tears the recorder down and
+/// reports why.
+const MAX_RECORDING_SAMPLES: u64 = 60 * SAMPLE_RATE as u64;
+
 /// First error wins: later failures are usually cascades of the first.
 fn record_failure(slot: &Mutex<Option<String>>, msg: String) {
     let mut guard = lock_or_recover(slot);
@@ -76,6 +84,7 @@ pub enum PlaybackKind {
 struct CaptureSlot {
     writer: Option<hound::WavWriter<BufWriter<File>>>,
     samples_since_flush: u64,
+    samples_written: u64,
 }
 
 /// Handle to the recorder thread owning both capture streams (raw source +
@@ -214,6 +223,7 @@ fn run_recorder(
     let raw_slot = Rc::new(RefCell::new(CaptureSlot {
         writer: Some(open_wav_writer(&original)?),
         samples_since_flush: 0,
+        samples_written: 0,
     }));
     let raw_props = properties! {
         *pipewire::keys::MEDIA_TYPE => "Audio",
@@ -257,6 +267,7 @@ fn run_recorder(
     let filtered_slot = Rc::new(RefCell::new(CaptureSlot {
         writer: Some(open_wav_writer(&filtered)?),
         samples_since_flush: 0,
+        samples_written: 0,
     }));
     let filtered_props = properties! {
         *pipewire::keys::MEDIA_TYPE => "Audio",
@@ -297,6 +308,21 @@ fn run_recorder(
             break;
         }
         if lock_or_recover(failure).is_some() {
+            break;
+        }
+        // Callbacks only run inside iterate(), so borrowing between
+        // iterations cannot conflict. Overshoot is at most one callback of
+        // samples before the next check lands here.
+        if raw_slot.borrow().samples_written >= MAX_RECORDING_SAMPLES
+            || filtered_slot.borrow().samples_written >= MAX_RECORDING_SAMPLES
+        {
+            record_failure(
+                failure,
+                format!(
+                    "recording reached the {} s safety cap",
+                    MAX_RECORDING_SAMPLES / SAMPLE_RATE as u64
+                ),
+            );
             break;
         }
         if !ready_sent && ready.raw.get() && ready.filtered.get() {
@@ -354,6 +380,7 @@ fn process_capture(stream: &pipewire::stream::Stream, data: &mut Rc<RefCell<Capt
     let bytes = &slice[offset..offset + size];
     let mut slot = data.borrow_mut();
     let mut since_flush = slot.samples_since_flush;
+    let mut written = slot.samples_written;
     let Some(writer) = slot.writer.as_mut() else {
         return;
     };
@@ -366,12 +393,14 @@ fn process_capture(stream: &pipewire::stream::Stream, data: &mut Rc<RefCell<Capt
             break;
         }
         since_flush += 1;
+        written += 1;
         if since_flush >= FLUSH_INTERVAL_SAMPLES {
             let _ = writer.flush();
             since_flush = 0;
         }
     }
     slot.samples_since_flush = since_flush;
+    slot.samples_written = written;
 }
 
 fn open_wav_writer(
@@ -782,6 +811,19 @@ mod tests {
         assert_eq!(WAV_SPEC.sample_rate, SAMPLE_RATE);
         assert_eq!(WAV_SPEC.bits_per_sample, 32);
         assert_eq!(WAV_SPEC.sample_format, hound::SampleFormat::Float);
+    }
+
+    /// The daemon-side cap is a backstop for an orphaned recording, not a
+    /// limit a normal voice test can hit: the GUI stops recordings at
+    /// 15 s, and the cap must keep a comfortable margin above that.
+    #[test]
+    fn recording_cap_leaves_headroom_over_the_gui_stop() {
+        assert_eq!(MAX_RECORDING_SAMPLES % u64::from(SAMPLE_RATE), 0);
+        let cap_seconds = MAX_RECORDING_SAMPLES / u64::from(SAMPLE_RATE);
+        assert!(
+            cap_seconds >= 4 * 15,
+            "cap of {cap_seconds} s leaves too little margin over the GUI's 15 s stop"
+        );
     }
 
     /// Build a `NativePlayer` whose thread has already exited, so the

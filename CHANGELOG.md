@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previously this could permanently wedge the daemon and freeze the GUI.
 - GUI and CLI requests to the daemon time out after 30 seconds instead
   of blocking indefinitely when the daemon stops responding.
+- A voice-test recording orphaned by its client (e.g. the GUI crashed
+  mid-recording) is now stopped by the daemon after 60 seconds instead
+  of writing WAV data until the disk fills.
 
 ## [0.6.1] - 2026-07-18
 
