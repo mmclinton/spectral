@@ -21,6 +21,16 @@
     </ul>
   </description>
   <launchable type="desktop-id">page.codeberg.mmc.Spectral.desktop</launchable>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://codeberg.org/mmc/spectral/raw/commit/6acb37d49535e68f48a50a3cee6f1c72049b6785/assets/screenshot.png</image>
+      <caption>The main window with the virtual microphone active and a voice test recorded</caption>
+    </screenshot>
+  </screenshots>
+  <branding>
+    <color type="primary" scheme_preference="light">#6ec8d6</color>
+    <color type="primary" scheme_preference="dark">#1b5560</color>
+  </branding>
   <categories>
     <category>AudioVideo</category>
     <category>Audio</category>
@@ -42,9 +52,39 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
-    <release version="0.6.2" date="2026-07-28"/>
-    <release version="0.6.1" date="2026-07-18"/>
-    <release version="0.6.0" date="2026-07-17"/>
+    <release version="0.6.2" date="2026-07-28">
+      <description>
+        <p>
+          A reliability release for the daemon. Requests no longer hang
+          forever when PipeWire or the daemon stops answering, two daemons
+          started at the same moment can no longer race each other into a
+          broken state, and a voice-test recording abandoned by its client
+          is stopped instead of writing until the disk fills. Refreshing
+          the device list now keeps your selection on the same device.
+        </p>
+      </description>
+    </release>
+    <release version="0.6.1" date="2026-07-18">
+      <description>
+        <p>
+          The virtual-mic name row is a real layout now: Rename and Reset
+          sit beside the name field instead of overlapping it, and the
+          invalid-name flash border is fully visible. Names are capped at
+          20 characters so a full-length name always fits the field.
+        </p>
+      </description>
+    </release>
+    <release version="0.6.0" date="2026-07-17">
+      <description>
+        <p>
+          Voice-test recording and playback now run as native PipeWire
+          streams inside the daemon rather than spawned pw-record and
+          pw-play processes. This drops the PipeWire tools install
+          dependency and ends orphaned recordings and silent link
+          failures; the saved WAVs and the interface are unchanged.
+        </p>
+      </description>
+    </release>
     <release version="0.5.0" date="2026-07-11"/>
     <release version="0.4.0" date="2026-07-08"/>
     <release version="0.3.0" date="2026-07-08"/>
