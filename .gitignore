@@ -1,2 +1,8 @@
 /target
 /result
+
+# flatpak-builder. The first two drop a self-ignoring .gitignore of their
+# own, but that only lasts as long as the tool that wrote it.
+/.flatpak-builder
+/builddir
+/repo

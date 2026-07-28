@@ -70,8 +70,9 @@ Xiph.Org.
 
 ## Installation
 
-> Nix and the AUR are the supported installation methods. Manual builds may
-> work but are unsupported.
+> Nix and the AUR are the supported installation methods. A Flatpak manifest
+> is included and builds cleanly, but it has not yet been through a Flathub
+> review. Manual builds may work but are unsupported.
 
 <details>
 <summary><strong>NixOS / Nix</strong></summary>
@@ -154,6 +155,36 @@ paru -S spectral-mic   # or: yay -S spectral-mic — not available yet
 The package is named `spectral-mic` rather than `spectral` because the
 unrelated AUR package of that name ships a binary called `spectral` too.
 The PKGBUILD is maintained here under [packaging/aur](packaging/aur).
+
+</details>
+
+<details>
+<summary><strong>Flatpak</strong></summary>
+
+**Spectral is not on Flathub yet.** Until it is, build the Flatpak
+yourself — it needs only `flatpak` and the Flathub remote:
+
+```bash
+flatpak install -y flathub org.flatpak.Builder
+git clone https://codeberg.org/mmc/spectral.git
+cd spectral
+flatpak run --command=flathub-build org.flatpak.Builder --install \
+    packaging/flatpak/page.codeberg.mmc.Spectral.yaml
+flatpak run page.codeberg.mmc.Spectral
+```
+
+Two differences from the native packages are worth knowing before you
+choose this route. The Flatpak has no start-at-login equivalent to the
+NixOS module's user service, so the virtual mic lasts for the session
+but not across logins. And because Flatpak exports a single command, the
+headless CLI is reached through `flatpak run` rather than from `$PATH`:
+
+```bash
+flatpak run page.codeberg.mmc.Spectral devices
+```
+
+Details, including the full permission set and what a Flathub submission
+would change, are in [packaging/flatpak](packaging/flatpak).
 
 </details>
 

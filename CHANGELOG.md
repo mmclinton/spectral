@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Flatpak packaging under `packaging/flatpak`, aimed at Flathub. The
+  build is sandboxed and asks for four permissions: Wayland, X11 as a
+  fallback, IPC, and the PipeWire socket. It needs no GPU access because
+  the GUI renders in software, and no PulseAudio socket because Spectral
+  speaks PipeWire natively. The font ships with the app, so the
+  interface no longer depends on the host having a monospaced face
+  installed.
+
 ### Fixed
+- The virtual mic and the default-input switch now work inside a
+  sandbox. WirePlumber grants a Flatpak client only read and execute
+  permission unless it identifies itself as a graph manager, which
+  Spectral, having to create nodes and links of its own, is. Native
+  installs are unaffected — they were already unrestricted.
 - Audio interfaces whose inputs are split into separate sources (many USB
   interfaces, via the session manager's ALSA splitting) no longer appear
   as several identically named entries in the device list. Each input is
