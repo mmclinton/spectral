@@ -19,7 +19,7 @@
 }:
 let
   pname = "spectral";
-  version = "0.6.1";
+  version = "0.6.2";
 
   # Linked at build time (DT_NEEDED) — resolved through the RUNPATH the
   # cc-wrapper writes, no environment help needed.

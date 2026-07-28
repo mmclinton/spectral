@@ -5,9 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.2] - 2026-07-28
 
 ### Fixed
+- Starting a voice-test recording at the same moment the virtual mic is
+  being enabled no longer fails: the recorder now targets the mic that
+  is actually running rather than the name it is about to be given.
 - The real-time capture path reserves its staging buffers in full up
   front, so a stalled consumer or a large graph quantum can no longer
   trigger a memory allocation inside the RT audio callback.
@@ -342,6 +345,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nix is the only officially supported installation method
 - Requires PipeWire (with the PulseAudio compatibility layer) and WirePlumber
 
+[0.6.2]: https://codeberg.org/mmc/spectral/compare/v0.6.1...v0.6.2
 [0.6.1]: https://codeberg.org/mmc/spectral/compare/v0.6.0...v0.6.1
 [0.6.0]: https://codeberg.org/mmc/spectral/compare/v0.5.0...v0.6.0
 [0.5.0]: https://codeberg.org/mmc/spectral/compare/v0.4.0...v0.5.0
