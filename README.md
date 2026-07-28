@@ -12,47 +12,73 @@
 
 # Spectral
 
-A real-time audio noise suppression application powered by [RNNoise](https://arxiv.org/pdf/1709.08243), a hybrid DSP and neural-network–based noise suppression system originally developed by Xiph.org.
+**Real-time microphone noise suppression for Linux.**
+
+Spectral runs a microphone you choose through the RNNoise neural network and
+exposes the result as a native PipeWire virtual microphone. Any application —
+your browser, a chat client, OBS — can select it like any other input. Keyboard
+clatter, fans, and room tone go; your voice stays.
+
+[RNNoise](https://arxiv.org/pdf/1709.08243) is a hybrid DSP and neural-network
+noise suppressor by Jean-Marc Valin, developed at Mozilla and published through
+Xiph.Org.
+
+> **Status:** pre-1.0 and actively developed. The CLI surface and the settings
+> file may still change between releases; see [CHANGELOG.md](CHANGELOG.md).
+
+<!-- Screenshot goes here once assets/screenshot.png exists. -->
 
 <details>
 <summary>Table of Contents</summary>
 
 - [Features](#features)
-- [Architecture](#architecture)
+- [Requirements](#requirements)
 - [Installation](#installation)
 - [Usage](#usage)
+- [How it works](#how-it-works)
 - [Troubleshooting](#troubleshooting)
 - [Known limitations](#known-limitations)
+- [How Spectral compares](#how-spectral-compares)
 - [Non-goals](#non-goals)
+- [Contributing](#contributing)
+- [Privacy](#privacy)
 - [License](#license)
 
 </details>
 
 ## Features
 
-- Real-time RNNoise denoising with an adjustable voice-activity gate that
-  looks 20 ms ahead, so word onsets and endings stay intact
-- Optional voice processing, each a simple on/off switch: a rumble filter
+- Real-time RNNoise denoising, with a voice-activity gate you can dial from
+  off (denoise only) to strict
+- The gate looks 20 ms ahead, so word onsets and endings stay intact rather
+  than being clipped
+- Two optional voice-processing switches, both off by default: a rumble filter
   and automatic volume leveling
-- Native PipeWire virtual microphone, owned by the daemon
-- Built-in voice test to compare original and filtered audio
-- Automatically set as the system default input on Enable
-- Persistent settings across sessions
+- A native PipeWire virtual microphone that any application can select
+- A built-in voice test — record yourself and compare original against filtered
+- Becomes the system default input automatically when you enable it
+- Settings persist across restarts, and your device is remembered by name, so
+  it survives reboots and PipeWire restarts
+- A headless CLI, so none of this requires the GUI
 
-## Architecture
+## Requirements
 
-- **spectral** - GUI application for controlling noise suppression; doubles as the [headless CLI](#headless-cli) (`spectral <command>`)
-- **spectral-daemon** - Background service that manages audio processing
-- IPC communication via Unix domain sockets
+- Linux with **PipeWire** and its session manager, **WirePlumber** — Spectral
+  writes the `default` audio metadata that WirePlumber owns
+- Wayland or X11
+- x86_64. The flake exposes an aarch64-linux build, but it is untested and the
+  AUR package is x86_64-only.
 
 ## Installation
 
-> Nix and the AUR are the supported installation methods.
-> Spectral requires a running PipeWire session with its session manager
-> (WirePlumber). Manual builds may work but are unsupported.
+> Nix and the AUR are the supported installation methods. Manual builds may
+> work but are unsupported.
 
 <details>
 <summary><strong>NixOS / Nix</strong></summary>
+
+A nixpkgs package has been submitted and is in review. Until it lands, install
+from this flake.
 
 **Option 1: Direct installation (try it out)**
 
@@ -163,9 +189,26 @@ flagless `spectral enable` works across reboots and PipeWire restarts.
 Exit codes: 0 on success (including a no-op `disable`/`shutdown`), 1 on runtime
 failures, 2 on usage errors.
 
+## How it works
+
+A background daemon owns all the audio work. It captures your chosen device,
+downmixes to mono, and runs each 10 ms frame through the processing chain:
+the optional rumble filter, then RNNoise, then the optional leveler, then the
+voice gate. The result feeds a PipeWire virtual source node — the microphone
+other applications see.
+
+The GUI and the CLI are thin clients. They talk to the daemon over a Unix
+socket and hold no audio state of their own. Because the daemon owns every
+PipeWire object it creates, the virtual mic disappears cleanly when the daemon
+stops; there is nothing left behind in the audio graph to clean up.
+
+For the full picture — module map, the real-time constraints, the IPC
+protocol — see [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## Troubleshooting
 
 - **Your microphone isn't listed:** click "Refresh", or see the in-app "Not seeing your device?" guide.
+- **An application doesn't offer the virtual mic:** many applications enumerate input devices only at startup. Enable Spectral first, then restart the application.
 - **Multi-channel audio interfaces** (e.g. an Audient EVO4 exposed as "Analog Surround 4.0"): only the first two capture channels are used — the physical inputs on common interfaces. For a single mic, you'll get the best level selecting a mono or stereo profile for the interface in your sound settings.
 - **After a PipeWire restart** (e.g. `systemctl --user restart pipewire`): the device list points at devices that no longer exist — click "Refresh" and re-select before enabling.
 - **Something failed:** errors appear under the status bar; the daemon also logs to `$XDG_RUNTIME_DIR/spectral-daemon.log`.
@@ -173,15 +216,45 @@ failures, 2 on usage errors.
 
 ## Known limitations
 
+- Disabling Spectral does not restore your previous default input. When the virtual mic disappears, WirePlumber picks a fallback, which may not be the microphone you started with — re-select it in your sound settings if it matters.
 - The window's minimum size is 920×800, which does not fit 768p displays. A responsive-layout fix is planned.
 - Inputs with more than two channels and Bluetooth microphones are untested.
 - Voice-test recordings are not restored in the UI after relaunching the GUI.
+
+## How Spectral compares
+
+If you're coming from **NoiseTorch**: it solved this problem for PulseAudio and
+is no longer maintained. Spectral targets PipeWire natively rather than loading
+PulseAudio modules, and adds a daemon with both a GUI and a CLI. Same core idea,
+same RNNoise denoiser.
+
+**EasyEffects** is a broader audio-effects suite that can do far more than
+noise suppression, including on output. Spectral does one thing. If you already
+run EasyEffects and are happy with it, you don't need this.
 
 ## Non-goals
 
 - Denoising incoming audio (a "headphones sink") — [EasyEffects](https://github.com/wwmm/easyeffects) covers this well.
 - Systems without PipeWire (pure PulseAudio, ALSA, or JACK).
 - Self-updating — package managers own updates.
+
+## Contributing
+
+Bug reports and patches are welcome. Development happens on
+[Codeberg](https://codeberg.org/mmc/spectral); see
+[CONTRIBUTING.md](CONTRIBUTING.md) for the build, the required checks, and the
+commit conventions, and [ARCHITECTURE.md](ARCHITECTURE.md) for a map of the
+codebase.
+
+A useful bug report includes your distribution, your PipeWire and WirePlumber
+versions (`pipewire --version`, `wireplumber --version`), the input device
+involved, and the daemon log from `$XDG_RUNTIME_DIR/spectral-daemon.log`.
+
+## Privacy
+
+All processing happens on your machine. Spectral makes no network connections
+and has no telemetry. The only audio it writes to disk comes from voice-test
+recordings you start yourself, under `~/.local/state/spectral/recordings`.
 
 ## License
 
