@@ -161,7 +161,7 @@ pub fn get_node_details(node_id: u32) -> Result<(String, u32), Box<dyn Error>> {
 pub fn set_default_source(node_name: &str) -> Result<(), Box<dyn Error>> {
     let mainloop = MainLoopRc::new(None)?;
     let context = ContextRc::new(&mainloop, None)?;
-    let core = context.connect(None)?;
+    let core = context.connect(Some(super::manager_client_properties()))?;
     let registry = core.get_registry()?;
 
     // Rc, not Arc: the proxy global is !Send and never leaves this thread.

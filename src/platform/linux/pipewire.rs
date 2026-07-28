@@ -258,7 +258,7 @@ fn run_pipeline(
 
     let mainloop = MainLoopBox::new(None)?;
     let context = ContextBox::new(mainloop.loop_(), None)?;
-    let core = context.connect(None)?;
+    let core = context.connect(Some(super::manager_client_properties()))?;
 
     let channels = input_channels.clamp(1, MAX_INPUT_CHANNELS);
 
