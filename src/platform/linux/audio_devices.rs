@@ -86,7 +86,7 @@ where
 }
 
 /// Enumerates `Audio/Source` nodes, skipping monitor sources; display names
-/// prefer `node.nick` over the longer `node.description`.
+/// prefer `node.description` over the coarser `node.nick`.
 pub fn get_input_devices() -> Result<Vec<AudioDevice>, Box<dyn Error>> {
     collect_globals(|global| {
         if global.type_ != ObjectType::Node {
@@ -97,15 +97,14 @@ pub fn get_input_devices() -> Result<Vec<AudioDevice>, Box<dyn Error>> {
             return None;
         }
 
-        let nick = props
-            .get("node.nick")
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| {
-                props
-                    .get("node.description")
-                    .map(|s| s.to_string())
-                    .unwrap_or("Unknown".to_string())
-            });
+        // An interface split into its individual inputs gives every one of
+        // them the same `node.nick` (the card, "EVO4") and distinguishes
+        // them only in `node.description` ("EVO4 Mic 1 / Line 1").
+        let name = props
+            .get("node.description")
+            .or_else(|| props.get("node.nick"))
+            .unwrap_or("Unknown")
+            .to_string();
 
         // TODO: Validate that "audio.channels" is reliably populated by PipeWire
         // for all device types. Some devices may not expose this property until
@@ -115,9 +114,9 @@ pub fn get_input_devices() -> Result<Vec<AudioDevice>, Box<dyn Error>> {
             .and_then(|s| s.parse::<u32>().ok())
             .unwrap_or(2);
 
-        (!nick.to_lowercase().contains("monitor")).then_some(AudioDevice {
+        (!name.to_lowercase().contains("monitor")).then_some(AudioDevice {
             id: global.id,
-            name: nick,
+            name,
             channels,
         })
     })
