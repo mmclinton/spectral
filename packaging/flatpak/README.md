@@ -50,10 +50,12 @@ flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo repo
 ## Regenerating cargo-sources.json
 
 Flathub builds with no network, so every crate is listed as an explicit
-source with a checksum. Whenever `Cargo.lock` changes:
+source with a checksum. The script fetches everything it needs on demand and
+leaves nothing behind, so the dev shell carries no tooling for a target it
+never builds. Whenever `Cargo.lock` changes:
 
 ```bash
-nix develop -c ./packaging/flatpak/generate-sources.sh
+./packaging/flatpak/generate-sources.sh
 ```
 
 Commit the result together with the `Cargo.lock` change that caused it.

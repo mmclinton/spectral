@@ -5,7 +5,10 @@
 # explicit source with a checksum. Run this whenever Cargo.lock changes and
 # commit the result alongside it.
 #
-# Needs the dev shell for its Python dependencies: nix develop -c ./generate-sources.sh
+#     ./packaging/flatpak/generate-sources.sh
+#
+# Everything it needs is fetched on demand and nothing is left behind, so the
+# dev shell carries no packaging tooling for a target it never builds.
 
 set -euo pipefail
 
@@ -22,7 +25,13 @@ trap 'rm -rf "${scratch}"' EXIT
 
 curl -sSfL -o "${scratch}/flatpak-cargo-generator.py" "${GENERATOR_URL}"
 
-python3 "${scratch}/flatpak-cargo-generator.py" \
+# The generator declares its own dependencies inline (PEP 723), so uv builds
+# the environment from the script itself — no Python packages to pin here or
+# in the flake. --python is not optional: left to itself uv fetches a
+# generic-linux CPython, which NixOS cannot execute.
+nix shell nixpkgs#uv nixpkgs#python3 --command sh -c '
+    exec uv run --script --python "$(command -v python3)" "$@"
+' -- "${scratch}/flatpak-cargo-generator.py" \
     "${repo_root}/Cargo.lock" \
     -o "${here}/cargo-sources.json"
 

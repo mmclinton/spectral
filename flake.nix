@@ -60,14 +60,6 @@
               pkgs.appstream
               pkgs.curl
               pkgs.cargo-deny
-
-              # Runs flatpak-cargo-generator.py, which turns Cargo.lock into
-              # the offline source list Flathub's network-less builder needs.
-              (pkgs.python3.withPackages (ps: [
-                ps.aiohttp
-                ps.tomlkit
-                ps.pyyaml
-              ]))
             ]
             ++ spectral.passthru.linkedLibs;
 
