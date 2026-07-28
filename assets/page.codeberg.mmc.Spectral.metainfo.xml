@@ -52,6 +52,19 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.7.0" date="2026-07-28">
+      <description>
+        <p>
+          The interface now uses whichever monospaced font you have
+          configured instead of the one it used to bundle; on every install
+          method except Nix it had been falling back to a proportional
+          face. Audio interfaces whose inputs are split into separate
+          sources are labelled individually rather than appearing as
+          several identical rows. Spectral is also packaged as a Flatpak
+          now, and the virtual microphone works inside the sandbox.
+        </p>
+      </description>
+    </release>
     <release version="0.6.2" date="2026-07-28">
       <description>
         <p>
