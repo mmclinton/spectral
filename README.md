@@ -218,7 +218,7 @@ protocol — see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 - Disabling Spectral does not restore your previous default input. When the virtual mic disappears, WirePlumber picks a fallback, which may not be the microphone you started with — re-select it in your sound settings if it matters.
 - The window's minimum size is 920×800, which does not fit 768p displays. A responsive-layout fix is planned.
-- Inputs with more than two channels and Bluetooth microphones are untested.
+- Inputs with more than two channels are untested. Bluetooth microphones work — validated with AirPods Pro 2 — but no other Bluetooth device or codec has been tried.
 - Voice-test recordings are not restored in the UI after relaunching the GUI.
 
 ## How Spectral compares
