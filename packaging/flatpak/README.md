@@ -25,11 +25,20 @@ flatpak run --command=flathub-build org.flatpak.Builder --install \
 flatpak run page.codeberg.mmc.Spectral
 ```
 
-To test the CLI, which Flatpak does not put on `$PATH`:
+Flatpak exports one command per application and names it after the app ID,
+so the CLI is on `$PATH` as `page.codeberg.mmc.Spectral`, never as
+`spectral`. `flatpak build-finish` chooses which command runs (`--command=`)
+but cannot name the exported wrapper, and Flathub requires exported files to
+carry the app ID anyway — a short name is a shell alias on the user's side.
+
+```bash
+page.codeberg.mmc.Spectral status
+```
+
+To reach the daemon binary, which is not the exported command:
 
 ```bash
 flatpak run --command=spectral-daemon page.codeberg.mmc.Spectral
-flatpak run page.codeberg.mmc.Spectral status
 ```
 
 **Stop any host daemon first.** The sandbox gets a private
@@ -86,8 +95,9 @@ input.
 - **No start at login.** The Nix module installs a systemd user service; the
   Flatpak has no equivalent. The daemon outlives the GUI window, so the
   virtual mic persists for the session, but not across logins.
-- **The CLI is not on `$PATH`.** Use `flatpak run` as shown above. Flatpak
-  exports a single command per application.
+- **The CLI answers to the app ID.** Flatpak exports a single command per
+  application, named after the app ID, so it is `page.codeberg.mmc.Spectral`
+  on `$PATH` rather than `spectral`.
 - **Paths move under `~/.var/app/page.codeberg.mmc.Spectral/`.** Settings and
   voice-test recordings live there rather than under `~/.config` and
   `~/.local/state`.

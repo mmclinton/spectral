@@ -176,12 +176,16 @@ flatpak run page.codeberg.mmc.Spectral
 Two differences from the native packages are worth knowing before you
 choose this route. The Flatpak has no start-at-login equivalent to the
 NixOS module's user service, so the virtual mic lasts for the session
-but not across logins. And because Flatpak exports a single command, the
-headless CLI is reached through `flatpak run` rather than from `$PATH`:
+but not across logins. And because Flatpak exports a single command per
+application, named after the app ID, the headless CLI answers to
+`page.codeberg.mmc.Spectral` rather than to `spectral`:
 
 ```bash
-flatpak run page.codeberg.mmc.Spectral devices
+page.codeberg.mmc.Spectral devices
 ```
+
+Alias it if the full name grates — Flatpak has no way to export a shorter
+one.
 
 Details, including the full permission set and what a Flathub submission
 would change, are in [packaging/flatpak](packaging/flatpak).
