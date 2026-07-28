@@ -26,7 +26,10 @@ Xiph.Org.
 > **Status:** pre-1.0 and actively developed. The CLI surface and the settings
 > file may still change between releases; see [CHANGELOG.md](CHANGELOG.md).
 
-<!-- Screenshot goes here once assets/screenshot.png exists. -->
+<div align="center">
+  <img src="./assets/screenshot.png" width="820"
+       alt="Spectral's main window: status, an input threshold slider, the input device list, the virtual mic name, voice-processing switches, and the voice test">
+</div>
 
 <details>
 <summary>Table of Contents</summary>
