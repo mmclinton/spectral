@@ -40,6 +40,9 @@ modules:
       - type: archive
         url: https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip
         sha256: 6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf
+        # The archive has no wrapper directory, so the default strip of one
+        # component would eat "fonts/" and leave the paths below dangling.
+        strip-components: 0
         x-checker-data:
           type: json
           url: https://api.github.com/repos/JetBrains/JetBrainsMono/releases/latest
