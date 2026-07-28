@@ -12,11 +12,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   build is sandboxed and asks for four permissions: Wayland, X11 as a
   fallback, IPC, and the PipeWire socket. It needs no GPU access because
   the GUI renders in software, and no PulseAudio socket because Spectral
-  speaks PipeWire natively. The font ships with the app, so the
-  interface no longer depends on the host having a monospaced face
-  installed.
+  speaks PipeWire natively.
+
+### Changed
+- The interface now uses whichever monospaced font you have configured
+  rather than insisting on JetBrains Mono. Nothing bundles or pins a font
+  any more, and the Nix build no longer overrides your fontconfig setup
+  to force one.
 
 ### Fixed
+- The interface no longer falls back to a proportional font when
+  JetBrains Mono is absent, which is what happened on every packaging
+  target except Nix. Slint looks up whatever `default-font-family` holds
+  as a font *name*, so neither a missing family nor the CSS generic
+  "monospace" resolves; the preferred monospaced family is now resolved
+  against the system font database before the window opens.
 - The virtual mic and the default-input switch now work inside a
   sandbox. WirePlumber grants a Flatpak client only read and execute
   permission unless it identifies itself as a graph manager, which
