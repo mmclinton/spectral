@@ -12,8 +12,10 @@ import { ClickableLink } from "links.slint";
 
 export component MainWindow inherits Window {
     title: "Spectral";
-    // JetBrains Mono is provided via fontconfig wrapper in Nix builds
-    default-font-family: "JetBrains Mono";
+    // Resolved from the system font database at startup; empty until then,
+    // which Slint reads as "no preference".
+    in property <string> monospace_font_family;
+    default-font-family: root.monospace_font_family;
     min-width: 920px;
     min-height: 800px;
     background: #0D1117;

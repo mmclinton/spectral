@@ -5,7 +5,6 @@
   rustPlatform,
   pkg-config,
   makeWrapper,
-  makeFontsConf,
   libxkbcommon,
   wayland,
   libx11,
@@ -14,7 +13,6 @@
   libxrandr,
   fontconfig,
   pipewire,
-  jetbrains-mono,
   versionCheckHook,
 }:
 let
@@ -68,8 +66,7 @@ rustPlatform.buildRustPackage {
     install -Dm644 THIRD-PARTY.md $out/share/licenses/spectral/THIRD-PARTY.md
 
     wrapProgram $out/bin/spectral \
-      --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath dlopenLibs}" \
-      --set FONTCONFIG_FILE "${makeFontsConf { fontDirectories = [ jetbrains-mono ]; }}"
+      --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath dlopenLibs}"
   '';
 
   # Fails the build when the binary's version disagrees with `version`

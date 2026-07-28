@@ -69,6 +69,7 @@ the gate entirely (denoise only), and 1–100 map linearly onto a cutoff up to
 | `src/state.rs` | `AppState` (the daemon's shared state), `AudioDevice`, the `Status` lifecycle enum, mic-name validation, and `lock_or_recover`. |
 | `src/main.rs` | Slint GUI. UI in `ui/app-window.slint`, compiled by `build.rs` and bound via `slint::include_modules!()`. |
 | `src/cli.rs` | Headless subcommand parsing and execution. Bare `spectral` launches the GUI. |
+| `src/fonts.rs` | Resolves the user's preferred monospaced family, which Slint cannot ask for itself. |
 | `src/daemon_launch.rs` | Spawning the daemon and bootstrapping a connection; shared by the GUI and CLI. |
 | `src/bin/spectral-daemon.rs` | Daemon main loop, connection handlers, and the lock-ordering convention. |
 | `src/platform/mod.rs` | The platform seam; re-exports `linux`. |

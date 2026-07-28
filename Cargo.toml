@@ -41,6 +41,9 @@ slint = { version = "=1.15.0", default-features = false, features = [
     "renderer-software",
 ] }
 pipewire = { version = "0.9", features = ["v0_3_77"] }
+# Slint's own font database, so a family name resolved here is one Slint can
+# look up. Kept in step with slint rather than upgraded independently.
+fontique = "0.7"
 nnnoiseless = "0.5"
 hound = "3.5"
 serde = { version = "1.0", features = ["derive"] }
