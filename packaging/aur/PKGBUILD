@@ -13,7 +13,6 @@ depends=(
   'pipewire'          # the media graph itself (WirePlumber drives it)
   'wireplumber'       # session manager: owns the "default" metadata object
   'fontconfig'
-  'freetype2'
   'libxkbcommon'      # this and the wayland/x11 libs below are dlopened by winit
   'wayland'
   'libx11'
