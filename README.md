@@ -53,24 +53,20 @@ Xiph.Org.
 
 - Real-time RNNoise denoising, with a voice-activity gate you can dial from
   off (denoise only) to strict
-- The gate looks 20 ms ahead, so word onsets and endings stay intact rather
-  than being clipped
-- Two optional voice-processing switches, both off by default: a rumble filter
-  and automatic volume leveling
 - A native PipeWire virtual microphone that any application can select
 - A built-in voice test — record yourself and compare original against filtered
 - Becomes the system default input automatically when you enable it
+- Two optional voice-processing switches, both off by default: a rumble filter
+  and automatic volume leveling
 - Settings persist across restarts, and your device is remembered by name, so
   it survives reboots and PipeWire restarts
-- A headless CLI, so none of this requires the GUI
+- A headless CLI, so usage does not require the GUI
 
 ## Requirements
 
-- Linux with **PipeWire** and its session manager, **WirePlumber** — Spectral
-  writes the `default` audio metadata that WirePlumber owns
+- Linux with **PipeWire** and its session manager, **WirePlumber**
 - Wayland or X11
-- x86_64. The flake exposes an aarch64-linux build, but it is untested and the
-  AUR package is x86_64-only.
+- x86_64
 
 ## Installation
 
@@ -165,8 +161,8 @@ The PKGBUILD is maintained here under [packaging/aur](packaging/aur).
 
 1. Launch the GUI: `spectral` (the daemon starts automatically)
 2. Select your input device from the list
-3. Adjust the threshold: 0% is denoise-only, higher values gate more strictly on voice activity
-4. Optionally flip the Voice Processing switches (both off by default): **Rumble filter** cuts low-frequency noise below ~90 Hz before denoising; **Auto level** slowly evens out your voice volume (adapting only while you speak) with a built-in peak limiter
+3. Adjust the threshold: higher values gate more strictly on voice activity
+4. Optionally flip any of the Voice Processing switches
 5. Click "Enable" — the virtual microphone is created and becomes the system default input
 6. Applications that pin a specific device can select the virtual mic by name (default "Spectral-Mic"); "Rename"/"Reset" stage a new name, applied on the next Enable/Apply
 
@@ -176,18 +172,25 @@ The `spectral` binary doubles as a command-line client:
 
 ```bash
 spectral devices              # list input devices and their current ids
-spectral enable --device 62   # create the virtual mic (spawns the daemon if needed)
-spectral enable               # re-enable with the remembered settings
+spectral enable --device 62   # create the virtual mic
+spectral enable               # re-enable with the remembered settings or defaults
 spectral status               # show state, device, mic name, threshold, toggles
 spectral disable              # tear the virtual mic down
 spectral shutdown             # stop the daemon
 ```
 
-`enable` accepts `--device <id>`, `--threshold <0-100>`, `--mic-name <name>`,
-`--rumble-filter <on|off>`, and `--auto-level <on|off>`; omitted flags keep
-the current settings. Device ids are scoped to the running PipeWire
-instance — the daemon remembers the selected device by node name, so a
-flagless `spectral enable` works across reboots and PipeWire restarts.
+`enable` accepts:
+
+- `--device <id>`
+- `--threshold <0-100>`
+- `--mic-name <name>`
+- `--rumble-filter <on|off>`
+- `--auto-level <on|off>`
+
+Omitted flags keep the prior settings or defaults. Device ids are scoped to the
+running PipeWire instance — the daemon remembers the selected device by node
+name, so a flagless `spectral enable` works across reboots and PipeWire
+restarts.
 
 Exit codes: 0 on success (including a no-op `disable`/`shutdown`), 1 on runtime
 failures, 2 on usage errors.
