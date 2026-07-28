@@ -1,0 +1,74 @@
+app-id: page.codeberg.mmc.Spectral
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  # pipewire-sys generates its bindings with bindgen, which needs libclang.
+  - org.freedesktop.Sdk.Extension.llvm22
+command: spectral
+
+# Spectral talks to PipeWire directly and renders through Slint's software
+# renderer, so it needs neither the PulseAudio compatibility socket nor a GPU.
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --filesystem=xdg-run/pipewire-0
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/llvm22/bin
+  prepend-ld-library-path: /usr/lib/sdk/llvm22/lib
+  env:
+    LIBCLANG_PATH: /usr/lib/sdk/llvm22/lib
+
+modules:
+  # The UI is laid out for a monospaced face and Slint falls back to a
+  # proportional one when the family is missing, so the font ships with the
+  # app rather than being hoped for.
+  - name: jetbrains-mono
+    buildsystem: simple
+    build-commands:
+      - install -Dm644 -t /app/share/fonts/jetbrains-mono
+        fonts/ttf/JetBrainsMono-Regular.ttf
+        fonts/ttf/JetBrainsMono-Bold.ttf
+        fonts/ttf/JetBrainsMono-Italic.ttf
+        fonts/ttf/JetBrainsMono-BoldItalic.ttf
+      - install -Dm644 OFL.txt
+        /app/share/licenses/page.codeberg.mmc.Spectral/JetBrainsMono-OFL.txt
+    sources:
+      - type: archive
+        url: https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip
+        sha256: 6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf
+        x-checker-data:
+          type: json
+          url: https://api.github.com/repos/JetBrains/JetBrainsMono/releases/latest
+          version-query: .tag_name | sub("^v"; "")
+          url-query: .assets[] | select(.name == "JetBrainsMono-" + $version + ".zip")
+            | .browser_download_url
+
+  - name: spectral
+    buildsystem: simple
+    build-options:
+      env:
+        # Where cargo-sources.json unpacks the vendored registry, so
+        # --offline resolves. Must match this module's build directory.
+        CARGO_HOME: /run/build/spectral/cargo
+    build-commands:
+      - cargo --offline build --release --locked
+      - install -Dm755 -t /app/bin target/release/spectral target/release/spectral-daemon
+      - install -Dm644 assets/page.codeberg.mmc.Spectral.desktop
+        /app/share/applications/page.codeberg.mmc.Spectral.desktop
+      - install -Dm644 assets/page.codeberg.mmc.Spectral.metainfo.xml
+        /app/share/metainfo/page.codeberg.mmc.Spectral.metainfo.xml
+      - install -Dm644 assets/spectral.png
+        /app/share/icons/hicolor/512x512/apps/page.codeberg.mmc.Spectral.png
+      - install -Dm644 -t /app/share/licenses/page.codeberg.mmc.Spectral
+        LICENSE THIRD-PARTY.md
+    sources:
+      # Development manifest: builds the checked-out repository. The Flathub
+      # submission replaces this entry with the public release; see README.md.
+      - type: git
+        path: ../..
+        branch: main
+      - cargo-sources.json

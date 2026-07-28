@@ -59,6 +59,16 @@ question; the GPL imposes no separate attribution-file obligation.
 
 - <https://slint.dev>
 
+## JetBrains Mono 2.304 — OFL-1.1 (Flatpak builds only)
+
+The interface is laid out for a monospaced face. Builds that cannot rely on
+the host providing one bundle the font instead of hoping for it: the Flatpak
+ships four faces under `/app/share/fonts/jetbrains-mono` and installs the
+OFL text beside this file. Nothing is linked — the font is data the renderer
+loads at runtime — and no other packaging target bundles it.
+
+- <https://github.com/JetBrains/JetBrainsMono>
+
 ## Other dependencies
 
 The remaining statically linked Rust dependencies are MIT- and/or
