@@ -1,0 +1,99 @@
+// Card for the two DSP toggles, each row carrying a one-line spec summary
+// so the decision can be made without opening Help.
+
+import { Switch } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+
+component ToggleRow inherits Rectangle {
+    in property <string> label;
+    in property <string> description;
+    in-out property <bool> checked;
+
+    callback toggled(bool);
+
+    background: Theme.inset;
+    border-color: Theme.border_subtle;
+    border-width: 1px;
+    border-radius: 5px;
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 12px;
+
+        VerticalLayout {
+            alignment: center;
+
+            Switch {
+                checked <=> root.checked;
+                toggled => {
+                    root.toggled(self.checked);
+                }
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+
+            Text {
+                text: root.label;
+                font-size: 12.5px;
+                color: white;
+            }
+
+            Text {
+                text: root.description;
+                font-size: 10px;
+                color: Theme.text_muted;
+            }
+        }
+    }
+}
+
+export component ProcessingCard inherits Rectangle {
+    in-out property <bool> rumble_filter;
+    in-out property <bool> auto_level;
+
+    callback rumble_filter_changed(bool);
+    callback auto_level_changed(bool);
+
+    background: Theme.panel;
+    border-color: Theme.border;
+    border-width: 1px;
+    border-radius: 6px;
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 10px;
+
+        Text {
+            text: "Voice Processing";
+            font-size: 13px;
+            font-weight: 700;
+            color: white;
+        }
+
+        ToggleRow {
+            label: "Rumble filter";
+            description: "high-pass 90 Hz · cuts desk thumps & hum";
+            checked <=> root.rumble_filter;
+            toggled(checked) => {
+                root.rumble_filter_changed(checked);
+            }
+        }
+
+        ToggleRow {
+            label: "Auto level";
+            description: "rides gain toward −18 dBFS · limiter at −1";
+            checked <=> root.auto_level;
+            toggled(checked) => {
+                root.auto_level_changed(checked);
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

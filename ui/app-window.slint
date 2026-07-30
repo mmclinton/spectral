@@ -1,13 +1,10 @@
-import {
-    Button,
-    StandardListView,
-    Switch,
-} from "std-widgets.slint";
-import { SectionHeader } from "section-headers.slint";
-import { ClickableLink } from "links.slint";
 import { Theme } from "theme.slint";
 import { AppBar } from "app-bar.slint";
 import { ThresholdBand } from "threshold-band.slint";
+import { SourcePanel } from "source-panel.slint";
+import { MicNameCard } from "mic-name-card.slint";
+import { ProcessingCard } from "processing-card.slint";
+import { VoiceTestCard } from "voice-test-card.slint";
 import { Footer } from "footer.slint";
 import { DeviceHelpPopup } from "device-help-popup.slint";
 import { HelpPopup } from "help-popup.slint";
@@ -19,8 +16,8 @@ export component MainWindow inherits Window {
     in property <string> monospace_font_family;
     default-font-family: root.monospace_font_family;
     min-width: 920px;
-    min-height: 800px;
-    background: #0D1117;
+    min-height: 760px;
+    background: Theme.bg;
 
     property <string> default_mic_name: "Spectral-Mic";
     in-out property <string> mic_name_text: "Spectral-Mic";
@@ -72,565 +69,140 @@ export component MainWindow inherits Window {
         }
     }
 
-    AppBar {
-        y: 0px;
-        width: parent.width;
-        status_text: root.status_text;
-        status_color: root.status_color;
-        mic_enabled: root.mic_enabled;
-        open_url(url) => {
-            root.open_url(url);
+    VerticalLayout {
+        AppBar {
+            status_text: root.status_text;
+            status_color: root.status_color;
+            mic_enabled: root.mic_enabled;
+            open_url(url) => {
+                root.open_url(url);
+            }
+            help_clicked => {
+                root.show_help_popup = true;
+            }
         }
-        help_clicked => {
-            root.show_help_popup = true;
-        }
-    }
 
-    // Reserved error strip: always present so an error appearing or
-    // clearing never shifts the content below it.
-    Rectangle {
-        y: 52px;
-        width: parent.width;
-        height: 24px;
-
-        Text {
-            x: 20px;
-            width: parent.width - 40px;
-            height: 100%;
-            text: root.error_text;
-            font-size: 12px;
-            color: Theme.error;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            overflow: elide;
-        }
-    }
-
-    ThresholdBand {
-        y: 76px;
-        width: parent.width;
-        value <=> root.slider_value;
-        mic_enabled: root.mic_enabled;
-        threshold_changed(value) => {
-            root.threshold_changed(value);
-        }
-    }
-
-    // Transitional home for the not-yet-migrated canvas; replaced by the
-    // card layout once every block has moved into components.
-    Rectangle {
-        y: 172px;
-        width: parent.width;
-        height: parent.height - 172px - 58px;
-
+        // Reserved error strip: always present so an error appearing or
+        // clearing never shifts the content below it.
         Rectangle {
-            x: ((parent.width / 2) - (self.width / 2));
-            y: 0px;
-            width: 920px;
-            height: 480px;
-            background: #0D1117;
+            height: 24px;
 
-            // Left section: Original Input Source
-            Rectangle {
-                x: 50px;
-                y: 10px;
-                width: 380px;
-                height: 460px;
-                background: #161B22;
-                border-color: #30363D;
-                border-width: 1px;
-                border-radius: 4px;
+            Text {
+                x: 20px;
+                width: parent.width - 40px;
+                height: 100%;
+                text: root.error_text;
+                font-size: 12px;
+                color: Theme.error;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
 
-                // Header
-                SectionHeader {
-                    x: 10px;
-                    y: 10px;
-                    title: "Original Input Source";
+        ThresholdBand {
+            value <=> root.slider_value;
+            mic_enabled: root.mic_enabled;
+            threshold_changed(value) => {
+                root.threshold_changed(value);
+            }
+        }
+
+        HorizontalLayout {
+            vertical-stretch: 1;
+            padding-top: 16px;
+            padding-bottom: 16px;
+            padding-left: 20px;
+            padding-right: 20px;
+            spacing: 16px;
+
+            SourcePanel {
+                horizontal-stretch: 1;
+                devices: root.input_devices;
+                current_index <=> root.selected_input_index;
+                selection_changed(idx) => {
+                    root.selected_input_index_changed(idx);
                 }
-
-                // List background
-                Rectangle {
-                    x: 10px;
-                    y: 50px;
-                    width: 360px;
-                    height: 400px;
-                    background: #30363D;
-                    border-color: #30363D;
-                    border-width: 1px;
-                    border-radius: 2px;
-
-                    VerticalLayout {
-                        padding-top: 15px;
-                        padding-bottom: 25px;
-                        padding-left: 5px;
-                        padding-right: 5px;
-                        spacing: 40px;
-
-                        inputs_list := StandardListView {
-                            model: root.input_devices;
-                            current_item <=> root.selected_input_index;
-                            current_item_changed => {
-                                root.selected_input_index_changed(self.current_item);
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        x: 5px;
-                        y: parent.height - 33px;
-                        width: 98px;
-                        height: 26px;
-                        background: #161B22;
-                        border-width: 1px;
-                        border-radius: 2px;
-
-                        Button {
-                            width: 100px;
-                            height: 28px;
-                            text: "Refresh";
-                            clicked => {
-                                root.refresh_devices_clicked();
-                            }
-                        }
-                    }
-
-                    // Not seeing your device? 
-                    device-help := Text {
-                        width: parent.width - 15px;
-                        height: parent.height - 15px;
-                        text: "Not seeing your device?";
-                        font-size: 10px;
-                        font-italic: true;
-                        color: #0085FC;
-                        horizontal-alignment: right;
-                        vertical-alignment: bottom;
-                    }
-
-                    TouchArea {
-                        x: device-help.x + (345px - 140px);
-                        y: device-help.y + (385px - 15px);
-                        width: device-help.width - (345px - 140px);
-                        height: device-help.height - (385px - 15px);
-                        clicked => {
-                            root.show_device_help_popup = true;
-                        }
-                    }
+                refresh_clicked => {
+                    root.refresh_devices_clicked();
+                }
+                device_help_clicked => {
+                    root.show_device_help_popup = true;
                 }
             }
 
-            // Right section: Virtual Mic Name
-            Rectangle {
-                x: 490px;
-                y: 10px;
-                width: 380px;
-                height: 460px;
-                background: #161B22;
-                border-color: #30363D;
-                border-width: 1px;
-                border-radius: 4px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 16px;
 
-                // Header
-                SectionHeader {
-                    x: 10px;
-                    y: 10px;
-                    title: "Virtual Mic Name";
-                }
-
-                // Input field with buttons
-                HorizontalLayout {
-                    x: 10px;
-                    y: 50px;
-                    width: 360px;
-                    height: 30px;
-                    spacing: 8px;
-
-                    Rectangle {
-                        horizontal-stretch: 1;
-                        background: #30363D;
-                        border-color: root.mic_name_invalid_flash ? #FF4444 : #30363D;
-                        border-width: root.mic_name_invalid_flash ? 2px : 1px;
-                        border-radius: 5px;
-                        clip: true;
-
-                        Timer {
-                            interval: 400ms;
-                            running: root.mic_name_invalid_flash;
-                            triggered => {
-                                root.mic_name_invalid_flash = false;
-                            }
-                        }
-
-                        mic_name := TextInput {
-                            x: 8px;
-                            width: max(parent.width - 16px, self.preferred-width);
-                            height: parent.height;
-                            text <=> root.mic_name_text;
-                            font-size: 14px;
-                            color: white;
-                            vertical-alignment: center;
-                            // TextInput never scrolls on its own; keep the cursor
-                            // visible per the upstream TextInput reference pattern
-                            private property <length> margin: 8px;
-                            cursor-position-changed(cursor-position) => {
-                                if cursor-position.x + self.x < self.margin {
-                                    self.x = - cursor-position.x + self.margin;
-                                } else if cursor-position.x + self.x > parent.width - self.margin - self.text-cursor-width {
-                                    self.x = parent.width - cursor-position.x - self.margin - self.text-cursor-width;
-                                }
-                            }
-                            edited() => {
-                                root.mic_name_text_changed(self.text);
-                            }
-                        }
+                MicNameCard {
+                    vertical-stretch: 0;
+                    default_mic_name: root.default_mic_name;
+                    mic_name_text <=> root.mic_name_text;
+                    invalid_flash <=> root.mic_name_invalid_flash;
+                    rename_clicked(name) => {
+                        root.rename_clicked(name);
                     }
-
-                    // fluent Button pads its label 12px each side; "Rename" at
-                    // 14px JetBrains Mono needs ~75px before the label centers
-                    Button {
-                        width: 76px;
-                        text: "Rename";
-                        clicked => {
-                            mic_name.clear-focus();
-                            root.rename_clicked(mic_name.text);
-                        }
+                    reset_clicked(name) => {
+                        root.reset_clicked(name);
                     }
-
-                    Button {
-                        width: 76px;
-                        text: "Reset";
-                        clicked => {
-                            mic_name.clear-focus();
-                            if (mic_name.text != root.default_mic_name) {
-                                mic_name.text = root.default_mic_name;
-                                root.reset_clicked(root.default_mic_name);
-                            }
-                        }
+                    mic_name_text_changed(text) => {
+                        root.mic_name_text_changed(text);
                     }
                 }
 
-                // Voice Processing header
-                SectionHeader {
-                    x: 10px;
-                    y: 110px;
-                    title: "Voice Processing";
-                }
-
-                Switch {
-                    x: 10px;
-                    y: 150px;
-                    height: 30px;
-                    checked <=> root.rumble_filter;
-                    toggled => {
-                        root.rumble_filter_changed(self.checked);
+                ProcessingCard {
+                    vertical-stretch: 1;
+                    rumble_filter <=> root.rumble_filter;
+                    auto_level <=> root.auto_level;
+                    rumble_filter_changed(checked) => {
+                        root.rumble_filter_changed(checked);
+                    }
+                    auto_level_changed(checked) => {
+                        root.auto_level_changed(checked);
                     }
                 }
 
-                Text {
-                    x: 70px;
-                    y: 150px;
-                    height: 30px;
-                    text: "Rumble filter";
-                    font-size: 14px;
-                    color: white;
-                    vertical-alignment: center;
-                }
-
-                Switch {
-                    x: 10px;
-                    y: 190px;
-                    height: 30px;
-                    checked <=> root.auto_level;
-                    toggled => {
-                        root.auto_level_changed(self.checked);
+                VoiceTestCard {
+                    vertical-stretch: 0;
+                    mic_enabled: root.mic_enabled;
+                    is_recording <=> root.is_recording;
+                    has_recording <=> root.has_recording;
+                    is_playing_original <=> root.is_playing_original;
+                    is_playing_filtered <=> root.is_playing_filtered;
+                    recording_countdown <=> root.recording_countdown;
+                    start_recording => {
+                        root.start_recording();
                     }
-                }
-
-                Text {
-                    x: 70px;
-                    y: 190px;
-                    height: 30px;
-                    text: "Auto level";
-                    font-size: 14px;
-                    color: white;
-                    vertical-alignment: center;
-                }
-
-                // Voice Test Header
-                SectionHeader {
-                    x: 10px;
-                    y: 350px;
-                    title: "Record A Voice Test";
-                }
-
-                // Recording Area
-                HorizontalLayout {
-                    x: 10px;
-                    y: 390px;
-                    width: 360px;
-                    height: 60px;
-                    horizontal-stretch: 0;
-                    spacing: 10px;
-
-                    // Record button
-                    Button {
-                        width: 100px;
-                        height: 58px;
-                        text: root.is_recording ? "Stop" : "Record";
-                        enabled: root.mic_enabled;
-                        clicked => {
-                            if (root.is_playing_original) {
-                                root.is_playing_original = false;
-                                root.stop_original();
-                            }
-                            if (root.is_playing_filtered) {
-                                root.is_playing_filtered = false;
-                                root.stop_filtered();
-                            }
-                            root.is_recording = !root.is_recording;
-
-                            if (root.is_recording) {
-                                root.recording_countdown = 0;
-                                root.has_recording = false;
-                                root.start_recording();
-                            } else {
-                                root.has_recording = true;
-                                root.stop_recording();
-                            }
-                        }
+                    stop_recording => {
+                        root.stop_recording();
                     }
-
-                    // Recording countdown indicator
-                    if root.is_recording: Rectangle {
-                        width: 240px;
-                        height: 58px;
-                        background: #30363D;
-                        border-color: #FF4444;
-                        border-width: 2px;
-                        border-radius: 4px;
-
-                        // Timer
-                        Timer {
-                            interval: 1s;
-                            running: root.is_recording;
-                            triggered => {
-                                if (root.recording_countdown < 15) {
-                                    root.recording_countdown = root.recording_countdown + 1;
-                                } else {
-                                    root.is_recording = false;
-                                    root.has_recording = true;
-                                    root.stop_recording();
-                                }
-                            }
-                        }
-
-                        VerticalLayout {
-                            alignment: center;
-
-                            HorizontalLayout {
-                                alignment: center;
-                                spacing: 10px;
-
-                                Rectangle {
-                                    width: 40px;
-                                    height: 40px;
-                                    border-radius: 20px;
-                                    background: #FF4444;
-
-                                    Text {
-                                        width: 100%;
-                                        height: 100%;
-                                        text: root.recording_countdown;
-                                        font-size: 18px;
-                                        font-weight: 700;
-                                        color: white;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                    }
-                                }
-
-                                Text {
-                                    text: "Recording...";
-                                    font-size: 16px;
-                                    font-weight: 700;
-                                    color: #FF4444;
-                                    vertical-alignment: center;
-                                }
-                            }
-                        }
+                    play_original => {
+                        root.play_original();
                     }
-
-                    // Playback options
-                    if !root.is_recording && root.has_recording: Rectangle {
-                        width: 240px;
-                        height: 58px;
-                        background: #30363D;
-                        border-color: #30363D;
-                        border-width: 1px;
-                        border-radius: 4px;
-
-                        VerticalLayout {
-                            padding-left: 10px;
-                            padding-right: 10px;
-                            spacing: 4px;
-                            alignment: center;
-
-                            // Original output row
-                            HorizontalLayout {
-                                spacing: 8px;
-                                alignment: start;
-
-                                // Play/Stop button for original
-                                Rectangle {
-                                    width: 20px;
-                                    height: 20px;
-                                    background: root.is_playing_original ? #FF4444 : #0085FC;
-                                    border-radius: 3px;
-
-                                    Text {
-                                        width: 100%;
-                                        height: 100%;
-                                        text: root.is_playing_original ? "■" : "▶";
-                                        font-size: 12px;
-                                        color: white;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                    }
-
-                                    TouchArea {
-                                        width: 100%;
-                                        height: 100%;
-                                        clicked => {
-                                            if (root.is_playing_original) {
-                                                root.is_playing_original = false;
-                                                root.stop_original();
-                                            } else {
-                                                // Stop filtered if playing
-                                                if (root.is_playing_filtered) {
-                                                    root.is_playing_filtered = false;
-                                                    root.stop_filtered();
-                                                }
-                                                root.is_playing_original = true;
-                                                root.play_original();
-                                            }
-                                        }
-                                    }
-                                }
-
-                                ClickableLink {
-                                    text: "original_output.wav";
-                                    clicked => {
-                                        if (root.is_playing_original) {
-                                            root.is_playing_original = false;
-                                            root.stop_original();
-                                        } else {
-                                            if (root.is_playing_filtered) {
-                                                root.is_playing_filtered = false;
-                                                root.stop_filtered();
-                                            }
-                                            root.is_playing_original = true;
-                                            root.play_original();
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Filtered output row
-                            HorizontalLayout {
-                                spacing: 8px;
-                                alignment: start;
-
-                                // Play/Stop button for filtered
-                                Rectangle {
-                                    width: 20px;
-                                    height: 20px;
-                                    background: root.is_playing_filtered ? #FF4444 : #0085FC;
-                                    border-radius: 3px;
-
-                                    Text {
-                                        width: 100%;
-                                        height: 100%;
-                                        text: root.is_playing_filtered ? "■" : "▶";
-                                        font-size: 12px;
-                                        color: white;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                    }
-
-                                    TouchArea {
-                                        width: 100%;
-                                        height: 100%;
-                                        clicked => {
-                                            if (root.is_playing_filtered) {
-                                                root.is_playing_filtered = false;
-                                                root.stop_filtered();
-                                            } else {
-                                                if (root.is_playing_original) {
-                                                    root.is_playing_original = false;
-                                                    root.stop_original();
-                                                }
-                                                root.is_playing_filtered = true;
-                                                root.play_filtered();
-                                            }
-                                        }
-                                    }
-                                }
-
-                                ClickableLink {
-                                    text: "filtered_output.wav";
-                                    clicked => {
-                                        if (root.is_playing_filtered) {
-                                            root.is_playing_filtered = false;
-                                            root.stop_filtered();
-                                        } else {
-                                            if (root.is_playing_original) {
-                                                root.is_playing_original = false;
-                                                root.stop_original();
-                                            }
-                                            root.is_playing_filtered = true;
-                                            root.play_filtered();
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    stop_original => {
+                        root.stop_original();
                     }
-
-                    // Empty placeholder when no recording yet and not recording
-                    if !root.is_recording && !root.has_recording: Rectangle {
-                        width: 240px;
-                        height: 58px;
-                        background: #30363D;
-                        border-color: #30363D;
-                        border-width: 1px;
-                        border-radius: 4px;
-
-                        Text {
-                            width: 100%;
-                            height: 100%;
-                            text: root.mic_enabled ? "Press Record to start" : "Enable mic to record";
-                            font-size: 12px;
-                            color: #8B949E;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                        }
+                    play_filtered => {
+                        root.play_filtered();
+                    }
+                    stop_filtered => {
+                        root.stop_filtered();
                     }
                 }
             }
-
         }
-    }
 
-    Footer {
-        y: parent.height - self.height;
-        width: parent.width;
-        mic_enabled: root.mic_enabled;
-        is_recording: root.is_recording;
-        unsaved_changes: root.unsaved_changes;
-        enable_clicked => {
-            root.enable_clicked();
-        }
-        disable_clicked => {
-            root.disable_clicked();
+        Footer {
+            mic_enabled: root.mic_enabled;
+            is_recording: root.is_recording;
+            unsaved_changes: root.unsaved_changes;
+            enable_clicked => {
+                root.enable_clicked();
+            }
+            disable_clicked => {
+                root.disable_clicked();
+            }
         }
     }
 

@@ -1,0 +1,80 @@
+// Card listing the capture devices the daemon can pipe into the virtual mic.
+
+import { StandardListView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { ClickableLink } from "links.slint";
+
+export component SourcePanel inherits Rectangle {
+    in property <[StandardListViewItem]> devices;
+    in-out property <int> current_index;
+
+    callback selection_changed(int);
+    callback refresh_clicked();
+    callback device_help_clicked();
+
+    background: Theme.panel;
+    border-color: Theme.border;
+    border-width: 1px;
+    border-radius: 6px;
+    clip: true;
+
+    VerticalLayout {
+        Rectangle {
+            height: 40px;
+
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 10px;
+
+                Text {
+                    text: "Original Input Source";
+                    font-size: 13px;
+                    font-weight: 700;
+                    color: white;
+                    vertical-alignment: center;
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                ClickableLink {
+                    text: "↻ Refresh";
+                    font_size: 11px;
+                    clicked => {
+                        root.refresh_clicked();
+                    }
+                }
+            }
+
+            Rectangle {
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: Theme.border;
+            }
+        }
+
+        StandardListView {
+            vertical-stretch: 1;
+            model: root.devices;
+            current_item <=> root.current_index;
+            current_item_changed => {
+                root.selection_changed(self.current_item);
+            }
+        }
+
+        HorizontalLayout {
+            padding: 10px;
+            alignment: end;
+
+            ClickableLink {
+                text: "Not seeing your device?";
+                font_size: 10px;
+                italic: true;
+                clicked => {
+                    root.device_help_clicked();
+                }
+            }
+        }
+    }
+}

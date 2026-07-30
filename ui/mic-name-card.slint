@@ -1,0 +1,100 @@
+// Card staging the virtual mic's node name; nothing changes until Enable
+// (or Apply while active) recreates the mic under the staged name.
+
+import { Button } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+
+export component MicNameCard inherits Rectangle {
+    in property <string> default_mic_name;
+    in-out property <string> mic_name_text;
+    in-out property <bool> invalid_flash;
+
+    callback rename_clicked(string);
+    callback reset_clicked(string);
+    callback mic_name_text_changed(string);
+
+    background: Theme.panel;
+    border-color: Theme.border;
+    border-width: 1px;
+    border-radius: 6px;
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 10px;
+
+        Text {
+            text: "Virtual Mic Name";
+            font-size: 13px;
+            font-weight: 700;
+            color: white;
+        }
+
+        HorizontalLayout {
+            height: 30px;
+            spacing: 8px;
+
+            Rectangle {
+                horizontal-stretch: 1;
+                background: Theme.inset;
+                border-color: root.invalid_flash ? Theme.error : Theme.border;
+                border-width: root.invalid_flash ? 2px : 1px;
+                border-radius: 5px;
+                clip: true;
+
+                Timer {
+                    interval: 400ms;
+                    running: root.invalid_flash;
+                    triggered => {
+                        root.invalid_flash = false;
+                    }
+                }
+
+                mic_name := TextInput {
+                    x: 8px;
+                    width: max(parent.width - 16px, self.preferred-width);
+                    height: parent.height;
+                    text <=> root.mic_name_text;
+                    font-size: 14px;
+                    color: white;
+                    vertical-alignment: center;
+                    // TextInput never scrolls on its own; keep the cursor
+                    // visible per the upstream TextInput reference pattern
+                    private property <length> margin: 8px;
+                    cursor-position-changed(cursor-position) => {
+                        if cursor-position.x + self.x < self.margin {
+                            self.x = - cursor-position.x + self.margin;
+                        } else if cursor-position.x + self.x > parent.width - self.margin - self.text-cursor-width {
+                            self.x = parent.width - cursor-position.x - self.margin - self.text-cursor-width;
+                        }
+                    }
+                    edited() => {
+                        root.mic_name_text_changed(self.text);
+                    }
+                }
+            }
+
+            // fluent Button pads its label 12px each side; "Rename" at
+            // 14px JetBrains Mono needs ~75px before the label centers
+            Button {
+                width: 76px;
+                text: "Rename";
+                clicked => {
+                    mic_name.clear-focus();
+                    root.rename_clicked(mic_name.text);
+                }
+            }
+
+            Button {
+                width: 76px;
+                text: "Reset";
+                clicked => {
+                    mic_name.clear-focus();
+                    if (mic_name.text != root.default_mic_name) {
+                        mic_name.text = root.default_mic_name;
+                        root.reset_clicked(root.default_mic_name);
+                    }
+                }
+            }
+        }
+    }
+}
