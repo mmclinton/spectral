@@ -1,12 +1,17 @@
+import { Theme } from "theme.slint";
+
 export component ClickableLink {
     in property <string> text;
+    in property <length> font_size: 14px;
+    in property <bool> italic: false;
     callback clicked();
 
     link-text := Text {
         text: root.text;
-        font-size: 14px;
+        font-size: root.font_size;
+        font-italic: root.italic;
         font-weight: 700;
-        color: #0085FC;
+        color: Theme.accent;
         horizontal-alignment: left;
         vertical-alignment: center;
     }
