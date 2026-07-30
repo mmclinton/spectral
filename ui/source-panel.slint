@@ -92,6 +92,21 @@ export component SourcePanel inherits Rectangle {
     border-radius: 6px;
     clip: true;
 
+    // Purely an acknowledgment that the click registered: the rescan is
+    // synchronous and near-instant, so the glyph spins for a fixed ~640ms
+    // instead of tracking progress. Rotation transforms don't render on
+    // the software renderer, hence frame-swapping instead of rotating.
+    property <int> spin_ticks: 0;
+    property <[string]> spin_frames: ["◓", "◑", "◒", "◐"];
+
+    Timer {
+        interval: 80ms;
+        running: root.spin_ticks > 0;
+        triggered => {
+            root.spin_ticks -= 1;
+        }
+    }
+
     VerticalLayout {
         Rectangle {
             height: 40px;
@@ -111,11 +126,40 @@ export component SourcePanel inherits Rectangle {
 
                 Rectangle { horizontal-stretch: 1; }
 
-                ClickableLink {
-                    text: "↻ Refresh";
-                    font_size: 11px;
-                    clicked => {
-                        root.refresh_clicked();
+                Rectangle {
+                    width: refresh_row.preferred-width;
+
+                    refresh_row := HorizontalLayout {
+                        spacing: 4px;
+
+                        // Fixed width: the spinner frames are wider than
+                        // the idle glyph, and the label must not shift.
+                        Text {
+                            width: 12px;
+                            text: root.spin_ticks > 0
+                                ? root.spin_frames[Math.mod(8 - root.spin_ticks, 4)]
+                                : "↻";
+                            font-size: 11px;
+                            font-weight: 700;
+                            color: Theme.accent;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        Text {
+                            text: "Refresh";
+                            font-size: 11px;
+                            font-weight: 700;
+                            color: Theme.accent;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    TouchArea {
+                        clicked => {
+                            root.spin_ticks = 8;
+                            root.refresh_clicked();
+                        }
                     }
                 }
             }
