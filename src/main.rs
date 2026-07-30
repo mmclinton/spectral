@@ -13,7 +13,6 @@ use spectral_lib::state::{AudioDevice, MIC_NAME_MAX_LEN, Status};
 
 use slint::ModelRc;
 use slint::SharedString;
-use slint::StandardListViewItem;
 use slint::VecModel;
 use slint::Weak;
 
@@ -36,6 +35,20 @@ fn filter_devices(devices: &[AudioDevice], mic_name: &str) -> Vec<AudioDevice> {
         .filter(|device| device.name != mic_name)
         .cloned()
         .collect()
+}
+
+/// The row model for the source panel. An empty slice yields an empty model —
+/// the panel renders its own empty state, never a placeholder row. The meta
+/// line stays empty until per-device props are proven reliable.
+fn device_list_model(devices: &[AudioDevice]) -> ModelRc<InputDevice> {
+    let rows: Vec<InputDevice> = devices
+        .iter()
+        .map(|device| InputDevice {
+            name: device.name.clone().into(),
+            meta: SharedString::new(),
+        })
+        .collect();
+    ModelRc::new(Rc::new(VecModel::from(rows)))
 }
 
 fn hex_to_color(hex: &str) -> slint::Color {
@@ -297,25 +310,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         &daemon_state.mic_name,
     )));
 
-    let mut input_devices_vec: Vec<StandardListViewItem> = filtered_devices
-        .borrow()
-        .iter()
-        .map(|device| {
-            let mut item = StandardListViewItem::default();
-            item.text = device.name.clone().into();
-            item
-        })
-        .collect();
-
-    if input_devices_vec.is_empty() {
-        let mut item = StandardListViewItem::default();
-        item.text = "No input devices detected".into();
-        input_devices_vec.push(item);
-    }
-
-    let vec_model = VecModel::from(input_devices_vec);
-    let model_rc: ModelRc<StandardListViewItem> = ModelRc::new(Rc::new(vec_model));
-    ui.set_input_devices(model_rc);
+    ui.set_input_devices(device_list_model(&filtered_devices.borrow()));
 
     ui.set_mic_name_text(daemon_state.mic_name.clone().into());
     ui.set_slider_value(daemon_state.threshold);
@@ -577,17 +572,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
 
                         let filtered = filter_devices(&fresh_devices, &mic_name);
 
-                        let items: Vec<StandardListViewItem> = filtered
-                            .iter()
-                            .map(|device| {
-                                let mut item = StandardListViewItem::default();
-                                item.text = device.name.clone().into();
-                                item
-                            })
-                            .collect();
-
-                        let model = VecModel::from(items);
-                        ui.set_input_devices(ModelRc::new(Rc::new(model)));
+                        ui.set_input_devices(device_list_model(&filtered));
 
                         let new_idx = reresolve_selection(
                             &devices.borrow(),
@@ -746,6 +731,18 @@ mod tests {
             rumble_filter: std::cell::Cell::new(rumble_filter),
             auto_level: std::cell::Cell::new(auto_level),
         }
+    }
+
+    #[test]
+    fn device_model_maps_names_and_never_injects_placeholder_rows() {
+        use slint::Model;
+        assert_eq!(device_list_model(&[]).row_count(), 0);
+
+        let model = device_list_model(&[device(10, "A"), device(20, "B")]);
+        assert_eq!(model.row_count(), 2);
+        assert_eq!(model.row_data(0).unwrap().name, "A");
+        assert_eq!(model.row_data(1).unwrap().name, "B");
+        assert!(model.row_data(0).unwrap().meta.is_empty());
     }
 
     #[test]

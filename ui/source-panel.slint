@@ -1,11 +1,84 @@
 // Card listing the capture devices the daemon can pipe into the virtual mic.
 
-import { StandardListView } from "std-widgets.slint";
+import { ListView, Button } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { ClickableLink } from "links.slint";
 
+export struct InputDevice {
+    name: string,
+    // Stays empty until per-device props are proven reliable; the row hides
+    // an empty meta line rather than showing a placeholder.
+    meta: string,
+}
+
+component DeviceRow inherits Rectangle {
+    in property <InputDevice> device;
+    in property <bool> selected;
+
+    callback clicked();
+
+    height: 52px;
+
+    accessible-role: list-item;
+    accessible-label: root.device.name;
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    Rectangle {
+        x: 6px;
+        y: 2px;
+        width: parent.width - 12px;
+        height: parent.height - 6px;
+        background: root.selected || touch.has-hover ? Theme.inset : transparent;
+        border-color: root.selected ? Theme.accent : Theme.border_subtle;
+        border-width: 1px;
+        border-radius: 5px;
+
+        HorizontalLayout {
+            padding-left: 10px;
+            padding-right: 10px;
+            spacing: 10px;
+
+            VerticalLayout {
+                alignment: center;
+
+                Rectangle {
+                    width: 3px;
+                    height: 28px;
+                    border-radius: 1.5px;
+                    background: root.selected ? Theme.accent : Theme.border;
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+
+                Text {
+                    text: root.device.name;
+                    font-size: 12.5px;
+                    font-weight: root.selected ? 500 : 400;
+                    color: root.selected ? white : Theme.text_primary;
+                    overflow: elide;
+                }
+
+                if root.device.meta != "": Text {
+                    text: root.device.meta;
+                    font-size: 10px;
+                    color: Theme.text_muted;
+                    overflow: elide;
+                }
+            }
+        }
+    }
+}
+
 export component SourcePanel inherits Rectangle {
-    in property <[StandardListViewItem]> devices;
+    in property <[InputDevice]> devices;
     in-out property <int> current_index;
 
     callback selection_changed(int);
@@ -54,12 +127,61 @@ export component SourcePanel inherits Rectangle {
             }
         }
 
-        StandardListView {
+        Rectangle {
             vertical-stretch: 1;
-            model: root.devices;
-            current_item <=> root.current_index;
-            current_item_changed => {
-                root.selection_changed(self.current_item);
+
+            if root.devices.length > 0: ListView {
+                width: 100%;
+                height: 100%;
+
+                for device[i] in root.devices: DeviceRow {
+                    device: device;
+                    selected: i == root.current_index;
+                    clicked => {
+                        root.current_index = i;
+                        root.selection_changed(i);
+                    }
+                }
+            }
+
+            if root.devices.length == 0: Rectangle {
+                x: 12px;
+                y: 8px;
+                width: parent.width - 24px;
+                height: parent.height - 16px;
+                border-color: Theme.border_subtle;
+                border-width: 1px;
+                border-radius: 5px;
+
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 8px;
+
+                    Text {
+                        text: "⌀";
+                        font-size: 22px;
+                        color: Theme.text_disabled;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: "No input devices found";
+                        font-size: 11.5px;
+                        color: Theme.text_muted;
+                        horizontal-alignment: center;
+                    }
+
+                    HorizontalLayout {
+                        alignment: center;
+
+                        Button {
+                            text: "↻ Retry scan";
+                            clicked => {
+                                root.refresh_clicked();
+                            }
+                        }
+                    }
+                }
             }
         }
 

@@ -1,13 +1,15 @@
 import { Theme } from "theme.slint";
 import { AppBar } from "app-bar.slint";
 import { ThresholdBand } from "threshold-band.slint";
-import { SourcePanel } from "source-panel.slint";
+import { SourcePanel, InputDevice } from "source-panel.slint";
 import { MicNameCard } from "mic-name-card.slint";
 import { ProcessingCard } from "processing-card.slint";
 import { VoiceTestCard } from "voice-test-card.slint";
 import { Footer } from "footer.slint";
 import { DeviceHelpPopup } from "device-help-popup.slint";
 import { HelpPopup } from "help-popup.slint";
+
+export { InputDevice }
 
 export component MainWindow inherits Window {
     title: "Spectral";
@@ -22,7 +24,7 @@ export component MainWindow inherits Window {
     property <string> default_mic_name: "Spectral-Mic";
     in-out property <string> mic_name_text: "Spectral-Mic";
     in-out property <int> selected_input_index: -1;
-    in-out property <[StandardListViewItem]> input_devices;
+    in-out property <[InputDevice]> input_devices;
     in-out property <int> slider_value: 50;
     in-out property <bool> rumble_filter: false;
     in-out property <bool> auto_level: false;
