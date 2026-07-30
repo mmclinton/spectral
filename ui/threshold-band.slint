@@ -2,7 +2,7 @@
 // anchors render in every state — only opacity communicates inactive — so
 // the control's meaning never disappears with state.
 
-import { Slider } from "std-widgets.slint";
+import { AppSlider } from "controls.slint";
 import { Theme } from "theme.slint";
 
 export component ThresholdBand inherits Rectangle {
@@ -58,39 +58,42 @@ export component ThresholdBand inherits Rectangle {
             }
         }
 
-        Slider {
+        AppSlider {
             opacity: root.mic_enabled ? 1 : 0.55;
-            value: root.value;
+            value <=> root.value;
             minimum: 0;
             maximum: 100;
             changed(value) => {
                 // Don't auto-apply - the GUI recomputes its local pending status
-                root.value = value;
                 root.threshold_changed(value);
             }
         }
 
+        // Equal thirds so the middle anchor sits centered under the track's
+        // true 50% point; the outer anchors stay flush with the track ends.
         HorizontalLayout {
             Text {
+                width: parent.width / 3;
                 text: "0% · denoise only";
                 font-size: 10px;
                 color: Theme.text_muted;
+                horizontal-alignment: left;
             }
 
-            Rectangle { horizontal-stretch: 1; }
-
             Text {
+                width: parent.width / 3;
                 text: "50% · default";
                 font-size: 10px;
                 color: Theme.text_muted;
+                horizontal-alignment: center;
             }
 
-            Rectangle { horizontal-stretch: 1; }
-
             Text {
+                width: parent.width / 3;
                 text: "100% · strict";
                 font-size: 10px;
                 color: Theme.text_muted;
+                horizontal-alignment: right;
             }
         }
     }

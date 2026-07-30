@@ -140,3 +140,109 @@ export component AppSwitch {
         }
     }
 }
+
+// Integer-valued: the app's only slider is the 0-100 threshold, and int
+// keeps `value <=>` type-compatible with the staged threshold, so external
+// updates keep flowing after the user drags (no binding to destroy).
+// The track spans the full component width - the fluent slider inset it by
+// half a thumb, misaligning it with text sharing the same margin - so the
+// thumb overhangs the box by up to 7px at the extremes; parents must not clip.
+export component AppSlider {
+    in property <bool> enabled: true;
+    in property <int> minimum: 0;
+    in property <int> maximum: 100;
+    in-out property <int> value;
+
+    callback changed(int);
+
+    min-height: 20px;
+    horizontal-stretch: 1;
+    vertical-stretch: 0;
+    forward-focus: focus_scope;
+
+    accessible-role: slider;
+    accessible-enabled: root.enabled;
+    accessible-value: "\{root.value}";
+    accessible-value-minimum: root.minimum;
+    accessible-value-maximum: root.maximum;
+    accessible-value-step: 1;
+    accessible-action-increment => {
+        root.set_value(root.value + 1);
+    }
+    accessible-action-decrement => {
+        root.set_value(root.value - 1);
+    }
+
+    property <float> fraction: root.maximum > root.minimum
+        ? (root.value - root.minimum) * 1.0 / (root.maximum - root.minimum)
+        : 0;
+
+    function set_value(new_value: int) {
+        if (Math.clamp(new_value, root.minimum, root.maximum) != root.value) {
+            root.value = Math.clamp(new_value, root.minimum, root.maximum);
+            root.changed(root.value);
+        }
+    }
+
+    function set_from_position(position: length) {
+        root.set_value(root.minimum + Math.round(
+            (root.maximum - root.minimum) * Math.clamp(position / track.width, 0, 1)));
+    }
+
+    focus_scope := FocusScope {
+        enabled: root.enabled;
+
+        key-pressed(event) => {
+            if (event.text == Key.LeftArrow) {
+                root.set_value(root.value - 1);
+                return accept;
+            }
+            if (event.text == Key.RightArrow) {
+                root.set_value(root.value + 1);
+                return accept;
+            }
+            reject
+        }
+
+        track := Rectangle {
+            y: (parent.height - self.height) / 2;
+            width: parent.width;
+            height: 4px;
+            border-radius: 2px;
+            background: Theme.border;
+
+            Rectangle {
+                x: 0px;
+                y: 0px;
+                width: parent.width * root.fraction;
+                height: parent.height;
+                border-radius: 2px;
+                background: Theme.accent;
+            }
+        }
+
+        thumb := Rectangle {
+            x: track.width * root.fraction - self.width / 2;
+            y: (parent.height - self.height) / 2;
+            width: 14px;
+            height: 14px;
+            border-radius: self.width / 2;
+            background: touch.pressed ? Theme.accent_bright : white;
+            border-width: focus_scope.has-focus ? 2px : 0px;
+            border-color: Theme.accent_bright;
+        }
+
+        touch := TouchArea {
+            enabled: root.enabled;
+            moved => {
+                root.set_from_position(self.mouse-x);
+            }
+            pointer-event(event) => {
+                if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                    focus_scope.focus();
+                    root.set_from_position(self.mouse-x);
+                }
+            }
+        }
+    }
+}
