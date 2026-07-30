@@ -1,7 +1,7 @@
 // Card staging the virtual mic's node name; nothing changes until Enable
 // (or Apply while active) recreates the mic under the staged name.
 
-import { Button } from "std-widgets.slint";
+import { AppButton } from "controls.slint";
 import { Theme } from "theme.slint";
 
 export component MicNameCard inherits Rectangle {
@@ -73,9 +73,9 @@ export component MicNameCard inherits Rectangle {
                 }
             }
 
-            // fluent Button pads its label 12px each side; "Rename" at
-            // 14px JetBrains Mono needs ~75px before the label centers
-            Button {
+            // AppButton pads its label 12px each side; "Rename" in a
+            // monospace family needs ~75px before the label centers
+            AppButton {
                 width: 76px;
                 text: "Rename";
                 clicked => {
@@ -84,7 +84,7 @@ export component MicNameCard inherits Rectangle {
                 }
             }
 
-            Button {
+            AppButton {
                 width: 76px;
                 text: "Reset";
                 clicked => {

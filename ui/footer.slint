@@ -2,7 +2,7 @@
 // The left slot is a fixed-height region whose content swaps by state, so
 // chips or hints appearing never resize the footer.
 
-import { Button } from "std-widgets.slint";
+import { AppButton } from "controls.slint";
 import { Theme } from "theme.slint";
 
 export component Footer inherits Rectangle {
@@ -108,7 +108,7 @@ export component Footer inherits Rectangle {
             }
         }
 
-        if root.mic_enabled: Button {
+        if root.mic_enabled: AppButton {
             min-width: 110px;
             text: "Disable";
             enabled: !root.is_recording;
@@ -117,7 +117,7 @@ export component Footer inherits Rectangle {
             }
         }
 
-        Button {
+        AppButton {
             min-width: 110px;
             text: root.mic_enabled ? "Apply" : "Enable";
             primary: true;

@@ -3,7 +3,7 @@
 // fixed geometry: every state renders inside the same two containers, so
 // the record -> playback -> idle flow causes zero layout shift.
 
-import { Button } from "std-widgets.slint";
+import { AppButton } from "controls.slint";
 import { Theme } from "theme.slint";
 import { ClickableLink } from "links.slint";
 
@@ -70,7 +70,7 @@ export component VoiceTestCard inherits Rectangle {
         HorizontalLayout {
             spacing: 10px;
 
-            Button {
+            AppButton {
                 width: 100px;
                 height: 58px;
                 text: root.is_recording ? "■ Stop" : "● Record";

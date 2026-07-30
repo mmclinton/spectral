@@ -1,0 +1,71 @@
+// Hand-rolled controls sharing the app accent. Slint 1.15's std-widgets
+// Palette is read-only and the fluent widgets hardcode their own colors
+// (slint-ui/slint#9568 landed only after 1.15), so owning these controls
+// is the only way their accent can match the rest of the theme.
+
+import { Theme } from "theme.slint";
+
+export component AppButton {
+    in property <string> text;
+    in property <bool> primary: false;
+    in property <bool> enabled: true;
+
+    callback clicked();
+
+    min-width: max(32px, label.preferred-width + 24px);
+    min-height: 32px;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    forward-focus: focus_scope;
+
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        root.clicked();
+    }
+
+    focus_scope := FocusScope {
+        enabled: root.enabled;
+
+        key-pressed(event) => {
+            if (event.text == " " || event.text == Key.Return) {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+
+        Rectangle {
+            border-radius: 4px;
+            border-width: 1px;
+            background: !root.enabled ? Theme.border_subtle
+                : touch.pressed ? (root.primary ? Theme.accent.darker(0.2) : Theme.inset)
+                : touch.has-hover ? (root.primary ? Theme.accent.brighter(0.15) : Theme.border_subtle.brighter(0.6))
+                : (root.primary ? Theme.accent : Theme.border_subtle);
+            border-color: focus_scope.has-focus ? Theme.accent_bright
+                : !root.enabled ? Theme.border_subtle
+                : root.primary ? transparent
+                : Theme.border;
+
+            label := Text {
+                text: root.text;
+                font-size: 13px;
+                font-weight: 600;
+                color: !root.enabled ? Theme.text_disabled
+                    : root.primary ? white
+                    : Theme.text_primary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            touch := TouchArea {
+                enabled: root.enabled;
+                clicked => {
+                    focus_scope.focus();
+                    root.clicked();
+                }
+            }
+        }
+    }
+}

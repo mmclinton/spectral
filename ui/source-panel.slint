@@ -1,8 +1,9 @@
 // Card listing the capture devices the daemon can pipe into the virtual mic.
 
-import { ListView, Button } from "std-widgets.slint";
+import { ListView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { ClickableLink } from "links.slint";
+import { AppButton } from "controls.slint";
 
 export struct InputDevice {
     name: string,
@@ -174,7 +175,7 @@ export component SourcePanel inherits Rectangle {
                     HorizontalLayout {
                         alignment: center;
 
-                        Button {
+                        AppButton {
                             text: "↻ Retry scan";
                             clicked => {
                                 root.refresh_clicked();
