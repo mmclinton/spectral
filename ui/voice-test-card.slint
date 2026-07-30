@@ -1,5 +1,7 @@
 // Card for recording a capped voice sample and A/B-ing the original
-// against the filtered result.
+// against the filtered result. The record button and the status box have
+// fixed geometry: every state renders inside the same two containers, so
+// the record -> playback -> idle flow causes zero layout shift.
 
 import { Button } from "std-widgets.slint";
 import { Theme } from "theme.slint";
@@ -20,20 +22,49 @@ export component VoiceTestCard inherits Rectangle {
     callback play_filtered();
     callback stop_filtered();
 
+    property <string> elapsed: "0:" + (root.recording_countdown < 10 ? "0" : "") + root.recording_countdown;
+
     background: Theme.panel;
     border-color: Theme.border;
     border-width: 1px;
     border-radius: 6px;
 
+    Timer {
+        interval: 1s;
+        running: root.is_recording;
+        triggered => {
+            if (root.recording_countdown < 15) {
+                root.recording_countdown = root.recording_countdown + 1;
+            } else {
+                root.is_recording = false;
+                root.has_recording = true;
+                root.stop_recording();
+            }
+        }
+    }
+
     VerticalLayout {
         padding: 12px;
         spacing: 10px;
 
-        Text {
-            text: "Record A Voice Test";
-            font-size: 13px;
-            font-weight: 700;
-            color: white;
+        HorizontalLayout {
+            spacing: 8px;
+
+            Text {
+                text: "Record A Voice Test";
+                font-size: 13px;
+                font-weight: 700;
+                color: white;
+            }
+
+            Text {
+                text: "0:15 max";
+                font-size: 10px;
+                color: Theme.text_muted;
+                vertical-alignment: center;
+            }
+
+            Rectangle { horizontal-stretch: 1; }
         }
 
         HorizontalLayout {
@@ -42,7 +73,7 @@ export component VoiceTestCard inherits Rectangle {
             Button {
                 width: 100px;
                 height: 58px;
-                text: root.is_recording ? "Stop" : "Record";
+                text: root.is_recording ? "■ Stop" : "● Record";
                 enabled: root.mic_enabled;
                 clicked => {
                     if (root.is_playing_original) {
@@ -66,76 +97,73 @@ export component VoiceTestCard inherits Rectangle {
                 }
             }
 
-            // Recording countdown indicator
-            if root.is_recording: Rectangle {
+            // Always present; only its content and border color follow the
+            // state, so nothing around it ever moves.
+            Rectangle {
                 horizontal-stretch: 1;
                 height: 58px;
-                background: #30363D;
-                border-color: #FF4444;
-                border-width: 2px;
-                border-radius: 4px;
+                background: Theme.inset;
+                border-color: root.is_recording ? Theme.error : Theme.border_subtle;
+                border-width: 1px;
+                border-radius: 5px;
+                clip: true;
 
-                // Timer
-                Timer {
-                    interval: 1s;
-                    running: root.is_recording;
-                    triggered => {
-                        if (root.recording_countdown < 15) {
-                            root.recording_countdown = root.recording_countdown + 1;
-                        } else {
-                            root.is_recording = false;
-                            root.has_recording = true;
-                            root.stop_recording();
-                        }
-                    }
-                }
-
-                VerticalLayout {
-                    alignment: center;
+                if root.is_recording: VerticalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    padding-top: 8px;
+                    padding-bottom: 10px;
+                    spacing: 8px;
 
                     HorizontalLayout {
-                        alignment: center;
-                        spacing: 10px;
+                        spacing: 8px;
 
-                        Rectangle {
-                            width: 40px;
-                            height: 40px;
-                            border-radius: 20px;
-                            background: #FF4444;
+                        VerticalLayout {
+                            alignment: center;
 
-                            Text {
-                                width: 100%;
-                                height: 100%;
-                                text: root.recording_countdown;
-                                font-size: 18px;
-                                font-weight: 700;
-                                color: white;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
+                            Rectangle {
+                                width: 8px;
+                                height: 8px;
+                                border-radius: 4px;
+                                background: Theme.error;
                             }
                         }
 
                         Text {
-                            text: "Recording...";
-                            font-size: 16px;
+                            text: "Recording…";
+                            font-size: 12px;
                             font-weight: 700;
-                            color: #FF4444;
+                            color: Theme.error;
+                            vertical-alignment: center;
+                        }
+
+                        Rectangle { horizontal-stretch: 1; }
+
+                        Text {
+                            text: root.elapsed + " / 0:15";
+                            font-size: 10.5px;
+                            color: Theme.text_muted;
                             vertical-alignment: center;
                         }
                     }
+
+                    Rectangle {
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.border;
+
+                        Rectangle {
+                            x: 0px;
+                            y: 0px;
+                            height: parent.height;
+                            width: parent.width * root.recording_countdown / 15;
+                            border-radius: 2px;
+                            background: Theme.error;
+                        }
+                    }
                 }
-            }
 
-            // Playback options
-            if !root.is_recording && root.has_recording: Rectangle {
-                horizontal-stretch: 1;
-                height: 58px;
-                background: #30363D;
-                border-color: #30363D;
-                border-width: 1px;
-                border-radius: 4px;
-
-                VerticalLayout {
+                if !root.is_recording && root.has_recording: VerticalLayout {
                     padding-left: 10px;
                     padding-right: 10px;
                     spacing: 4px;
@@ -150,7 +178,7 @@ export component VoiceTestCard inherits Rectangle {
                         Rectangle {
                             width: 20px;
                             height: 20px;
-                            background: root.is_playing_original ? #FF4444 : #0085FC;
+                            background: root.is_playing_original ? Theme.error : Theme.accent;
                             border-radius: 3px;
 
                             Text {
@@ -185,6 +213,7 @@ export component VoiceTestCard inherits Rectangle {
 
                         ClickableLink {
                             text: "original_output.wav";
+                            font_size: 11.5px;
                             clicked => {
                                 if (root.is_playing_original) {
                                     root.is_playing_original = false;
@@ -210,7 +239,7 @@ export component VoiceTestCard inherits Rectangle {
                         Rectangle {
                             width: 20px;
                             height: 20px;
-                            background: root.is_playing_filtered ? #FF4444 : #0085FC;
+                            background: root.is_playing_filtered ? Theme.error : Theme.accent;
                             border-radius: 3px;
 
                             Text {
@@ -244,6 +273,7 @@ export component VoiceTestCard inherits Rectangle {
 
                         ClickableLink {
                             text: "filtered_output.wav";
+                            font_size: 11.5px;
                             clicked => {
                                 if (root.is_playing_filtered) {
                                     root.is_playing_filtered = false;
@@ -260,23 +290,13 @@ export component VoiceTestCard inherits Rectangle {
                         }
                     }
                 }
-            }
 
-            // Empty placeholder when no recording yet and not recording
-            if !root.is_recording && !root.has_recording: Rectangle {
-                horizontal-stretch: 1;
-                height: 58px;
-                background: #30363D;
-                border-color: #30363D;
-                border-width: 1px;
-                border-radius: 4px;
-
-                Text {
+                if !root.is_recording && !root.has_recording: Text {
                     width: 100%;
                     height: 100%;
                     text: root.mic_enabled ? "Press Record to start" : "Enable mic to record";
-                    font-size: 12px;
-                    color: #8B949E;
+                    font-size: 11px;
+                    color: Theme.text_muted;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                 }
