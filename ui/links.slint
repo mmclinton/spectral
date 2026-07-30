@@ -6,6 +6,10 @@ export component ClickableLink {
     in property <bool> italic: false;
     callback clicked();
 
+    // Width hugs the label so the link never absorbs layout slack; height
+    // still fills the layout cell so the text stays vertically centered.
+    width: link-text.preferred-width;
+
     link-text := Text {
         text: root.text;
         font-size: root.font_size;
