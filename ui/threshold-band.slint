@@ -1,0 +1,97 @@
+// Full-width band for the app's main tuning control. The caption and scale
+// anchors render in every state — only opacity communicates inactive — so
+// the control's meaning never disappears with state.
+
+import { Slider } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+
+export component ThresholdBand inherits Rectangle {
+    in-out property <int> value;
+    in property <bool> mic_enabled;
+
+    callback threshold_changed(int);
+
+    height: 96px;
+    background: Theme.bg;
+
+    Rectangle {
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.border_subtle;
+    }
+
+    VerticalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        padding-top: 14px;
+        padding-bottom: 12px;
+        spacing: 2px;
+
+        HorizontalLayout {
+            spacing: 10px;
+            opacity: root.mic_enabled ? 1 : 0.55;
+
+            Text {
+                text: "Input Threshold";
+                font-size: 14px;
+                font-weight: 700;
+                color: white;
+                vertical-alignment: center;
+            }
+
+            Text {
+                text: "gate opens on voice confidence above threshold";
+                font-size: 11px;
+                color: Theme.text_muted;
+                vertical-alignment: center;
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+
+            Text {
+                text: "\{root.value}%";
+                font-size: 18px;
+                font-weight: 700;
+                color: root.mic_enabled ? Theme.accent_bright : Theme.text_muted;
+                vertical-alignment: center;
+            }
+        }
+
+        Slider {
+            opacity: root.mic_enabled ? 1 : 0.55;
+            value: root.value;
+            minimum: 0;
+            maximum: 100;
+            changed(value) => {
+                // Don't auto-apply - the GUI recomputes its local pending status
+                root.value = value;
+                root.threshold_changed(value);
+            }
+        }
+
+        HorizontalLayout {
+            Text {
+                text: "0% · denoise only";
+                font-size: 10px;
+                color: Theme.text_muted;
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+
+            Text {
+                text: "50% · default";
+                font-size: 10px;
+                color: Theme.text_muted;
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+
+            Text {
+                text: "100% · strict";
+                font-size: 10px;
+                color: Theme.text_muted;
+            }
+        }
+    }
+}

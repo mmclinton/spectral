@@ -1,8 +1,5 @@
 import {
-    Slider,
     Button,
-    LineEdit,
-    ListView,
     StandardListView,
     Switch,
 } from "std-widgets.slint";
@@ -10,6 +7,7 @@ import { SectionHeader } from "section-headers.slint";
 import { ClickableLink } from "links.slint";
 import { Theme } from "theme.slint";
 import { AppBar } from "app-bar.slint";
+import { ThresholdBand } from "threshold-band.slint";
 import { Footer } from "footer.slint";
 import { DeviceHelpPopup } from "device-help-popup.slint";
 import { HelpPopup } from "help-popup.slint";
@@ -108,68 +106,34 @@ export component MainWindow inherits Window {
         }
     }
 
+    ThresholdBand {
+        y: 76px;
+        width: parent.width;
+        value <=> root.slider_value;
+        mic_enabled: root.mic_enabled;
+        threshold_changed(value) => {
+            root.threshold_changed(value);
+        }
+    }
+
     // Transitional home for the not-yet-migrated canvas; replaced by the
     // card layout once every block has moved into components.
     Rectangle {
-        y: 76px;
+        y: 172px;
         width: parent.width;
-        height: parent.height - 76px - 58px;
+        height: parent.height - 172px - 58px;
 
         Rectangle {
             x: ((parent.width / 2) - (self.width / 2));
             y: 0px;
             width: 920px;
-            height: 580px;
+            height: 480px;
             background: #0D1117;
-
-            // Input Threshold label
-            Text {
-                x: ((parent.width / 2) - (self.width / 2));
-                y: 10px;
-                width: 175px;
-                height: 30px;
-                text: "Input Threshold";
-                font-size: 16px;
-                font-weight: 700;
-                color: white;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-
-            // Slider
-            slider := Slider {
-                x: ((parent.width / 2) - (self.width / 2));
-                y: 40px;
-                width: 535px;
-                height: 50px;
-                value: root.slider_value;
-                minimum: 0;
-                maximum: 100;
-                changed(value) => {
-                    root.slider_value = value;
-                    // Don't auto-apply - the GUI recomputes its local pending status
-                    root.threshold_changed(value)
-                }
-            }
-
-            // Threshold value
-            Text {
-                x: (((parent.width / 2) - (self.width / 2)) + (slider.width / 2) + (self.width / 2)); //cursed placement
-                y: 50px;
-                width: 60px;
-                height: 30px;
-                text: "\{slider_value}%";
-                font-size: 18px;
-                font-weight: 700;
-                color: white;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
 
             // Left section: Original Input Source
             Rectangle {
                 x: 50px;
-                y: 110px;
+                y: 10px;
                 width: 380px;
                 height: 460px;
                 background: #161B22;
@@ -257,7 +221,7 @@ export component MainWindow inherits Window {
             // Right section: Virtual Mic Name
             Rectangle {
                 x: 490px;
-                y: 110px;
+                y: 10px;
                 width: 380px;
                 height: 460px;
                 background: #161B22;
