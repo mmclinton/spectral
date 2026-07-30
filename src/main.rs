@@ -12,6 +12,7 @@ use spectral_lib::ipc::{DaemonClient, DaemonCommand, DaemonResponse, DaemonState
 use spectral_lib::state::{AudioDevice, MIC_NAME_MAX_LEN, Status};
 
 use slint::ModelRc;
+use slint::SharedString;
 use slint::StandardListViewItem;
 use slint::VecModel;
 use slint::Weak;
@@ -133,15 +134,67 @@ struct AppliedSettings {
     auto_level: std::cell::Cell<bool>,
 }
 
-/// Whether every staged control matches the applied settings. Reads the
-/// staged values from the UI properties, which Slint updates before the
-/// change callbacks fire.
-fn all_settings_match(ui: &MainWindow, devices: &[AudioDevice], applied: &AppliedSettings) -> bool {
-    device_matches_applied(ui.get_selected_input_index(), devices, &applied.device_id)
-        && ui.get_slider_value() == applied.threshold.get()
-        && ui.get_mic_name_text().as_str() == applied.mic_name.borrow().as_str()
-        && ui.get_rumble_filter() == applied.rumble_filter.get()
-        && ui.get_auto_level() == applied.auto_level.get()
+/// Snapshot of the staged control values, read from the UI properties, which
+/// Slint updates before the change callbacks fire.
+struct StagedSettings {
+    device_index: i32,
+    threshold: i32,
+    mic_name: String,
+    rumble_filter: bool,
+    auto_level: bool,
+}
+
+impl StagedSettings {
+    fn read_from(ui: &MainWindow) -> Self {
+        Self {
+            device_index: ui.get_selected_input_index(),
+            threshold: ui.get_slider_value(),
+            mic_name: ui.get_mic_name_text().to_string(),
+            rumble_filter: ui.get_rumble_filter(),
+            auto_level: ui.get_auto_level(),
+        }
+    }
+}
+
+/// Chip labels for every staged setting that diverges from the applied ones,
+/// in the footer's canonical order. Empty means everything matches.
+fn changed_settings(
+    staged: &StagedSettings,
+    devices: &[AudioDevice],
+    applied: &AppliedSettings,
+) -> Vec<&'static str> {
+    let mut changed = Vec::new();
+    if staged.threshold != applied.threshold.get() {
+        changed.push("threshold");
+    }
+    if staged.rumble_filter != applied.rumble_filter.get() {
+        changed.push("rumble filter");
+    }
+    if staged.mic_name != *applied.mic_name.borrow() {
+        changed.push("mic name");
+    }
+    if !device_matches_applied(staged.device_index, devices, &applied.device_id) {
+        changed.push("input source");
+    }
+    if staged.auto_level != applied.auto_level.get() {
+        changed.push("auto level");
+    }
+    changed
+}
+
+/// Recompute the staged-vs-applied diff, publish the footer's chip list, and
+/// report whether everything matches. The chips and the Pending drift both
+/// come from this one evaluation so they cannot disagree.
+fn refresh_unsaved_changes(
+    ui: &MainWindow,
+    devices: &[AudioDevice],
+    applied: &AppliedSettings,
+) -> bool {
+    let changes = changed_settings(&StagedSettings::read_from(ui), devices, applied);
+    let all_match = changes.is_empty();
+    let labels: Vec<SharedString> = changes.into_iter().map(SharedString::from).collect();
+    ui.set_unsaved_changes(ModelRc::new(Rc::new(VecModel::from(labels))));
+    all_match
 }
 
 /// The status to display given the daemon's truth and the local view: staged
@@ -288,6 +341,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     });
     let current_status = Rc::new(std::cell::Cell::new(daemon_state.status));
 
+    refresh_unsaved_changes(&ui, &filtered_devices.borrow(), &applied);
     update_ui_status(&ui_weak, daemon_state.status);
     if let Some(msg) = launch_error {
         show_error(&ui_weak, &msg);
@@ -304,7 +358,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                 && (idx as usize) < devices.len()
                 && let Some(ui) = ui_weak.upgrade()
             {
-                let all_match = all_settings_match(&ui, &devices, &applied);
+                let all_match = refresh_unsaved_changes(&ui, &devices, &applied);
                 apply_pending_transition(&current_status, &ui_weak, all_match);
             }
         }
@@ -317,7 +371,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let current_status = current_status.clone();
         move |_val| {
             if let Some(ui) = ui_weak.upgrade() {
-                let all_match = all_settings_match(&ui, &devices.borrow(), &applied);
+                let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
                 apply_pending_transition(&current_status, &ui_weak, all_match);
             }
         }
@@ -330,7 +384,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let current_status = current_status.clone();
         move |_checked| {
             if let Some(ui) = ui_weak.upgrade() {
-                let all_match = all_settings_match(&ui, &devices.borrow(), &applied);
+                let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
                 apply_pending_transition(&current_status, &ui_weak, all_match);
             }
         }
@@ -343,7 +397,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let current_status = current_status.clone();
         move |_checked| {
             if let Some(ui) = ui_weak.upgrade() {
-                let all_match = all_settings_match(&ui, &devices.borrow(), &applied);
+                let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
                 apply_pending_transition(&current_status, &ui_weak, all_match);
             }
         }
@@ -356,7 +410,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let current_status = current_status.clone();
         move |_new_name| {
             if let Some(ui) = ui_weak.upgrade() {
-                let all_match = all_settings_match(&ui, &devices.borrow(), &applied);
+                let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
                 apply_pending_transition(&current_status, &ui_weak, all_match);
             }
         }
@@ -371,7 +425,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         move |default_name| {
             if let Some(ui) = ui_weak.upgrade() {
                 *last_valid.borrow_mut() = default_name.to_string();
-                let all_match = all_settings_match(&ui, &devices.borrow(), &applied);
+                let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
                 apply_pending_transition(&current_status, &ui_weak, all_match);
             }
         }
@@ -415,6 +469,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                                     *applied.mic_name.borrow_mut() = mic_name;
                                     current_status.set(Status::Active);
                                     update_ui_status(&ui_weak, Status::Active);
+                                    refresh_unsaved_changes(&ui, &devices, &applied);
                                     clear_error(&ui_weak);
                                 }
                                 Ok(DaemonResponse::Error(e)) => {
@@ -651,6 +706,112 @@ fn run_app() -> Result<(), Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn device(id: u32, name: &str) -> AudioDevice {
+        AudioDevice {
+            id,
+            name: name.to_string(),
+            channels: 2,
+        }
+    }
+
+    fn staged(
+        device_index: i32,
+        threshold: i32,
+        mic_name: &str,
+        rumble_filter: bool,
+        auto_level: bool,
+    ) -> StagedSettings {
+        StagedSettings {
+            device_index,
+            threshold,
+            mic_name: mic_name.to_string(),
+            rumble_filter,
+            auto_level,
+        }
+    }
+
+    fn applied(
+        device_id: Option<u32>,
+        threshold: i32,
+        mic_name: &str,
+        rumble_filter: bool,
+        auto_level: bool,
+    ) -> AppliedSettings {
+        AppliedSettings {
+            device_id: std::cell::Cell::new(device_id),
+            threshold: std::cell::Cell::new(threshold),
+            mic_name: std::cell::RefCell::new(mic_name.to_string()),
+            rumble_filter: std::cell::Cell::new(rumble_filter),
+            auto_level: std::cell::Cell::new(auto_level),
+        }
+    }
+
+    #[test]
+    fn no_chips_when_staged_settings_match_applied() {
+        let devices = [device(10, "A")];
+        let applied = applied(Some(10), 50, "Spectral-Mic", false, false);
+        let staged = staged(0, 50, "Spectral-Mic", false, false);
+        assert!(changed_settings(&staged, &devices, &applied).is_empty());
+    }
+
+    #[test]
+    fn each_divergent_setting_yields_its_chip_label() {
+        let devices = [device(10, "A"), device(20, "B")];
+        let applied = applied(Some(10), 50, "Spectral-Mic", false, false);
+        let cases = [
+            (staged(0, 80, "Spectral-Mic", false, false), "threshold"),
+            (staged(0, 50, "Spectral-Mic", true, false), "rumble filter"),
+            (staged(0, 50, "Denoised", false, false), "mic name"),
+            (staged(1, 50, "Spectral-Mic", false, false), "input source"),
+            (staged(0, 50, "Spectral-Mic", false, true), "auto level"),
+        ];
+        for (staged, expected) in cases {
+            assert_eq!(changed_settings(&staged, &devices, &applied), [expected]);
+        }
+    }
+
+    #[test]
+    fn chip_labels_follow_the_footer_canonical_order() {
+        let devices = [device(10, "A"), device(20, "B")];
+        let applied = applied(Some(10), 50, "Spectral-Mic", false, false);
+        let staged = staged(1, 80, "Denoised", true, true);
+        assert_eq!(
+            changed_settings(&staged, &devices, &applied),
+            [
+                "threshold",
+                "rumble filter",
+                "mic name",
+                "input source",
+                "auto level"
+            ]
+        );
+    }
+
+    #[test]
+    fn the_input_source_chip_follows_the_device_id_not_the_index() {
+        // The list was reordered since Enable: the id at the staged index is
+        // what decides, not the position.
+        let reordered = [device(20, "B"), device(10, "A")];
+        let applied_some = applied(Some(10), 50, "Spectral-Mic", false, false);
+        let applied_none = applied(None, 50, "Spectral-Mic", false, false);
+        let cases = [
+            (1, &applied_some, false),
+            (0, &applied_some, true),
+            // Out-of-range means "no device": a chip only when one is applied.
+            (-1, &applied_none, false),
+            (-1, &applied_some, true),
+        ];
+        for (idx, applied, expect_chip) in cases {
+            let changes = changed_settings(
+                &staged(idx, 50, "Spectral-Mic", false, false),
+                &reordered,
+                applied,
+            );
+            let expected: &[&str] = if expect_chip { &["input source"] } else { &[] };
+            assert_eq!(changes, expected, "idx {idx}");
+        }
+    }
 
     #[test]
     fn refresh_carries_the_selection_by_device_id_not_by_index() {

@@ -40,6 +40,7 @@ export component MainWindow inherits Window {
     in-out property <bool> show_device_help_popup: false;
     in-out property <bool> show_help_popup: false;
     in-out property <bool> mic_name_invalid_flash: false;
+    in-out property <[string]> unsaved_changes;
 
     callback selected_input_index_changed(int);
     callback threshold_changed(int);
