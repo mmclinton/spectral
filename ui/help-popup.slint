@@ -1,0 +1,284 @@
+// Modal overlay documenting every control: getting started, the threshold
+// scale, mic naming, both voice-processing stages, and the voice test.
+// Fills the window; sized relative to it so it tracks resizes.
+
+import { ScrollView } from "std-widgets.slint";
+
+export component HelpPopup inherits Rectangle {
+    callback close_clicked();
+
+    background: #0D111799; // Semi-transparent dark overlay
+
+    // Block clicks from passing through
+    TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => {
+            root.close_clicked();
+        }
+    }
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 90%;
+        height: 90%;
+        background: #161B22;
+        border-color: #30363D;
+        border-width: 2px;
+        border-radius: 8px;
+
+        // Prevent clicks inside popup from closing it
+        TouchArea {
+            width: 100%;
+            height: 100%;
+        }
+
+        // Popup header
+        Rectangle {
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            height: 36px;
+            background: #264F78;
+            border-radius: 6px;
+
+            // Square off bottom corners
+            Rectangle {
+                x: 0px;
+                y: 18px;
+                width: parent.width;
+                height: 18px;
+                background: #264F78;
+            }
+
+            Text {
+                width: 100%;
+                height: 100%;
+                text: "Help";
+                font-size: 16px;
+                font-weight: 700;
+                color: white;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            // Close button
+            Rectangle {
+                x: parent.width - 32px;
+                y: 4px;
+                width: 28px;
+                height: 28px;
+                background: #FF444488;
+                border-radius: 4px;
+
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: "✕";
+                    font-size: 14px;
+                    font-weight: 700;
+                    color: white;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                TouchArea {
+                    width: 100%;
+                    height: 100%;
+                    clicked => {
+                        root.close_clicked();
+                    }
+                }
+            }
+        }
+
+        // Scrollable content area
+        ScrollView {
+            x: 20px;
+            y: 50px;
+            width: parent.width - 40px;
+            height: parent.height - 70px;
+
+            VerticalLayout {
+                spacing: 16px;
+                padding: 10px;
+
+                // Getting Started
+                Rectangle {
+                    height: 120px;
+                    background: #0D1117;
+                    border-color: #30363D;
+                    border-width: 1px;
+                    border-radius: 6px;
+
+                    VerticalLayout {
+                        padding: 15px;
+                        spacing: 8px;
+
+                        Text {
+                            text: "Getting Started";
+                            font-size: 16px;
+                            font-weight: 700;
+                            color: #0085FC;
+                        }
+
+                        Text {
+                            text: "1. Select your physical microphone from the \"Original Input Source\" list\n2. Click \"Enable\" — Spectral creates the virtual mic and makes it the default input\n3. Apps that pin a specific device: select the virtual mic by the name set below";
+                            font-size: 13px;
+                            color: #C9D1D9;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                // Input Threshold
+                Rectangle {
+                    height: 250px;
+                    background: #0D1117;
+                    border-color: #30363D;
+                    border-width: 1px;
+                    border-radius: 6px;
+
+                    VerticalLayout {
+                        padding: 15px;
+                        spacing: 8px;
+
+                        Text {
+                            text: "Input Threshold";
+                            font-size: 16px;
+                            font-weight: 700;
+                            color: #0085FC;
+                        }
+
+                        Text {
+                            text: "Your microphone audio is always denoised. For every 10 ms frame, the denoiser also reports its confidence that the frame contains voice; the slider sets how much confidence the gate demands before it opens. The gate looks 20 ms ahead so word onsets stay intact, holds for 200 ms after you stop so natural pauses survive, then fades to a quiet −20 dB floor instead of muting. At 0% the gate is off — denoising only. Use \"Apply\" to save changes while the mic is active.";
+                            font-size: 13px;
+                            color: #C9D1D9;
+                            wrap: word-wrap;
+                        }
+
+                        Text {
+                            text: "0%          25%          50%          75%         100%\n●────────────┼────────────●────────────┼────────────●\noff                    default                 strict\n(denoise only) ← opens easily · demands clear voice →";
+                            font-size: 13px;
+                            color: #C9D1D9;
+                            wrap: no-wrap;
+                        }
+                    }
+                }
+
+                // Virtual Mic Name
+                Rectangle {
+                    height: 85px;
+                    background: #0D1117;
+                    border-color: #30363D;
+                    border-width: 1px;
+                    border-radius: 6px;
+
+                    VerticalLayout {
+                        padding: 15px;
+                        spacing: 8px;
+
+                        Text {
+                            text: "Virtual Mic Name";
+                            font-size: 16px;
+                            font-weight: 700;
+                            color: #0085FC;
+                        }
+
+                        Text {
+                            text: "Rename and Reset only stage a new name — nothing changes until you click Enable (or Apply while active), which recreates the virtual mic under the staged name.";
+                            font-size: 13px;
+                            color: #C9D1D9;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                // Rumble Filter
+                Rectangle {
+                    height: 190px;
+                    background: #0D1117;
+                    border-color: #30363D;
+                    border-width: 1px;
+                    border-radius: 6px;
+
+                    VerticalLayout {
+                        padding: 15px;
+                        spacing: 8px;
+
+                        Text {
+                            text: "Rumble Filter";
+                            font-size: 16px;
+                            font-weight: 700;
+                            color: #0085FC;
+                        }
+
+                        Text {
+                            text: "A rumble filter removes low-frequency energy that sits below the human voice — desk thumps, handling noise, HVAC and traffic rumble. Spectral applies a 2nd-order Butterworth high-pass at 90 Hz ahead of the denoiser, so RNNoise analyzes an already-cleaner frame. These are the conventional values: 90 Hz sits below typical voice fundamentals yet above the mains-hum harmonic region, and the Butterworth alignment is maximally flat, so deep rumble falls away at 12 dB per octave while voices keep their body. Consider enabling it if your mic picks up desk vibration, footsteps, or a persistent low hum.";
+                            font-size: 13px;
+                            color: #C9D1D9;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                // Auto Level
+                Rectangle {
+                    height: 205px;
+                    background: #0D1117;
+                    border-color: #30363D;
+                    border-width: 1px;
+                    border-radius: 6px;
+
+                    VerticalLayout {
+                        padding: 15px;
+                        spacing: 8px;
+
+                        Text {
+                            text: "Auto Level";
+                            font-size: 16px;
+                            font-weight: 700;
+                            color: #0085FC;
+                        }
+
+                        Text {
+                            text: "Auto leveling rides your microphone gain so your voice arrives at a consistent loudness whether you lean in or sit back. Spectral tracks speech loudness toward −18 dBFS — the common speech mix level — cutting fast at 12 dB/s and boosting slowly at 3 dB/s within a −12/+18 dB window, with an instant-attack peak limiter at −1 dBFS as the safety ceiling. These follow AGC convention: fast cuts tame sudden loudness in under a second; slow boosts avoid pumping up room noise during quiet passages. Adaptation is frozen while you are not speaking, so silence is never amplified. Consider enabling it if your distance to the mic varies or apps say you are too quiet.";
+                            font-size: 13px;
+                            color: #C9D1D9;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                // Voice Test
+                Rectangle {
+                    height: 100px;
+                    background: #0D1117;
+                    border-color: #30363D;
+                    border-width: 1px;
+                    border-radius: 6px;
+
+                    VerticalLayout {
+                        padding: 15px;
+                        spacing: 8px;
+
+                        Text {
+                            text: "Voice Test";
+                            font-size: 16px;
+                            font-weight: 700;
+                            color: #0085FC;
+                        }
+
+                        Text {
+                            text: "Record a short sample (up to 15 seconds) to compare the original and filtered audio and fine-tune the threshold. Recordings are saved under ~/.local/state/spectral/recordings.";
+                            font-size: 13px;
+                            color: #C9D1D9;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

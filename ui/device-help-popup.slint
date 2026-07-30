@@ -1,0 +1,279 @@
+// Modal overlay walking through why a microphone may be missing from the
+// device list. Fills the window; sized relative to it so it tracks resizes.
+
+export component DeviceHelpPopup inherits Rectangle {
+    callback close_clicked();
+
+    background: #0D111799; // Semi-transparent dark overlay
+
+    // Block clicks from passing through
+    TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => {
+            root.close_clicked();
+        }
+    }
+
+    popup-container := Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 90%;
+        height: 90%;
+        background: #161B22;
+        border-color: #30363D;
+        border-width: 2px;
+        border-radius: 8px;
+
+        // Prevent clicks inside popup from closing it
+        TouchArea {
+            width: 100%;
+            height: 100%;
+        }
+
+        // Popup header
+        Rectangle {
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            height: 36px;
+            background: #264F78;
+            border-radius: 6px;
+
+            // Square off bottom corners
+            Rectangle {
+                x: 0px;
+                y: 18px;
+                width: parent.width;
+                height: 18px;
+                background: #264F78;
+            }
+
+            Text {
+                width: 100%;
+                height: 100%;
+                text: "Device Troubleshooting";
+                font-size: 16px;
+                font-weight: 700;
+                color: white;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            // Close button
+            Rectangle {
+                x: parent.width - 32px;
+                y: 4px;
+                width: 28px;
+                height: 28px;
+                background: #FF444488;
+                border-radius: 4px;
+
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: "✕";
+                    font-size: 14px;
+                    font-weight: 700;
+                    color: white;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                TouchArea {
+                    width: 100%;
+                    height: 100%;
+                    clicked => {
+                        root.close_clicked();
+                    }
+                }
+            }
+        }
+
+        // Content area
+        Rectangle {
+            x: 20px;
+            y: 50px;
+            width: parent.width - 40px;
+            height: parent.height - 70px;
+            background: transparent;
+
+            VerticalLayout {
+                spacing: 20px;
+                padding: 10px;
+
+                // Intro text
+                Text {
+                    text: "If your microphone isn't appearing in the device list, here are some common causes and solutions:";
+                    font-size: 14px;
+                    color: #8B949E;
+                    wrap: word-wrap;
+                    horizontal-alignment: left;
+                }
+
+                // Scenario 1: PipeWire or WirePlumber not running
+                Rectangle {
+                    height: 90px;
+                    background: #0D1117;
+                    border-color: #30363D;
+                    border-width: 1px;
+                    border-radius: 6px;
+
+                    VerticalLayout {
+                        padding: 15px;
+                        spacing: 8px;
+
+                        Text {
+                            text: "1. PipeWire or WirePlumber Not Running";
+                            font-size: 16px;
+                            font-weight: 700;
+                            color: #0085FC;
+                        }
+
+                        Text {
+                            text: "Spectral needs PipeWire and its session manager. Check both: `systemctl --user status pipewire wireplumber`";
+                            font-size: 13px;
+                            color: #C9D1D9;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                // Scenario 2: Device not connected
+                Rectangle {
+                    height: 90px;
+                    background: #0D1117;
+                    border-color: #30363D;
+                    border-width: 1px;
+                    border-radius: 6px;
+
+                    VerticalLayout {
+                        padding: 15px;
+                        spacing: 8px;
+
+                        Text {
+                            text: "2. Device Not Connected or Powered Off";
+                            font-size: 16px;
+                            font-weight: 700;
+                            color: #0085FC;
+                        }
+
+                        Text {
+                            text: "Check the cable, pairing, and power, then run `wpctl status` — if the device isn't listed under Sources there, PipeWire can't see it.";
+                            font-size: 13px;
+                            color: #C9D1D9;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                // Scenario 3: Bluetooth profile
+                Rectangle {
+                    height: 90px;
+                    background: #0D1117;
+                    border-color: #30363D;
+                    border-width: 1px;
+                    border-radius: 6px;
+
+                    VerticalLayout {
+                        padding: 15px;
+                        spacing: 8px;
+
+                        Text {
+                            text: "3. Bluetooth Headset in the Wrong Profile";
+                            font-size: 16px;
+                            font-weight: 700;
+                            color: #0085FC;
+                        }
+
+                        Text {
+                            text: "Bluetooth mics only capture in the HSP/HFP headset profile; A2DP is playback-only. Switch the profile in your sound settings or `pavucontrol`.";
+                            font-size: 13px;
+                            color: #C9D1D9;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                // Scenario 4: Device disabled or muted
+                Rectangle {
+                    height: 90px;
+                    background: #0D1117;
+                    border-color: #30363D;
+                    border-width: 1px;
+                    border-radius: 6px;
+
+                    VerticalLayout {
+                        padding: 15px;
+                        spacing: 8px;
+
+                        Text {
+                            text: "4. Device Disabled or Muted";
+                            font-size: 16px;
+                            font-weight: 700;
+                            color: #0085FC;
+                        }
+
+                        Text {
+                            text: "Check your system's sound settings or `pavucontrol`: the device may be muted, disabled, or its profile set to Off.";
+                            font-size: 13px;
+                            color: #C9D1D9;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                // Scenario 5: Stale devices after a PipeWire restart
+                Rectangle {
+                    height: 90px;
+                    background: #0D1117;
+                    border-color: #30363D;
+                    border-width: 1px;
+                    border-radius: 6px;
+
+                    VerticalLayout {
+                        padding: 15px;
+                        spacing: 8px;
+
+                        Text {
+                            text: "5. Stale Devices After a PipeWire Restart";
+                            font-size: 16px;
+                            font-weight: 700;
+                            color: #0085FC;
+                        }
+
+                        Text {
+                            text: "After a PipeWire restart the list may point at devices that no longer exist. Click Refresh and re-select your device before enabling.";
+                            font-size: 13px;
+                            color: #C9D1D9;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                // Tip at the bottom
+                Rectangle {
+                    height: 50px;
+                    background: #0D1117;
+                    border-color: #58A6FF;
+                    border-width: 1px;
+                    border-radius: 6px;
+
+                    HorizontalLayout {
+                        padding: 12px;
+                        spacing: 8px;
+
+                        Text {
+                            text: "Tip: After addressing any of these issues, click the Refresh button to rescan for devices.";
+                            font-size: 13px;
+                            font-italic: true;
+                            color: #58A6FF;
+                            wrap: word-wrap;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
