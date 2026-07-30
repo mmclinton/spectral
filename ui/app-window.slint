@@ -17,8 +17,11 @@ export component MainWindow inherits Window {
     // which Slint reads as "no preference".
     in property <string> monospace_font_family;
     default-font-family: root.monospace_font_family;
-    min-width: 920px;
-    min-height: 760px;
+    // The layout's arithmetic floor is ~676x659 (fixed chrome plus the
+    // right-column card minimums); the margin absorbs real font metrics,
+    // which vary with the user-resolved monospace family.
+    min-width: 720px;
+    min-height: 680px;
     background: Theme.bg;
 
     property <string> default_mic_name: "Spectral-Mic";
