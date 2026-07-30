@@ -48,10 +48,11 @@ fn hex_to_color(hex: &str) -> slint::Color {
 
 fn update_ui_status(ui_weak: &Weak<MainWindow>, status: Status) {
     if let Some(ui) = ui_weak.upgrade() {
+        // Pending is GUI-local (staged edits over a daemon-Active mic), so
+        // the pill keeps saying Active; the footer chips carry the drift.
         let (color_str, status_text, mic_enabled) = match status {
-            Status::Pending => ("#FFFF00", "Status: Pending Changes", true),
-            Status::Active => ("#3FB950", "Status: Active", true),
-            Status::Inactive => ("#FF0000", "Status: Inactive", false),
+            Status::Active | Status::Pending => ("#2EA043", "Active", true),
+            Status::Inactive => ("#8B949E", "Inactive", false),
         };
         ui.set_status_color(hex_to_color(color_str));
         ui.set_status_text(status_text.into());
