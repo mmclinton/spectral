@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Clicking Refresh now spins the glyph briefly, acknowledging the rescan
+  even when the device list comes back unchanged.
+
 ### Changed
 - The control panel was redesigned around a resizable layout: an app bar
   (wordmark, status pill, links), a full-width threshold band with the
@@ -21,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Device rows are richer than plain text lines, an empty list shows a
   real empty state with a Retry scan button, and the voice-test controls
   keep fixed geometry so nothing moves mid-recording.
+- Every control shares the app accent: the buttons, the processing
+  toggles, and the threshold slider are drawn by the app itself rather
+  than the stock widget set, whose light-blue accent is hardcoded
+  upstream. The slider's track now also runs flush with its scale
+  anchors instead of starting half a thumb inside them.
+- The minimum window size dropped from 920x800 to 720x680, so the
+  window fits 768p displays.
 
 ### Fixed
 - Apply and Disable are disabled during a voice-test recording. Both used
@@ -30,8 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   button's label: an imperative assignment in the old Disable handler
   destroyed the label's binding the first time it ran.
 - The modal overlays now dim the whole window rather than just the
-  central canvas, and they track the window size instead of assuming
-  920x760.
+  central canvas, they track the window size instead of assuming
+  920x760, and the device-troubleshooting cards scroll instead of
+  clipping their final tip at small sizes.
 
 ## [0.7.0] - 2026-07-28
 
