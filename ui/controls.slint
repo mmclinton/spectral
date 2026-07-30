@@ -69,3 +69,74 @@ export component AppButton {
         }
     }
 }
+
+export component AppSwitch {
+    in property <bool> enabled: true;
+    in-out property <bool> checked;
+
+    callback toggled();
+
+    width: 40px;
+    height: 20px;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    forward-focus: focus_scope;
+
+    accessible-role: checkbox;
+    accessible-checkable: true;
+    accessible-checked: root.checked;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        root.toggle();
+    }
+
+    function toggle() {
+        if (root.enabled) {
+            root.checked = !root.checked;
+            root.toggled();
+        }
+    }
+
+    focus_scope := FocusScope {
+        enabled: root.enabled;
+
+        key-pressed(event) => {
+            if (event.text == " " || event.text == Key.Return) {
+                root.toggle();
+                return accept;
+            }
+            reject
+        }
+
+        rail := Rectangle {
+            border-radius: self.height / 2;
+            border-width: 1px;
+            background: !root.enabled ? Theme.border_subtle
+                : root.checked ? (touch.has-hover ? Theme.accent.brighter(0.15) : Theme.accent)
+                : (touch.has-hover ? Theme.border_subtle.brighter(0.6) : Theme.inset);
+            border-color: focus_scope.has-focus ? Theme.accent_bright
+                : root.checked || !root.enabled ? transparent
+                : Theme.border;
+
+            thumb := Rectangle {
+                width: 14px;
+                height: 14px;
+                y: (parent.height - self.height) / 2;
+                x: root.checked ? parent.width - self.width - 3px : 3px;
+                border-radius: self.width / 2;
+                background: !root.enabled ? Theme.text_disabled
+                    : root.checked ? white
+                    : Theme.text_muted;
+                animate x { duration: 150ms; easing: ease-in-out; }
+            }
+
+            touch := TouchArea {
+                enabled: root.enabled;
+                clicked => {
+                    focus_scope.focus();
+                    root.toggle();
+                }
+            }
+        }
+    }
+}

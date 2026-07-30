@@ -1,7 +1,7 @@
 // Card for the two DSP toggles, each row carrying a one-line spec summary
 // so the decision can be made without opening Help.
 
-import { Switch } from "std-widgets.slint";
+import { AppSwitch } from "controls.slint";
 import { Theme } from "theme.slint";
 
 component ToggleRow inherits Rectangle {
@@ -26,7 +26,7 @@ component ToggleRow inherits Rectangle {
         VerticalLayout {
             alignment: center;
 
-            Switch {
+            AppSwitch {
                 checked <=> root.checked;
                 toggled => {
                     root.toggled(self.checked);
