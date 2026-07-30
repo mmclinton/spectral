@@ -1,6 +1,7 @@
 // Modal overlay walking through why a microphone may be missing from the
 // device list. Fills the window; sized relative to it so it tracks resizes.
 
+import { ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 
 export component DeviceHelpPopup inherits Rectangle {
@@ -89,13 +90,12 @@ export component DeviceHelpPopup inherits Rectangle {
             }
         }
 
-        // Content area
-        Rectangle {
+        // Scrollable content area
+        ScrollView {
             x: 20px;
             y: 50px;
             width: parent.width - 40px;
             height: parent.height - 70px;
-            background: transparent;
 
             VerticalLayout {
                 spacing: 20px;
