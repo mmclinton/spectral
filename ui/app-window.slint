@@ -8,6 +8,9 @@ import {
 } from "std-widgets.slint";
 import { SectionHeader } from "section-headers.slint";
 import { ClickableLink } from "links.slint";
+import { Theme } from "theme.slint";
+import { AppBar } from "app-bar.slint";
+import { Footer } from "footer.slint";
 import { DeviceHelpPopup } from "device-help-popup.slint";
 import { HelpPopup } from "help-popup.slint";
 
@@ -71,85 +74,58 @@ export component MainWindow inherits Window {
         }
     }
 
-    Rectangle {
+    AppBar {
+        y: 0px;
         width: parent.width;
-        height: parent.height;
+        status_text: root.status_text;
+        status_color: root.status_color;
+        mic_enabled: root.mic_enabled;
+        open_url(url) => {
+            root.open_url(url);
+        }
+        help_clicked => {
+            root.show_help_popup = true;
+        }
+    }
+
+    // Reserved error strip: always present so an error appearing or
+    // clearing never shifts the content below it.
+    Rectangle {
+        y: 52px;
+        width: parent.width;
+        height: 24px;
+
+        Text {
+            x: 20px;
+            width: parent.width - 40px;
+            height: 100%;
+            text: root.error_text;
+            font-size: 12px;
+            color: Theme.error;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+
+    // Transitional home for the not-yet-migrated canvas; replaced by the
+    // card layout once every block has moved into components.
+    Rectangle {
+        y: 76px;
+        width: parent.width;
+        height: parent.height - 76px - 58px;
 
         Rectangle {
             x: ((parent.width / 2) - (self.width / 2));
             y: 0px;
             width: 920px;
-            height: 760px;
+            height: 580px;
             background: #0D1117;
-
-            ClickableLink {
-                x: 50px;
-                y: 20px;
-                text: "Source Code";
-                clicked => {
-                    root.open_url("https://codeberg.org/mmc/spectral");
-                }
-            }
-
-            ClickableLink {
-                x: 50px;
-                y: 40px;
-                text: "License";
-                clicked => {
-                    root.open_url("https://codeberg.org/mmc/spectral/src/commit/HEAD/LICENSE");
-                }
-            }
-
-            ClickableLink {
-                x: 50px;
-                y: 60px;
-                text: "Help";
-                clicked => {
-                    root.show_help_popup = true;
-                }
-            }
-
-            // Status bar
-            Rectangle {
-                x: ((parent.width / 2) - (self.width / 2));
-                y: 20px;
-                width: 330px;
-                height: 40px;
-                background: #161B22;
-                border-color: root.status_color;
-                border-width: 1px;
-                border-radius: 4px;
-
-                Text {
-                    width: parent.width;
-                    height: 30px;
-                    text: root.status_text;
-                    font-size: 18px;
-                    font-weight: 700;
-                    color: white;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-            }
-
-            // Error line under the status bar
-            if root.error_text != "": Text {
-                x: ((parent.width / 2) - (self.width / 2));
-                y: 64px;
-                width: 600px;
-                height: 20px;
-                text: root.error_text;
-                font-size: 12px;
-                color: #FF4444;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-                overflow: elide;
-            }
 
             // Input Threshold label
             Text {
                 x: ((parent.width / 2) - (self.width / 2));
-                y: 110px;
+                y: 10px;
                 width: 175px;
                 height: 30px;
                 text: "Input Threshold";
@@ -163,7 +139,7 @@ export component MainWindow inherits Window {
             // Slider
             slider := Slider {
                 x: ((parent.width / 2) - (self.width / 2));
-                y: 140px;
+                y: 40px;
                 width: 535px;
                 height: 50px;
                 value: root.slider_value;
@@ -179,7 +155,7 @@ export component MainWindow inherits Window {
             // Threshold value
             Text {
                 x: (((parent.width / 2) - (self.width / 2)) + (slider.width / 2) + (self.width / 2)); //cursed placement
-                y: 150px;
+                y: 50px;
                 width: 60px;
                 height: 30px;
                 text: "\{slider_value}%";
@@ -193,7 +169,7 @@ export component MainWindow inherits Window {
             // Left section: Original Input Source
             Rectangle {
                 x: 50px;
-                y: 210px;
+                y: 110px;
                 width: 380px;
                 height: 460px;
                 background: #161B22;
@@ -281,7 +257,7 @@ export component MainWindow inherits Window {
             // Right section: Virtual Mic Name
             Rectangle {
                 x: 490px;
-                y: 210px;
+                y: 110px;
                 width: 380px;
                 height: 460px;
                 background: #161B22;
@@ -677,32 +653,20 @@ export component MainWindow inherits Window {
                 }
             }
 
-            // Disable button
-            Button {
-                x: 250px;
-                y: 700px;
-                width: 140px;
-                height: 40px;
-                text: "Disable";
-                clicked => {
-                    if (root.mic_enabled) {
-                        apply.text = "Enable";
-                        root.disable_clicked();
-                    }
-                }
-            }
+        }
+    }
 
-            // Apply button
-            apply := Button {
-                x: 530px;
-                y: 700px;
-                width: 140px;
-                height: 40px;
-                text: root.mic_enabled ? "Apply" : "Enable";
-                clicked => {
-                    root.enable_clicked();
-                }
-            }
+    Footer {
+        y: parent.height - self.height;
+        width: parent.width;
+        mic_enabled: root.mic_enabled;
+        is_recording: root.is_recording;
+        unsaved_changes: root.unsaved_changes;
+        enable_clicked => {
+            root.enable_clicked();
+        }
+        disable_clicked => {
+            root.disable_clicked();
         }
     }
 

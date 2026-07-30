@@ -1,0 +1,111 @@
+// The window's top chrome: wordmark, status pill, and external links.
+
+import { Theme } from "theme.slint";
+import { ClickableLink } from "links.slint";
+
+component StatusPill inherits Rectangle {
+    in property <string> label;
+    in property <color> pill_color;
+    in property <bool> enabled_look;
+
+    height: 26px;
+    background: Theme.inset;
+    border-color: root.pill_color;
+    border-width: 1px;
+    border-radius: self.height / 2;
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 8px;
+
+        VerticalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: root.pill_color;
+            }
+        }
+
+        Text {
+            text: root.label;
+            font-size: 12px;
+            font-weight: 700;
+            color: root.enabled_look ? white : Theme.text_muted;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component AppBar inherits Rectangle {
+    in property <string> status_text;
+    in property <color> status_color;
+    in property <bool> mic_enabled;
+
+    callback open_url(string);
+    callback help_clicked();
+
+    height: 52px;
+    background: Theme.panel;
+
+    Rectangle {
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.border;
+    }
+
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 16px;
+
+        Text {
+            text: "SPECTRAL";
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            color: white;
+            vertical-alignment: center;
+        }
+
+        VerticalLayout {
+            alignment: center;
+
+            StatusPill {
+                label: root.status_text;
+                pill_color: root.status_color;
+                enabled_look: root.mic_enabled;
+            }
+        }
+
+        Rectangle { horizontal-stretch: 1; }
+
+        ClickableLink {
+            text: "Source Code";
+            font_size: 12px;
+            clicked => {
+                root.open_url("https://codeberg.org/mmc/spectral");
+            }
+        }
+
+        ClickableLink {
+            text: "License";
+            font_size: 12px;
+            clicked => {
+                root.open_url("https://codeberg.org/mmc/spectral/src/commit/HEAD/LICENSE");
+            }
+        }
+
+        ClickableLink {
+            text: "Help";
+            font_size: 12px;
+            clicked => {
+                root.help_clicked();
+            }
+        }
+    }
+}

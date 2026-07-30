@@ -1,0 +1,130 @@
+// The window's bottom chrome: unsaved-changes display and the mic actions.
+// The left slot is a fixed-height region whose content swaps by state, so
+// chips or hints appearing never resize the footer.
+
+import { Button } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+
+export component Footer inherits Rectangle {
+    in property <bool> mic_enabled;
+    in property <bool> is_recording;
+    in property <[string]> unsaved_changes;
+
+    callback enable_clicked();
+    callback disable_clicked();
+
+    height: 58px;
+    background: Theme.panel;
+
+    Rectangle {
+        y: 0px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.border;
+    }
+
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        padding-top: 12px;
+        padding-bottom: 12px;
+        spacing: 12px;
+
+        Rectangle {
+            horizontal-stretch: 1;
+            height: 34px;
+
+            if !root.mic_enabled: Text {
+                width: 100%;
+                height: 100%;
+                text: "Select a source, then enable the virtual mic";
+                font-size: 11px;
+                color: Theme.text_muted;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+
+            if root.mic_enabled && root.unsaved_changes.length == 0: Text {
+                width: 100%;
+                height: 100%;
+                text: "No unsaved changes";
+                font-size: 11px;
+                color: Theme.text_muted;
+                vertical-alignment: center;
+            }
+
+            if root.mic_enabled && root.unsaved_changes.length > 0: HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+
+                VerticalLayout {
+                    alignment: center;
+
+                    Rectangle {
+                        width: 7px;
+                        height: 7px;
+                        border-radius: 3.5px;
+                        background: Theme.warn;
+                    }
+                }
+
+                Text {
+                    text: root.unsaved_changes.length == 1
+                        ? "1 unsaved change"
+                        : "\{root.unsaved_changes.length} unsaved changes";
+                    font-size: 11px;
+                    font-weight: 700;
+                    color: Theme.warn;
+                    vertical-alignment: center;
+                }
+
+                if root.unsaved_changes.length <= 3: HorizontalLayout {
+                    spacing: 6px;
+
+                    for label in root.unsaved_changes: VerticalLayout {
+                        alignment: center;
+
+                        Rectangle {
+                            height: 20px;
+                            background: Theme.warn_bg;
+                            border-color: Theme.warn_border;
+                            border-width: 1px;
+                            border-radius: self.height / 2;
+
+                            HorizontalLayout {
+                                padding-left: 8px;
+                                padding-right: 8px;
+
+                                Text {
+                                    text: label;
+                                    font-size: 10.5px;
+                                    color: Theme.warn;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.mic_enabled: Button {
+            min-width: 110px;
+            text: "Disable";
+            enabled: !root.is_recording;
+            clicked => {
+                root.disable_clicked();
+            }
+        }
+
+        Button {
+            min-width: 110px;
+            text: root.mic_enabled ? "Apply" : "Enable";
+            primary: true;
+            enabled: !root.is_recording;
+            clicked => {
+                root.enable_clicked();
+            }
+        }
+    }
+}
