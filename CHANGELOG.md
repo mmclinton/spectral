@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- The control panel was redesigned around a resizable layout: an app bar
+  (wordmark, status pill, links), a full-width threshold band with the
+  gate's meaning and scale anchors inline, two columns of cards that
+  stretch with the window, and a footer holding the actions. The old
+  fixed-size canvas and its floating controls are gone.
+- Unsaved changes are now visible: the footer names each staged setting
+  that differs from what the daemon is running (threshold, rumble filter,
+  mic name, input source, auto level) instead of silently flipping a
+  yellow "Pending Changes" status. The status pill itself only answers
+  whether the virtual mic is running — Active green, Inactive gray.
+- Device rows are richer than plain text lines, an empty list shows a
+  real empty state with a Retry scan button, and the voice-test controls
+  keep fixed geometry so nothing moves mid-recording.
+
+### Fixed
+- Apply and Disable are disabled during a voice-test recording. Both used
+  to tear down the mic node while the recorder was still capturing
+  through it, which silently truncated or stalled the recording.
+- Disabling the mic no longer permanently freezes the primary action
+  button's label: an imperative assignment in the old Disable handler
+  destroyed the label's binding the first time it ran.
+- The modal overlays now dim the whole window rather than just the
+  central canvas, and they track the window size instead of assuming
+  920x760.
+
 ## [0.7.0] - 2026-07-28
 
 ### Added
