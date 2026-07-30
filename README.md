@@ -66,7 +66,11 @@ Xiph.Org.
 
 - Linux with **PipeWire** and its session manager, **WirePlumber**
 - Wayland or X11
-- x86_64
+- x86_64 or aarch64
+
+Confirmed working on x86_64 NixOS and on aarch64 Asahi Linux (Ubuntu on an
+M1 MacBook Pro). Other PipeWire distributions on these architectures should
+work but have not been validated.
 
 ## Installation
 
@@ -258,7 +262,6 @@ protocol — see [ARCHITECTURE.md](ARCHITECTURE.md).
 ## Known limitations
 
 - Disabling Spectral does not restore your previous default input. When the virtual mic disappears, WirePlumber picks a fallback, which may not be the microphone you started with — re-select it in your sound settings if it matters.
-- The window's minimum size is 920×800, which does not fit 768p displays. A responsive-layout fix is planned.
 - Inputs with more than two channels are untested. Bluetooth microphones work — validated with AirPods Pro 2 — but no other Bluetooth device or codec has been tried.
 - Voice-test recordings are not restored in the UI after relaunching the GUI.
 
