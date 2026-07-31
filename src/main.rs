@@ -702,6 +702,11 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                     Ok(_) => show_error(&ui_weak, "Unexpected response from daemon"),
                     Err(_) => {
                         show_error(&ui_weak, DAEMON_UNREACHABLE);
+                        // An unreachable daemon is not playing anything; a
+                        // stale true here would also pin the poll timer at
+                        // its 250 ms playback interval.
+                        ui.set_is_playing_original(false);
+                        ui.set_is_playing_filtered(false);
                     }
                 },
                 Err(_) => {
@@ -710,6 +715,8 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                     // daemon somehow returns on its own the message lingers —
                     // accepted, nothing auto-restarts it.
                     show_error(&ui_weak, DAEMON_UNREACHABLE);
+                    ui.set_is_playing_original(false);
+                    ui.set_is_playing_filtered(false);
                     if current_status.get() != Status::Inactive {
                         current_status.set(Status::Inactive);
                         update_ui_status(&ui_weak, Status::Inactive);
