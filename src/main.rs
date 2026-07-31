@@ -52,23 +52,15 @@ fn device_list_model(devices: &[AudioDevice]) -> ModelRc<InputDevice> {
     ModelRc::new(Rc::new(VecModel::from(rows)))
 }
 
-fn hex_to_color(hex: &str) -> slint::Color {
-    let hex = hex.trim_start_matches('#');
-    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
-    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
-    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
-    slint::Color::from_rgb_u8(r, g, b)
-}
-
 fn update_ui_status(ui_weak: &Weak<MainWindow>, status: Status) {
     if let Some(ui) = ui_weak.upgrade() {
         // Pending is GUI-local (staged edits over a daemon-Active mic), so
         // the pill keeps saying Active; the footer chips carry the drift.
-        let (color_str, status_text, mic_enabled) = match status {
-            Status::Active | Status::Pending => ("#2EA043", "Active", true),
-            Status::Inactive => ("#8B949E", "Inactive", false),
+        // The pill color follows mic_enabled in the .slint layer.
+        let (status_text, mic_enabled) = match status {
+            Status::Active | Status::Pending => ("Active", true),
+            Status::Inactive => ("Inactive", false),
         };
-        ui.set_status_color(hex_to_color(color_str));
         ui.set_status_text(status_text.into());
         ui.set_mic_enabled(mic_enabled);
     }
