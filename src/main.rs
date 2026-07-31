@@ -524,7 +524,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                                     clear_error(&ui_weak);
                                 }
                                 Ok(DaemonResponse::Error(e)) => {
-                                    eprintln!("Failed to enable: {}", e);
+                                    eprintln!("Failed to enable: {e}");
                                     current_status.set(Status::Inactive);
                                     update_ui_status(&ui_weak, Status::Inactive);
                                     show_error(&ui_weak, &e);
@@ -535,7 +535,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                                     show_error(&ui_weak, "Unexpected response from daemon");
                                 }
                                 Err(e) => {
-                                    eprintln!("Failed to enable: {}", e);
+                                    eprintln!("Failed to enable: {e}");
                                     current_status.set(Status::Inactive);
                                     update_ui_status(&ui_weak, Status::Inactive);
                                     show_error(&ui_weak, DAEMON_UNREACHABLE);
@@ -543,7 +543,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                             }
                         }
                         Err(e) => {
-                            eprintln!("Failed to connect to daemon: {}", e);
+                            eprintln!("Failed to connect to daemon: {e}");
                             show_error(&ui_weak, DAEMON_UNREACHABLE);
                         }
                     }
@@ -571,7 +571,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                     Ok(DaemonResponse::Error(e)) => {
                         // The daemon stops the pipeline even when source
                         // teardown fails, so Inactive is still the truth.
-                        eprintln!("Failed to disable cleanly: {}", e);
+                        eprintln!("Failed to disable cleanly: {e}");
                         current_status.set(Status::Inactive);
                         update_ui_status(&ui_weak, Status::Inactive);
                         show_error(&ui_weak, &e);
@@ -580,12 +580,12 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         show_error(&ui_weak, "Unexpected response from daemon");
                     }
                     Err(e) => {
-                        eprintln!("Failed to disable: {}", e);
+                        eprintln!("Failed to disable: {e}");
                         show_error(&ui_weak, DAEMON_UNREACHABLE);
                     }
                 },
                 Err(e) => {
-                    eprintln!("Failed to connect to daemon: {}", e);
+                    eprintln!("Failed to connect to daemon: {e}");
                     show_error(&ui_weak, DAEMON_UNREACHABLE);
                 }
             }
@@ -654,13 +654,12 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         // device, and a Rust-side selection set fires no
                         // change callback — recompute the diff here or the
                         // chips and the Pending drift go stale.
-                        let all_match =
-                            refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
+                        let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
                         apply_pending_transition(&current_status, &ui_weak, all_match);
                         clear_error(&ui_weak);
                     }
                     Err(e) => {
-                        eprintln!("Failed to refresh devices: {}", e);
+                        eprintln!("Failed to refresh devices: {e}");
                         show_error(&ui_weak, &format!("Failed to refresh devices: {e}"));
                     }
                 }
@@ -780,8 +779,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                             update_ui_status(&ui_weak, display);
                         }
 
-                        let all_match =
-                            refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
+                        let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
                         apply_pending_transition(&current_status, &ui_weak, all_match);
 
                         // Show a daemon error only when it changes so a sticky

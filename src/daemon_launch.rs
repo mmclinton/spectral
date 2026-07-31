@@ -72,10 +72,7 @@ pub fn connect_and_fetch_state() -> Result<(DaemonClient, DaemonState), Box<dyn 
         }
         Ok(_) => Err("Unexpected response from daemon".into()),
         Err(e) => {
-            eprintln!(
-                "Failed to communicate with daemon (possibly old version), restarting: {}",
-                e
-            );
+            eprintln!("Failed to communicate with daemon (possibly old version), restarting: {e}");
             restart_and_refetch(client)
         }
     }
