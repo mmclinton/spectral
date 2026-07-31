@@ -28,7 +28,7 @@ Xiph.Org.
 
 <div align="center">
   <img src="./assets/screenshot.png" width="820"
-       alt="Spectral's main window: status, an input threshold slider, the input device list, the virtual mic name, voice-processing switches, and the voice test">
+       alt="Spectral's main window: an app bar with the status, a full-width input threshold band, then two columns of cards holding the input device list, the virtual mic name, the voice-processing switches and the voice test, above a footer with Disable and Apply">
 </div>
 
 <details>
@@ -256,7 +256,7 @@ protocol — see [ARCHITECTURE.md](ARCHITECTURE.md).
 - **An application doesn't offer the virtual mic:** many applications enumerate input devices only at startup. Enable Spectral first, then restart the application.
 - **Multi-channel audio interfaces** (e.g. an Audient EVO4 exposed as "Analog Surround 4.0"): only the first two capture channels are used — the physical inputs on common interfaces. For a single mic, you'll get the best level selecting a mono or stereo profile for the interface in your sound settings.
 - **After a PipeWire restart** (e.g. `systemctl --user restart pipewire`): the device list points at devices that no longer exist — click "Refresh" and re-select before enabling.
-- **Something failed:** errors appear under the status bar; the daemon also logs to `$XDG_RUNTIME_DIR/spectral-daemon.log`.
+- **Something failed:** errors appear in the strip under the app bar; the daemon also logs to `$XDG_RUNTIME_DIR/spectral-daemon.log`.
 - **Voice-test recordings** are saved under `~/.local/state/spectral/recordings`.
 
 ## Known limitations
