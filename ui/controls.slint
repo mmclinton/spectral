@@ -22,7 +22,9 @@ export component AppButton {
     accessible-label: root.text;
     accessible-enabled: root.enabled;
     accessible-action-default => {
-        root.clicked();
+        if (root.enabled) {
+            root.clicked();
+        }
     }
 
     focus_scope := FocusScope {
@@ -178,6 +180,9 @@ export component AppSlider {
         : 0;
 
     function set_value(new_value: int) {
+        if (!root.enabled) {
+            return;
+        }
         if (Math.clamp(new_value, root.minimum, root.maximum) != root.value) {
             root.value = Math.clamp(new_value, root.minimum, root.maximum);
             root.changed(root.value);
