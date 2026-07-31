@@ -69,18 +69,17 @@ export component ThresholdBand inherits Rectangle {
             }
         }
 
-        // Equal thirds so the middle anchor sits centered under the track's
-        // true 50% point; the outer anchors stay flush with the track ends.
-        // The labels bind x, which keeps them out of the width-constraint
-        // aggregation - width-bound layout children report their width as
-        // both minimum and maximum, locking the window to its launch width.
+        // The endpoint anchors stay flush with the track ends. The labels
+        // bind x, which keeps them out of the width-constraint aggregation
+        // - width-bound layout children report their width as both minimum
+        // and maximum, locking the window to its launch width.
         Rectangle {
             height: anchor_left.preferred-height;
 
             anchor_left := Text {
                 x: 0px;
                 y: 0px;
-                width: parent.width / 3;
+                width: parent.width / 2;
                 text: "0% · denoise only";
                 font-size: 10px;
                 color: Theme.text_muted;
@@ -88,19 +87,9 @@ export component ThresholdBand inherits Rectangle {
             }
 
             Text {
-                x: parent.width / 3;
+                x: parent.width / 2;
                 y: 0px;
-                width: parent.width / 3;
-                text: "50% · default";
-                font-size: 10px;
-                color: Theme.text_muted;
-                horizontal-alignment: center;
-            }
-
-            Text {
-                x: parent.width * 2 / 3;
-                y: 0px;
-                width: parent.width / 3;
+                width: parent.width / 2;
                 text: "100% · strict";
                 font-size: 10px;
                 color: Theme.text_muted;
