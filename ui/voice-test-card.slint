@@ -24,6 +24,39 @@ export component VoiceTestCard inherits Rectangle {
 
     property <string> elapsed: "0:" + (root.recording_countdown < 10 ? "0" : "") + root.recording_countdown;
 
+    function stop_playback() {
+        if (root.is_playing_original) {
+            root.is_playing_original = false;
+            root.stop_original();
+        }
+        if (root.is_playing_filtered) {
+            root.is_playing_filtered = false;
+            root.stop_filtered();
+        }
+    }
+
+    function toggle_original() {
+        if (root.is_playing_original) {
+            root.is_playing_original = false;
+            root.stop_original();
+        } else {
+            root.stop_playback();
+            root.is_playing_original = true;
+            root.play_original();
+        }
+    }
+
+    function toggle_filtered() {
+        if (root.is_playing_filtered) {
+            root.is_playing_filtered = false;
+            root.stop_filtered();
+        } else {
+            root.stop_playback();
+            root.is_playing_filtered = true;
+            root.play_filtered();
+        }
+    }
+
     background: Theme.panel;
     border-color: Theme.border;
     border-width: 1px;
@@ -77,14 +110,7 @@ export component VoiceTestCard inherits Rectangle {
                 // mid-recording (daemon death flips mic_enabled false).
                 enabled: root.mic_enabled || root.is_recording;
                 clicked => {
-                    if (root.is_playing_original) {
-                        root.is_playing_original = false;
-                        root.stop_original();
-                    }
-                    if (root.is_playing_filtered) {
-                        root.is_playing_filtered = false;
-                        root.stop_filtered();
-                    }
+                    root.stop_playback();
                     root.is_recording = !root.is_recording;
 
                     if (root.is_recording) {
@@ -196,18 +222,7 @@ export component VoiceTestCard inherits Rectangle {
                                 width: 100%;
                                 height: 100%;
                                 clicked => {
-                                    if (root.is_playing_original) {
-                                        root.is_playing_original = false;
-                                        root.stop_original();
-                                    } else {
-                                        // Stop filtered if playing
-                                        if (root.is_playing_filtered) {
-                                            root.is_playing_filtered = false;
-                                            root.stop_filtered();
-                                        }
-                                        root.is_playing_original = true;
-                                        root.play_original();
-                                    }
+                                    root.toggle_original();
                                 }
                             }
                         }
@@ -216,17 +231,7 @@ export component VoiceTestCard inherits Rectangle {
                             text: "original_output.wav";
                             font_size: 11.5px;
                             clicked => {
-                                if (root.is_playing_original) {
-                                    root.is_playing_original = false;
-                                    root.stop_original();
-                                } else {
-                                    if (root.is_playing_filtered) {
-                                        root.is_playing_filtered = false;
-                                        root.stop_filtered();
-                                    }
-                                    root.is_playing_original = true;
-                                    root.play_original();
-                                }
+                                root.toggle_original();
                             }
                         }
                     }
@@ -257,17 +262,7 @@ export component VoiceTestCard inherits Rectangle {
                                 width: 100%;
                                 height: 100%;
                                 clicked => {
-                                    if (root.is_playing_filtered) {
-                                        root.is_playing_filtered = false;
-                                        root.stop_filtered();
-                                    } else {
-                                        if (root.is_playing_original) {
-                                            root.is_playing_original = false;
-                                            root.stop_original();
-                                        }
-                                        root.is_playing_filtered = true;
-                                        root.play_filtered();
-                                    }
+                                    root.toggle_filtered();
                                 }
                             }
                         }
@@ -276,17 +271,7 @@ export component VoiceTestCard inherits Rectangle {
                             text: "filtered_output.wav";
                             font_size: 11.5px;
                             clicked => {
-                                if (root.is_playing_filtered) {
-                                    root.is_playing_filtered = false;
-                                    root.stop_filtered();
-                                } else {
-                                    if (root.is_playing_original) {
-                                        root.is_playing_original = false;
-                                        root.stop_original();
-                                    }
-                                    root.is_playing_filtered = true;
-                                    root.play_filtered();
-                                }
+                                root.toggle_filtered();
                             }
                         }
                     }
