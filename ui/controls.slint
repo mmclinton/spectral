@@ -73,6 +73,7 @@ export component AppButton {
 }
 
 export component AppSwitch {
+    in property <string> label;
     in property <bool> enabled: true;
     in-out property <bool> checked;
 
@@ -85,6 +86,7 @@ export component AppSwitch {
     forward-focus: focus_scope;
 
     accessible-role: checkbox;
+    accessible-label: root.label;
     accessible-checkable: true;
     accessible-checked: root.checked;
     accessible-enabled: root.enabled;
@@ -150,6 +152,7 @@ export component AppSwitch {
 // half a thumb, misaligning it with text sharing the same margin - so the
 // thumb overhangs the box by up to 7px at the extremes; parents must not clip.
 export component AppSlider {
+    in property <string> label;
     in property <bool> enabled: true;
     in property <int> minimum: 0;
     in property <int> maximum: 100;
@@ -163,6 +166,7 @@ export component AppSlider {
     forward-focus: focus_scope;
 
     accessible-role: slider;
+    accessible-label: root.label;
     accessible-enabled: root.enabled;
     accessible-value: "\{root.value}";
     accessible-value-minimum: root.minimum;

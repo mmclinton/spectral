@@ -6,6 +6,13 @@ export component ClickableLink {
     in property <bool> italic: false;
     callback clicked();
 
+    // No link role in Slint 1.15; button is the closest behavior match.
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-action-default => {
+        root.clicked();
+    }
+
     // Width hugs the label so the link never absorbs layout slack; height
     // still fills the layout cell so the text stays vertically centered.
     width: link-text.preferred-width;

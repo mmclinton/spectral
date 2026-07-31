@@ -59,6 +59,7 @@ export component ThresholdBand inherits Rectangle {
         }
 
         AppSlider {
+            label: "Input Threshold";
             opacity: root.mic_enabled ? 1 : 0.55;
             value <=> root.value;
             minimum: 0;

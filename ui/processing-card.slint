@@ -27,6 +27,7 @@ component ToggleRow inherits Rectangle {
             alignment: center;
 
             AppSwitch {
+                label: root.label;
                 checked <=> root.checked;
                 toggled => {
                     root.toggled(self.checked);

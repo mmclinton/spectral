@@ -208,6 +208,13 @@ export component VoiceTestCard inherits Rectangle {
                             background: root.is_playing_original ? Theme.error : Theme.accent;
                             border-radius: 3px;
 
+                            accessible-role: button;
+                            accessible-label: root.is_playing_original
+                                ? "Stop original playback" : "Play original recording";
+                            accessible-action-default => {
+                                root.toggle_original();
+                            }
+
                             Text {
                                 width: 100%;
                                 height: 100%;
@@ -247,6 +254,13 @@ export component VoiceTestCard inherits Rectangle {
                             height: 20px;
                             background: root.is_playing_filtered ? Theme.error : Theme.accent;
                             border-radius: 3px;
+
+                            accessible-role: button;
+                            accessible-label: root.is_playing_filtered
+                                ? "Stop filtered playback" : "Play filtered recording";
+                            accessible-action-default => {
+                                root.toggle_filtered();
+                            }
 
                             Text {
                                 width: 100%;

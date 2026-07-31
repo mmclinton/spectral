@@ -22,6 +22,10 @@ component DeviceRow inherits Rectangle {
 
     accessible-role: list-item;
     accessible-label: root.device.name;
+    accessible-item-selected: root.selected;
+    accessible-action-default => {
+        root.clicked();
+    }
 
     touch := TouchArea {
         clicked => {
@@ -133,6 +137,12 @@ export component SourcePanel inherits Rectangle {
 
                 Rectangle {
                     width: refresh_row.preferred-width;
+
+                    accessible-role: button;
+                    accessible-label: "Refresh device list";
+                    accessible-action-default => {
+                        root.start_refresh();
+                    }
 
                     refresh_row := HorizontalLayout {
                         spacing: 4px;
