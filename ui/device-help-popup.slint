@@ -166,9 +166,11 @@ export component DeviceHelpPopup inherits Rectangle {
                     }
                 }
 
-                // Scenario 3: Bluetooth profile
+                // Scenario 3: Bluetooth profile. Taller than its siblings:
+                // it carries the longest body text, which wraps to a third
+                // line near the minimum window width.
                 Rectangle {
-                    height: 90px;
+                    height: 108px;
                     background: Theme.inset;
                     border-color: Theme.border;
                     border-width: 1px;
