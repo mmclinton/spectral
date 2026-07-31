@@ -99,6 +99,11 @@ export component SourcePanel inherits Rectangle {
     property <int> spin_ticks: 0;
     property <[string]> spin_frames: ["◓", "◑", "◒", "◐"];
 
+    function start_refresh() {
+        root.spin_ticks = 8;
+        root.refresh_clicked();
+    }
+
     Timer {
         interval: 80ms;
         running: root.spin_ticks > 0;
@@ -157,8 +162,7 @@ export component SourcePanel inherits Rectangle {
 
                     TouchArea {
                         clicked => {
-                            root.spin_ticks = 8;
-                            root.refresh_clicked();
+                            root.start_refresh();
                         }
                     }
                 }
@@ -222,7 +226,7 @@ export component SourcePanel inherits Rectangle {
                         AppButton {
                             text: "↻ Retry scan";
                             clicked => {
-                                root.refresh_clicked();
+                                root.start_refresh();
                             }
                         }
                     }
