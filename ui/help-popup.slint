@@ -99,12 +99,16 @@ export component HelpPopup inherits Rectangle {
             height: parent.height - 70px;
 
             VerticalLayout {
+                // Cards size to their wrapped text (no fixed heights: font
+                // metrics follow the user's monospace family); start keeps
+                // surplus vertical space below them instead of inflating
+                // each card equally.
+                alignment: start;
                 spacing: 16px;
                 padding: 10px;
 
                 // Getting Started
                 Rectangle {
-                    height: 120px;
                     background: Theme.inset;
                     border-color: Theme.border;
                     border-width: 1px;
@@ -132,7 +136,6 @@ export component HelpPopup inherits Rectangle {
 
                 // Input Threshold
                 Rectangle {
-                    height: 250px;
                     background: Theme.inset;
                     border-color: Theme.border;
                     border-width: 1px;
@@ -167,7 +170,6 @@ export component HelpPopup inherits Rectangle {
 
                 // Virtual Mic Name
                 Rectangle {
-                    height: 85px;
                     background: Theme.inset;
                     border-color: Theme.border;
                     border-width: 1px;
@@ -195,7 +197,6 @@ export component HelpPopup inherits Rectangle {
 
                 // Rumble Filter
                 Rectangle {
-                    height: 190px;
                     background: Theme.inset;
                     border-color: Theme.border;
                     border-width: 1px;
@@ -223,7 +224,6 @@ export component HelpPopup inherits Rectangle {
 
                 // Auto Level
                 Rectangle {
-                    height: 205px;
                     background: Theme.inset;
                     border-color: Theme.border;
                     border-width: 1px;
@@ -251,7 +251,6 @@ export component HelpPopup inherits Rectangle {
 
                 // Voice Test
                 Rectangle {
-                    height: 100px;
                     background: Theme.inset;
                     border-color: Theme.border;
                     border-width: 1px;

@@ -98,6 +98,11 @@ export component DeviceHelpPopup inherits Rectangle {
             height: parent.height - 70px;
 
             VerticalLayout {
+                // Cards size to their wrapped text (no fixed heights: font
+                // metrics follow the user's monospace family); start keeps
+                // surplus vertical space below them instead of inflating
+                // each card equally.
+                alignment: start;
                 spacing: 20px;
                 padding: 10px;
 
@@ -112,7 +117,6 @@ export component DeviceHelpPopup inherits Rectangle {
 
                 // Scenario 1: PipeWire or WirePlumber not running
                 Rectangle {
-                    height: 90px;
                     background: Theme.inset;
                     border-color: Theme.border;
                     border-width: 1px;
@@ -140,7 +144,6 @@ export component DeviceHelpPopup inherits Rectangle {
 
                 // Scenario 2: Device not connected
                 Rectangle {
-                    height: 90px;
                     background: Theme.inset;
                     border-color: Theme.border;
                     border-width: 1px;
@@ -166,11 +169,8 @@ export component DeviceHelpPopup inherits Rectangle {
                     }
                 }
 
-                // Scenario 3: Bluetooth profile. Taller than its siblings:
-                // it carries the longest body text, which wraps to a third
-                // line near the minimum window width.
+                // Scenario 3: Bluetooth headset in the wrong profile
                 Rectangle {
-                    height: 108px;
                     background: Theme.inset;
                     border-color: Theme.border;
                     border-width: 1px;
@@ -198,7 +198,6 @@ export component DeviceHelpPopup inherits Rectangle {
 
                 // Scenario 4: Device disabled or muted
                 Rectangle {
-                    height: 90px;
                     background: Theme.inset;
                     border-color: Theme.border;
                     border-width: 1px;
@@ -226,7 +225,6 @@ export component DeviceHelpPopup inherits Rectangle {
 
                 // Scenario 5: Stale devices after a PipeWire restart
                 Rectangle {
-                    height: 90px;
                     background: Theme.inset;
                     border-color: Theme.border;
                     border-width: 1px;
@@ -254,7 +252,6 @@ export component DeviceHelpPopup inherits Rectangle {
 
                 // Tip at the bottom
                 Rectangle {
-                    height: 50px;
                     background: Theme.inset;
                     border-color: Theme.accent_bright;
                     border-width: 1px;
