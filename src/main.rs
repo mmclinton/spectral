@@ -546,22 +546,34 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    let ui_weak_clone = ui_weak.clone();
-    let last_valid = last_valid_mic_name.clone();
-    ui.on_mic_name_text_changed(move |text| {
-        if is_valid_mic_name_input(&text) {
-            *last_valid.borrow_mut() = text.to_string();
-            return;
-        }
-        let revert_to = last_valid.borrow().clone();
-        let ui_weak = ui_weak_clone.clone();
-        slint::invoke_from_event_loop(move || {
-            if let Some(ui) = ui_weak.upgrade() {
-                ui.set_mic_name_text(revert_to.into());
-                ui.set_mic_name_invalid_flash(true);
+    ui.on_mic_name_text_changed({
+        let ui_weak = ui_weak.clone();
+        let devices = filtered_devices.clone();
+        let applied = applied.clone();
+        let current_status = current_status.clone();
+        let last_valid = last_valid_mic_name.clone();
+        move |text| {
+            if is_valid_mic_name_input(&text) {
+                *last_valid.borrow_mut() = text.to_string();
+                // The text field is the staged name — Enable sends it as
+                // typed — so every keystroke must update the chips and the
+                // Pending drift like any other control edit.
+                if let Some(ui) = ui_weak.upgrade() {
+                    let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
+                    apply_pending_transition(&current_status, &ui_weak, all_match);
+                }
+                return;
             }
-        })
-        .ok();
+            let revert_to = last_valid.borrow().clone();
+            let ui_weak = ui_weak.clone();
+            slint::invoke_from_event_loop(move || {
+                if let Some(ui) = ui_weak.upgrade() {
+                    ui.set_mic_name_text(revert_to.into());
+                    ui.set_mic_name_invalid_flash(true);
+                }
+            })
+            .ok();
+        }
     });
 
     ui.on_refresh_devices_clicked({
