@@ -19,7 +19,7 @@ export component DeviceHelpPopup inherits ModalPopup {
         // Intro text
         Text {
             text: "If your microphone isn't appearing in the device list, here are some common causes and solutions:";
-            font-size: 14px;
+            font-size: Theme.font_emphasis;
             color: Theme.text_muted;
             wrap: word-wrap;
             horizontal-alignment: left;
@@ -38,14 +38,14 @@ export component DeviceHelpPopup inherits ModalPopup {
 
                 Text {
                     text: "1. PipeWire or WirePlumber Not Running";
-                    font-size: 16px;
+                    font-size: Theme.font_title;
                     font-weight: 700;
                     color: Theme.accent;
                 }
 
                 Text {
                     text: "Spectral needs PipeWire and its session manager. Check both: `systemctl --user status pipewire wireplumber`";
-                    font-size: 13px;
+                    font-size: Theme.font_body;
                     color: Theme.text_primary;
                     wrap: word-wrap;
                 }
@@ -65,14 +65,14 @@ export component DeviceHelpPopup inherits ModalPopup {
 
                 Text {
                     text: "2. Device Not Connected or Powered Off";
-                    font-size: 16px;
+                    font-size: Theme.font_title;
                     font-weight: 700;
                     color: Theme.accent;
                 }
 
                 Text {
                     text: "Check the cable, pairing, and power, then run `wpctl status` — if the device isn't listed under Sources there, PipeWire can't see it.";
-                    font-size: 13px;
+                    font-size: Theme.font_body;
                     color: Theme.text_primary;
                     wrap: word-wrap;
                 }
@@ -92,14 +92,14 @@ export component DeviceHelpPopup inherits ModalPopup {
 
                 Text {
                     text: "3. Bluetooth Headset in the Wrong Profile";
-                    font-size: 16px;
+                    font-size: Theme.font_title;
                     font-weight: 700;
                     color: Theme.accent;
                 }
 
                 Text {
                     text: "Bluetooth mics only capture in the HSP/HFP headset profile; A2DP is playback-only. Switch the profile in your sound settings or `pavucontrol`.";
-                    font-size: 13px;
+                    font-size: Theme.font_body;
                     color: Theme.text_primary;
                     wrap: word-wrap;
                 }
@@ -119,14 +119,14 @@ export component DeviceHelpPopup inherits ModalPopup {
 
                 Text {
                     text: "4. Device Disabled or Muted";
-                    font-size: 16px;
+                    font-size: Theme.font_title;
                     font-weight: 700;
                     color: Theme.accent;
                 }
 
                 Text {
                     text: "Check your system's sound settings or `pavucontrol`: the device may be muted, disabled, or its profile set to Off.";
-                    font-size: 13px;
+                    font-size: Theme.font_body;
                     color: Theme.text_primary;
                     wrap: word-wrap;
                 }
@@ -146,14 +146,14 @@ export component DeviceHelpPopup inherits ModalPopup {
 
                 Text {
                     text: "5. Stale Devices After a PipeWire Restart";
-                    font-size: 16px;
+                    font-size: Theme.font_title;
                     font-weight: 700;
                     color: Theme.accent;
                 }
 
                 Text {
                     text: "After a PipeWire restart the list may point at devices that no longer exist. Click Refresh and re-select your device before enabling.";
-                    font-size: 13px;
+                    font-size: Theme.font_body;
                     color: Theme.text_primary;
                     wrap: word-wrap;
                 }
@@ -173,7 +173,7 @@ export component DeviceHelpPopup inherits ModalPopup {
 
                 Text {
                     text: "Tip: After addressing any of these issues, click the Refresh button to rescan for devices.";
-                    font-size: 13px;
+                    font-size: Theme.font_body;
                     font-italic: true;
                     color: Theme.accent_bright;
                     wrap: word-wrap;

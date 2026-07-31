@@ -34,7 +34,7 @@ export component ThresholdBand inherits Rectangle {
 
             Text {
                 text: "Input Threshold";
-                font-size: 14px;
+                font-size: Theme.font_emphasis;
                 font-weight: 700;
                 color: white;
                 vertical-alignment: center;
@@ -42,7 +42,7 @@ export component ThresholdBand inherits Rectangle {
 
             Text {
                 text: "gate opens on voice confidence above threshold";
-                font-size: 11px;
+                font-size: Theme.font_caption;
                 color: Theme.text_muted;
                 vertical-alignment: center;
             }
@@ -51,7 +51,7 @@ export component ThresholdBand inherits Rectangle {
 
             Text {
                 text: "\{root.value}%";
-                font-size: 18px;
+                font-size: Theme.font_display;
                 font-weight: 700;
                 color: root.mic_enabled ? Theme.accent_bright : Theme.text_muted;
                 vertical-alignment: center;
@@ -82,7 +82,7 @@ export component ThresholdBand inherits Rectangle {
                 y: 0px;
                 width: parent.width / 2;
                 text: "0% · denoise only";
-                font-size: 10px;
+                font-size: Theme.font_caption;
                 color: Theme.text_muted;
                 horizontal-alignment: left;
             }
@@ -92,7 +92,7 @@ export component ThresholdBand inherits Rectangle {
                 y: 0px;
                 width: parent.width / 2;
                 text: "100% · strict";
-                font-size: 10px;
+                font-size: Theme.font_caption;
                 color: Theme.text_muted;
                 horizontal-alignment: right;
             }

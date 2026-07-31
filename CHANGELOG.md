@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window fits 768p displays.
 
 ### Fixed
+- Small text is legible again. Labels, captions and helper text sat at
+  10-11.5px, below the point where the software renderer's unhinted
+  grayscale glyph rasterization keeps stem definition; they now sit on a
+  shared six-step scale in the theme with a 12px floor. The 10.5, 11.5
+  and 12.5px steps were an illusion regardless — the renderer truncates
+  a requested size to whole physical pixels, so they had been rendering
+  as 10, 11 and 12px all along.
 - A voice-test recording now stops at the advertised 15 seconds instead
   of 16, and if starting the recorder fails the card returns to idle
   instead of running a phantom countdown that ended in playback rows

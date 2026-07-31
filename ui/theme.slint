@@ -17,4 +17,17 @@ export global Theme {
     out property <color> warn_bg: #D299221A;
     out property <color> warn_border: #D2992245;
     out property <color> error: #FF4444;
+
+    // Type scale. 12px is a floor, not a preference: the software renderer
+    // rasterizes glyphs unhinted into a grayscale alpha map, which loses stem
+    // definition fastest below ~12px, and it truncates a requested size to
+    // whole physical pixels — so the 10.5/11.5/12.5px steps this replaced
+    // never rendered distinctly from 10/11/12px in the first place.
+    // Glyphs used as icons (▶ ■ ✕ ⌀) size to their box and stay literal.
+    out property <length> font_caption: 12px;
+    out property <length> font_body: 13px;
+    out property <length> font_emphasis: 14px;
+    out property <length> font_brand: 15px;
+    out property <length> font_title: 16px;
+    out property <length> font_display: 18px;
 }

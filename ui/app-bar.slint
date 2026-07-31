@@ -33,7 +33,7 @@ component StatusPill inherits Rectangle {
 
         Text {
             text: root.label;
-            font-size: 12px;
+            font-size: Theme.font_caption;
             font-weight: 700;
             color: root.enabled_look ? white : Theme.text_muted;
             vertical-alignment: center;
@@ -66,7 +66,7 @@ export component AppBar inherits Rectangle {
 
         Text {
             text: "SPECTRAL";
-            font-size: 15px;
+            font-size: Theme.font_brand;
             font-weight: 700;
             letter-spacing: 2px;
             color: white;
@@ -87,7 +87,7 @@ export component AppBar inherits Rectangle {
 
         ClickableLink {
             text: "Source Code";
-            font_size: 12px;
+            font_size: Theme.font_caption;
             clicked => {
                 root.open_url("https://codeberg.org/mmc/spectral");
             }
@@ -95,7 +95,7 @@ export component AppBar inherits Rectangle {
 
         ClickableLink {
             text: "License";
-            font_size: 12px;
+            font_size: Theme.font_caption;
             clicked => {
                 root.open_url("https://codeberg.org/mmc/spectral/src/commit/HEAD/LICENSE");
             }
@@ -103,7 +103,7 @@ export component AppBar inherits Rectangle {
 
         ClickableLink {
             text: "Help";
-            font_size: 12px;
+            font_size: Theme.font_caption;
             clicked => {
                 root.help_clicked();
             }

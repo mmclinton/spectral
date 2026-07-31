@@ -24,7 +24,7 @@ export component MicNameCard inherits Rectangle {
 
         Text {
             text: "Virtual Mic Name";
-            font-size: 13px;
+            font-size: Theme.font_body;
             font-weight: 700;
             color: white;
         }
@@ -54,7 +54,7 @@ export component MicNameCard inherits Rectangle {
                     width: max(parent.width - 16px, self.preferred-width);
                     height: parent.height;
                     text <=> root.mic_name_text;
-                    font-size: 14px;
+                    font-size: Theme.font_emphasis;
                     color: white;
                     vertical-alignment: center;
                     // TextInput never scrolls on its own; keep the cursor

@@ -38,7 +38,7 @@ export component Footer inherits Rectangle {
                 width: 100%;
                 height: 100%;
                 text: "Select a source, then enable the virtual mic";
-                font-size: 11px;
+                font-size: Theme.font_caption;
                 color: Theme.text_muted;
                 vertical-alignment: center;
                 overflow: elide;
@@ -48,7 +48,7 @@ export component Footer inherits Rectangle {
                 width: 100%;
                 height: 100%;
                 text: "No unsaved changes";
-                font-size: 11px;
+                font-size: Theme.font_caption;
                 color: Theme.text_muted;
                 vertical-alignment: center;
             }
@@ -72,7 +72,7 @@ export component Footer inherits Rectangle {
                     text: root.unsaved_changes.length == 1
                         ? "1 unsaved change"
                         : "\{root.unsaved_changes.length} unsaved changes";
-                    font-size: 11px;
+                    font-size: Theme.font_caption;
                     font-weight: 700;
                     color: Theme.warn;
                     vertical-alignment: center;
@@ -97,7 +97,7 @@ export component Footer inherits Rectangle {
 
                                 Text {
                                     text: label;
-                                    font-size: 10.5px;
+                                    font-size: Theme.font_caption;
                                     color: Theme.warn;
                                     vertical-alignment: center;
                                 }

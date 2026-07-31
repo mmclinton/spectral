@@ -2,7 +2,7 @@ import { Theme } from "theme.slint";
 
 export component ClickableLink {
     in property <string> text;
-    in property <length> font_size: 14px;
+    in property <length> font_size: Theme.font_emphasis;
     in property <bool> italic: false;
     callback clicked();
 
