@@ -23,11 +23,14 @@ use std::rc::Rc;
 
 slint::include_modules!();
 
+/// Byte-wise on purpose: every permitted character is ASCII, so any string
+/// that passes the character check has byte length equal to char count, and
+/// both tests short-circuit without decoding an oversized paste end-to-end.
 fn is_valid_mic_name_input(text: &str) -> bool {
-    text.chars().count() <= MIC_NAME_MAX_LEN
+    text.len() <= MIC_NAME_MAX_LEN
         && text
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
 fn filter_devices(devices: &[AudioDevice], mic_name: &str) -> Vec<AudioDevice> {
@@ -155,7 +158,9 @@ struct AppliedSettings {
 struct StagedSettings {
     device_index: i32,
     threshold: i32,
-    mic_name: String,
+    // SharedString: the getter is a refcount clone, and this snapshot is
+    // taken on every keystroke and threshold-drag step.
+    mic_name: SharedString,
     rumble_filter: bool,
     auto_level: bool,
 }
@@ -165,7 +170,7 @@ impl StagedSettings {
         Self {
             device_index: ui.get_selected_input_index(),
             threshold: ui.get_slider_value(),
-            mic_name: ui.get_mic_name_text().to_string(),
+            mic_name: ui.get_mic_name_text(),
             rumble_filter: ui.get_rumble_filter(),
             auto_level: ui.get_auto_level(),
         }
@@ -186,7 +191,7 @@ fn changed_settings(
     if staged.rumble_filter != applied.rumble_filter.get() {
         changed.push("rumble filter");
     }
-    if staged.mic_name != *applied.mic_name.borrow() {
+    if staged.mic_name.as_str() != applied.mic_name.borrow().as_str() {
         changed.push("mic name");
     }
     if !device_matches_applied(staged.device_index, devices, &applied.device_id) {
@@ -847,7 +852,7 @@ mod tests {
         StagedSettings {
             device_index,
             threshold,
-            mic_name: mic_name.to_string(),
+            mic_name: mic_name.into(),
             rumble_filter,
             auto_level,
         }
@@ -866,6 +871,23 @@ mod tests {
             mic_name: std::cell::RefCell::new(mic_name.to_string()),
             rumble_filter: std::cell::Cell::new(rumble_filter),
             auto_level: std::cell::Cell::new(auto_level),
+        }
+    }
+
+    #[test]
+    fn mic_name_input_accepts_ascii_word_chars_within_the_length_cap() {
+        let cases = [
+            ("", true),
+            ("Spectral-Mic", true),
+            ("a_b-C9", true),
+            (&"a".repeat(MIC_NAME_MAX_LEN), true),
+            (&"a".repeat(MIC_NAME_MAX_LEN + 1), false),
+            ("has space", false),
+            ("café", false),
+            ("mic🎙", false),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(is_valid_mic_name_input(input), expected, "input {input:?}");
         }
     }
 
