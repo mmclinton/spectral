@@ -638,19 +638,13 @@ fn run_app() -> Result<(), Box<dyn Error>> {
             if let Some(ui) = ui_weak.upgrade() {
                 match audio_devices::get_input_devices() {
                     Ok(fresh_devices) => {
-                        let mic_name = DaemonClient::connect()
-                            .ok()
-                            .and_then(|mut c| {
-                                c.send_command(DaemonCommand::GetState).ok().and_then(|r| {
-                                    if let DaemonResponse::State(state) = r {
-                                        Some(state.mic_name)
-                                    } else {
-                                        None
-                                    }
-                                })
-                            })
-                            .unwrap_or_else(|| "Spectral-Mic".to_string());
-
+                        // The poll keeps applied.mic_name in step with the
+                        // daemon, so there is no fresher name a GetState
+                        // round-trip could fetch. The filter itself is
+                        // belt-and-braces: the virtual mic's media.class is
+                        // Audio/Source/Virtual, which enumeration already
+                        // excludes.
+                        let mic_name = applied.mic_name.borrow().clone();
                         let filtered = filter_devices(&fresh_devices, &mic_name);
 
                         ui.set_input_devices(device_list_model(&filtered));
