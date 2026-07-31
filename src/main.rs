@@ -677,14 +677,21 @@ fn run_app() -> Result<(), Box<dyn Error>> {
 
     ui.on_open_url(|url| {
         let url_str = url.to_string();
-        if let Err(e) = Command::new("xdg-open")
+        match Command::new("xdg-open")
             .arg(&url_str)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
         {
-            eprintln!("Failed to open URL '{}': {}", url_str, e);
+            // A dropped Child is never reaped and sits as a zombie until
+            // the GUI exits; wait for the short-lived xdg-open off-thread.
+            Ok(mut child) => {
+                std::thread::spawn(move || {
+                    let _ = child.wait();
+                });
+            }
+            Err(e) => eprintln!("Failed to open URL '{url_str}': {e}"),
         }
     });
 
