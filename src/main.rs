@@ -485,6 +485,21 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                     return;
                 }
 
+                // An unchanged Apply would still tear down and recreate the
+                // mic node daemon-side, interrupting whoever captures from
+                // it — skip the round trip when the daemon already runs
+                // exactly these settings. The guard must share
+                // refresh_unsaved_changes with the footer so "no-op" and
+                // "No unsaved changes" can never disagree. Inactive falls
+                // through: matching settings still need the mic started
+                // (and Disable→Enable remains the restart path).
+                if current_status.get() == Status::Active
+                    && refresh_unsaved_changes(&ui, &devices, &applied)
+                {
+                    clear_error(&ui_weak);
+                    return;
+                }
+
                 if idx >= 0 && (idx as usize) < devices.len() {
                     match DaemonClient::connect() {
                         Ok(mut c) => {
