@@ -370,6 +370,12 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         auto_level: std::cell::Cell::new(daemon_state.auto_level),
     });
     let current_status = Rc::new(std::cell::Cell::new(daemon_state.status));
+    // The poll's cache of the daemon's sticky last_error (display-on-change
+    // only). Shared with the enable/disable handlers: those are the two
+    // commands after which the daemon itself resets last_error to None, so
+    // resetting the cache there re-arms the display for a failure that
+    // recurs with the identical message within one poll tick.
+    let last_daemon_error = Rc::new(std::cell::RefCell::new(None::<String>));
 
     refresh_unsaved_changes(&ui, &filtered_devices.borrow(), &applied);
     update_ui_status(&ui_weak, daemon_state.status);
@@ -471,6 +477,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let devices = filtered_devices.clone();
         let applied = applied.clone();
         let current_status = current_status.clone();
+        let last_daemon_error = last_daemon_error.clone();
         move || {
             let devices = devices.borrow();
             if let Some(ui) = ui_weak.upgrade() {
@@ -517,6 +524,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                                     applied.rumble_filter.set(rumble_filter);
                                     applied.auto_level.set(auto_level);
                                     *applied.mic_name.borrow_mut() = mic_name;
+                                    *last_daemon_error.borrow_mut() = None;
                                     current_status.set(Status::Active);
                                     update_ui_status(&ui_weak, Status::Active);
                                     refresh_unsaved_changes(&ui, &devices, &applied);
@@ -557,10 +565,12 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     ui.on_disable_clicked({
         let ui_weak = ui_weak.clone();
         let current_status = current_status.clone();
+        let last_daemon_error = last_daemon_error.clone();
         move || {
             match DaemonClient::connect() {
                 Ok(mut c) => match c.send_command(DaemonCommand::Disable) {
                     Ok(DaemonResponse::Ok) => {
+                        *last_daemon_error.borrow_mut() = None;
                         current_status.set(Status::Inactive);
                         update_ui_status(&ui_weak, Status::Inactive);
                         clear_error(&ui_weak);
@@ -747,7 +757,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let devices = filtered_devices.clone();
         let applied = applied.clone();
         let current_status = current_status.clone();
-        let last_daemon_error = std::cell::RefCell::new(None::<String>);
+        let last_daemon_error = last_daemon_error.clone();
         move || {
             let Some(ui) = ui_weak.upgrade() else { return };
             match DaemonClient::connect() {
