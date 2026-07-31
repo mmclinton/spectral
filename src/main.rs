@@ -503,6 +503,9 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                             show_error(&ui_weak, DAEMON_UNREACHABLE);
                         }
                     }
+                } else {
+                    eprintln!("Cannot enable: no input source selected");
+                    show_error(&ui_weak, "Cannot enable: no input source is selected");
                 }
             }
         }
