@@ -324,7 +324,19 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     }
     let ui_weak = ui.as_weak();
 
-    let input_devices = audio_devices::get_input_devices()?;
+    // Same keep-the-window-open rationale as the daemon fallback above: an
+    // empty list renders the source panel's own empty state, whose Retry
+    // button re-enumerates, so the failure is recoverable in-window.
+    let (input_devices, device_error) = match audio_devices::get_input_devices() {
+        Ok(devices) => (devices, None),
+        Err(e) => {
+            eprintln!("Cannot enumerate input devices: {e}");
+            (
+                Vec::new(),
+                Some(format!("Failed to list input devices: {e}")),
+            )
+        }
+    };
     let filtered_devices = Rc::new(std::cell::RefCell::new(filter_devices(
         &input_devices,
         &daemon_state.mic_name,
@@ -359,6 +371,11 @@ fn run_app() -> Result<(), Box<dyn Error>> {
 
     refresh_unsaved_changes(&ui, &filtered_devices.borrow(), &applied);
     update_ui_status(&ui_weak, daemon_state.status);
+    // A daemon-launch failure outranks the device one: it implies the
+    // bigger problem, and its message names the remedy.
+    if let Some(msg) = device_error {
+        show_error(&ui_weak, &msg);
+    }
     if let Some(msg) = launch_error {
         show_error(&ui_weak, &msg);
     }
