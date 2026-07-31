@@ -40,7 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shared six-step scale in the theme with a 12px floor. The 10.5, 11.5
   and 12.5px steps were an illusion regardless — the renderer truncates
   a requested size to whole physical pixels, so they had been rendering
-  as 10, 11 and 12px all along.
+  as 10, 11 and 12px all along. The threshold band and the reserved error
+  strip gave up the slack the larger text needed, so the window still
+  fits its stated 720x680 minimum without clipping the footer buttons.
 - A voice-test recording now stops at the advertised 15 seconds instead
   of 16, and if starting the recorder fails the card returns to idle
   instead of running a phantom countdown that ended in playback rows

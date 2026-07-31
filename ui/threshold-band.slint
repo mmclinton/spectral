@@ -11,7 +11,10 @@ export component ThresholdBand inherits Rectangle {
 
     callback threshold_changed(int);
 
-    height: 96px;
+    // Fixed so the band never resizes with state. 84px against 79px of
+    // content (10 + 21 heading + 2 + 20 slider + 2 + 14 anchors + 10) - the
+    // remainder is the slider's own breathing room.
+    height: 84px;
     background: Theme.bg;
 
     Rectangle {
@@ -24,8 +27,8 @@ export component ThresholdBand inherits Rectangle {
     VerticalLayout {
         padding-left: 20px;
         padding-right: 20px;
-        padding-top: 14px;
-        padding-bottom: 12px;
+        padding-top: 10px;
+        padding-bottom: 10px;
         spacing: 2px;
 
         HorizontalLayout {

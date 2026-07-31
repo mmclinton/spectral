@@ -17,10 +17,13 @@ export component MainWindow inherits Window {
     // which Slint reads as "no preference".
     in property <string> monospace_font_family;
     default-font-family: root.monospace_font_family;
-    // The layout's arithmetic floor is ~676x659 (fixed chrome plus the
+    // The layout's arithmetic floor is ~676x647 (fixed chrome plus the
     // right-column card minimums); the margin absorbs real font metrics,
     // which vary with the user-resolved monospace family. The preferred
     // size is the launch size; the minimums only floor manual resizing.
+    // The 12px type floor cost the toggle rows ~6px, paid for by trimming
+    // the error strip and the threshold band, which were carrying ~20px of
+    // slack between them - hold that budget when either is touched.
     min-width: 720px;
     min-height: 680px;
     preferred-width: 920px;
@@ -93,9 +96,11 @@ export component MainWindow inherits Window {
         }
 
         // Reserved error strip: always present so an error appearing or
-        // clearing never shifts the content below it.
+        // clearing never shifts the content below it. Sized to the body line
+        // plus a hairline of breathing room - it is empty almost always, so
+        // it buys its height back for the cards below.
         Rectangle {
-            height: 24px;
+            height: 18px;
 
             Text {
                 x: 20px;
