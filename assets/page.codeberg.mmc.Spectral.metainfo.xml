@@ -52,6 +52,22 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.8.0" date="2026-07-31">
+      <description>
+        <p>
+          The control panel has been redesigned around a resizable layout:
+          an app bar carrying the status, a full-width threshold band, two
+          columns of cards that stretch with the window, and a footer that
+          names every setting still waiting on Apply. The window now fits
+          768p displays, small text is legible again, and the buttons,
+          switches and slider are drawn in the app's own accent. Applying
+          with nothing changed no longer restarts the live virtual
+          microphone, a voice test stops at the advertised 15 seconds, and
+          every control now reports a name and role to assistive
+          technology.
+        </p>
+      </description>
+    </release>
     <release version="0.7.0" date="2026-07-28">
       <description>
         <p>
