@@ -390,13 +390,9 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let devices = filtered_devices.clone();
         let applied = applied.clone();
         let current_status = current_status.clone();
-        move |idx: i32| {
-            let devices = devices.borrow();
-            if idx >= 0
-                && (idx as usize) < devices.len()
-                && let Some(ui) = ui_weak.upgrade()
-            {
-                let all_match = refresh_unsaved_changes(&ui, &devices, &applied);
+        move |_idx| {
+            if let Some(ui) = ui_weak.upgrade() {
+                let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
                 apply_pending_transition(&current_status, &ui_weak, all_match);
             }
         }
