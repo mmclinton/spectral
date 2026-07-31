@@ -34,6 +34,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window fits 768p displays.
 
 ### Fixed
+- A voice-test recording now stops at the advertised 15 seconds instead
+  of 16, and if starting the recorder fails the card returns to idle
+  instead of running a phantom countdown that ended in playback rows
+  for a capture that never happened. The Stop button also stays
+  clickable if the mic deactivates mid-recording.
+- The footer's unsaved-changes chips and the status pill no longer go
+  stale: typing a mic name, refreshing the device list, or another
+  client (the CLI) changing settings all update the staged-vs-applied
+  diff now. Previously each of those paths silently diverged from what
+  Apply would actually send.
+- Clicking Enable with no input source selected reports itself in the
+  error line instead of doing nothing.
+- Apply with zero staged changes no longer tears down and recreates the
+  live virtual mic — apps capturing from it used to lose the device for
+  nothing.
+- If the daemon dies mid-playback the stop glyphs clear and the
+  reconcile poll returns to its 1-second heartbeat instead of hammering
+  the dead socket at 250 ms with the glyphs stuck lit.
+- A PipeWire failure at launch opens the window with the error and an
+  empty, retryable device list instead of exiting before any window
+  appears — a silent death when started from the desktop.
+- The help-popup cards size themselves to their wrapped text instead of
+  clipping it when the resolved monospace font wraps a paragraph onto
+  more lines than the hand-tuned heights allowed.
+- Assistive technology can no longer activate disabled buttons or move
+  a disabled slider, and the previously unnamed controls — the links,
+  the refresh control, the play/stop tiles, the device rows, the
+  processing toggles, the threshold slider, and the popup close button
+  — now expose proper names, roles, and actions.
+- Spawned processes (xdg-open per link click, the auto-spawned daemon)
+  are reaped instead of lingering as zombies.
 - Apply and Disable are disabled during a voice-test recording. Both used
   to tear down the mic node while the recorder was still capturing
   through it, which silently truncated or stalled the recording.
