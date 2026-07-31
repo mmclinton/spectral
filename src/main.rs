@@ -567,6 +567,8 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     ui.on_refresh_devices_clicked({
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
+        let applied = applied.clone();
+        let current_status = current_status.clone();
         move || {
             if let Some(ui) = ui_weak.upgrade() {
                 match audio_devices::get_input_devices() {
@@ -596,6 +598,13 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         ui.set_selected_input_index(new_idx);
 
                         *devices.borrow_mut() = filtered;
+                        // The refreshed list can move or drop the applied
+                        // device, and a Rust-side selection set fires no
+                        // change callback — recompute the diff here or the
+                        // chips and the Pending drift go stale.
+                        let all_match =
+                            refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
+                        apply_pending_transition(&current_status, &ui_weak, all_match);
                         clear_error(&ui_weak);
                     }
                     Err(e) => {
