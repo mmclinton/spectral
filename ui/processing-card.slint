@@ -1,5 +1,5 @@
-// Card for the two DSP toggles, each row carrying a one-line spec summary
-// so the decision can be made without opening Help.
+// Card for the two DSP toggles, each row carrying a plain-language line
+// saying what the toggle does; the technical spec lives in Help.
 
 import { AppSwitch } from "controls.slint";
 import { Theme } from "theme.slint";
@@ -78,7 +78,7 @@ export component ProcessingCard inherits Rectangle {
 
         ToggleRow {
             label: "Rumble filter";
-            description: "high-pass 90 Hz · cuts desk thumps & hum";
+            description: "cuts desk thumps & hum";
             checked <=> root.rumble_filter;
             toggled(checked) => {
                 root.rumble_filter_changed(checked);
@@ -87,7 +87,7 @@ export component ProcessingCard inherits Rectangle {
 
         ToggleRow {
             label: "Auto level";
-            description: "rides gain toward −18 dBFS · limiter at −1";
+            description: "keeps your voice at a steady volume";
             checked <=> root.auto_level;
             toggled(checked) => {
                 root.auto_level_changed(checked);
