@@ -88,26 +88,35 @@ fn clear_error(ui_weak: &Weak<MainWindow>) {
 
 /// Send a command whose only interesting outcome is success or an error
 /// message; failures land in the window's error line, successes clear it.
-fn send_simple_command(ui_weak: &Weak<MainWindow>, command: DaemonCommand, action: &str) {
+/// Returns whether the daemon acknowledged, so callers can roll back UI
+/// state that was set optimistically before the command went out.
+fn send_simple_command(ui_weak: &Weak<MainWindow>, command: DaemonCommand, action: &str) -> bool {
     match DaemonClient::connect() {
         Ok(mut c) => match c.send_command(command) {
-            Ok(DaemonResponse::Ok) => clear_error(ui_weak),
+            Ok(DaemonResponse::Ok) => {
+                clear_error(ui_weak);
+                true
+            }
             Ok(DaemonResponse::Error(e)) => {
                 eprintln!("Failed to {action}: {e}");
                 show_error(ui_weak, &e);
+                false
             }
             Ok(DaemonResponse::State(_)) => {
                 eprintln!("Unexpected response from daemon");
                 show_error(ui_weak, "Unexpected response from daemon");
+                false
             }
             Err(e) => {
                 eprintln!("Failed to {action}: {e}");
                 show_error(ui_weak, DAEMON_UNREACHABLE);
+                false
             }
         },
         Err(e) => {
             eprintln!("Failed to connect to daemon: {e}");
             show_error(ui_weak, DAEMON_UNREACHABLE);
+            false
         }
     }
 }
@@ -641,34 +650,62 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         }
     });
 
+    // The voice-test card flips its is_recording/is_playing properties before
+    // these callbacks run, so a refused or undeliverable command must roll
+    // the optimistic state back; the stop commands have nothing to roll back
+    // (their flags are already false, and the poll reconciles the daemon).
     ui.on_start_recording({
         let ui_weak = ui_weak.clone();
-        move || send_simple_command(&ui_weak, DaemonCommand::StartRecording, "start recording")
+        move || {
+            if !send_simple_command(&ui_weak, DaemonCommand::StartRecording, "start recording")
+                && let Some(ui) = ui_weak.upgrade()
+            {
+                ui.set_is_recording(false);
+            }
+        }
     });
 
     ui.on_stop_recording({
         let ui_weak = ui_weak.clone();
-        move || send_simple_command(&ui_weak, DaemonCommand::StopRecording, "stop recording")
+        move || {
+            send_simple_command(&ui_weak, DaemonCommand::StopRecording, "stop recording");
+        }
     });
 
     ui.on_play_original({
         let ui_weak = ui_weak.clone();
-        move || send_simple_command(&ui_weak, DaemonCommand::PlayOriginal, "play original")
+        move || {
+            if !send_simple_command(&ui_weak, DaemonCommand::PlayOriginal, "play original")
+                && let Some(ui) = ui_weak.upgrade()
+            {
+                ui.set_is_playing_original(false);
+            }
+        }
     });
 
     ui.on_stop_original({
         let ui_weak = ui_weak.clone();
-        move || send_simple_command(&ui_weak, DaemonCommand::StopOriginal, "stop original")
+        move || {
+            send_simple_command(&ui_weak, DaemonCommand::StopOriginal, "stop original");
+        }
     });
 
     ui.on_play_filtered({
         let ui_weak = ui_weak.clone();
-        move || send_simple_command(&ui_weak, DaemonCommand::PlayFiltered, "play filtered")
+        move || {
+            if !send_simple_command(&ui_weak, DaemonCommand::PlayFiltered, "play filtered")
+                && let Some(ui) = ui_weak.upgrade()
+            {
+                ui.set_is_playing_filtered(false);
+            }
+        }
     });
 
     ui.on_stop_filtered({
         let ui_weak = ui_weak.clone();
-        move || send_simple_command(&ui_weak, DaemonCommand::StopFiltered, "stop filtered")
+        move || {
+            send_simple_command(&ui_weak, DaemonCommand::StopFiltered, "stop filtered");
+        }
     });
 
     ui.on_poll_daemon_state({
