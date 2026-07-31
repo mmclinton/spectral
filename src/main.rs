@@ -241,24 +241,26 @@ fn reconcile_status(daemon: Status, local: Status) -> Status {
     }
 }
 
-/// Drive the Active↔Pending transition shared by the settings-change callbacks:
-/// an applied (Active) mic drifts to Pending when settings diverge, and back to
-/// Active when they realign. Any other state is left untouched.
+/// The Active↔Pending drift for one staged-settings evaluation: an applied
+/// (Active) mic drifts to Pending when settings diverge, and back to Active
+/// when they realign. `None` means the status stays put.
+fn pending_transition(current: Status, all_match: bool) -> Option<Status> {
+    match current {
+        Status::Active if !all_match => Some(Status::Pending),
+        Status::Pending if all_match => Some(Status::Active),
+        _ => None,
+    }
+}
+
+/// Apply [`pending_transition`] to the shared status cell and the window.
 fn apply_pending_transition(
     current_status: &std::cell::Cell<Status>,
     ui_weak: &Weak<MainWindow>,
     all_match: bool,
 ) {
-    match current_status.get() {
-        Status::Active if !all_match => {
-            current_status.set(Status::Pending);
-            update_ui_status(ui_weak, Status::Pending);
-        }
-        Status::Pending if all_match => {
-            current_status.set(Status::Active);
-            update_ui_status(ui_weak, Status::Active);
-        }
-        _ => {}
+    if let Some(next) = pending_transition(current_status.get(), all_match) {
+        current_status.set(next);
+        update_ui_status(ui_weak, next);
     }
 }
 
@@ -727,6 +729,8 @@ fn run_app() -> Result<(), Box<dyn Error>> {
 
     ui.on_poll_daemon_state({
         let ui_weak = ui_weak.clone();
+        let devices = filtered_devices.clone();
+        let applied = applied.clone();
         let current_status = current_status.clone();
         let last_daemon_error = std::cell::RefCell::new(None::<String>);
         move || {
@@ -737,11 +741,29 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         ui.set_is_playing_original(state.is_playing_original);
                         ui.set_is_playing_filtered(state.is_playing_filtered);
 
+                        // Another client (the CLI) can change settings while
+                        // this window is open; the applied cache must track
+                        // daemon truth or the chips diff against stale
+                        // values and Apply silently reverts the other
+                        // client's change. Staged UI properties are never
+                        // written from here — the chips carry the drift.
+                        applied.device_id.set(state.device_id);
+                        applied.threshold.set(state.threshold);
+                        applied.rumble_filter.set(state.rumble_filter);
+                        applied.auto_level.set(state.auto_level);
+                        if *applied.mic_name.borrow() != state.mic_name {
+                            *applied.mic_name.borrow_mut() = state.mic_name.clone();
+                        }
+
                         let display = reconcile_status(state.status, current_status.get());
                         if display != current_status.get() {
                             current_status.set(display);
                             update_ui_status(&ui_weak, display);
                         }
+
+                        let all_match =
+                            refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
+                        apply_pending_transition(&current_status, &ui_weak, all_match);
 
                         // Show a daemon error only when it changes so a sticky
                         // one can't stomp fresher local messages every tick;
@@ -933,6 +955,30 @@ mod tests {
                 expected,
                 "old_idx {old_idx}"
             );
+        }
+    }
+
+    #[test]
+    fn poll_reconcile_then_pending_transition_reaches_a_fixed_point_in_one_tick() {
+        // The poll runs reconcile_status then pending_transition every tick;
+        // if one tick's output were not the next tick's fixed point (given
+        // unchanged daemon state and staged diff), the pill would oscillate.
+        use Status::*;
+        for daemon in [Active, Inactive, Pending] {
+            for local in [Active, Inactive, Pending] {
+                for all_match in [false, true] {
+                    let tick = |local: Status| {
+                        let s = reconcile_status(daemon, local);
+                        pending_transition(s, all_match).unwrap_or(s)
+                    };
+                    let once = tick(local);
+                    assert_eq!(
+                        tick(once),
+                        once,
+                        "daemon {daemon:?}, local {local:?}, all_match {all_match}"
+                    );
+                }
+            }
         }
     }
 
