@@ -19,9 +19,12 @@ export component MainWindow inherits Window {
     default-font-family: root.monospace_font_family;
     // The layout's arithmetic floor is ~676x659 (fixed chrome plus the
     // right-column card minimums); the margin absorbs real font metrics,
-    // which vary with the user-resolved monospace family.
+    // which vary with the user-resolved monospace family. The preferred
+    // size is the launch size; the minimums only floor manual resizing.
     min-width: 720px;
     min-height: 680px;
+    preferred-width: 920px;
+    preferred-height: 760px;
     background: Theme.bg;
 
     property <string> default_mic_name: "Spectral-Mic";
