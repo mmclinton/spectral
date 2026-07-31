@@ -11,6 +11,7 @@ use spectral_lib::audio_devices;
 use spectral_lib::ipc::{DaemonClient, DaemonCommand, DaemonResponse, DaemonState};
 use spectral_lib::state::{AudioDevice, MIC_NAME_MAX_LEN, Status};
 
+use slint::Model;
 use slint::ModelRc;
 use slint::SharedString;
 use slint::VecModel;
@@ -206,8 +207,18 @@ fn refresh_unsaved_changes(
 ) -> bool {
     let changes = changed_settings(&StagedSettings::read_from(ui), devices, applied);
     let all_match = changes.is_empty();
-    let labels: Vec<SharedString> = changes.into_iter().map(SharedString::from).collect();
-    ui.set_unsaved_changes(ModelRc::new(Rc::new(VecModel::from(labels))));
+    // A threshold drag re-enters here on every integer step; republishing an
+    // identical list would rebuild the footer's chip row mid-drag for nothing.
+    let current = ui.get_unsaved_changes();
+    let unchanged = current.row_count() == changes.len()
+        && current
+            .iter()
+            .zip(&changes)
+            .all(|(row, label)| row.as_str() == *label);
+    if !unchanged {
+        let labels: Vec<SharedString> = changes.into_iter().map(SharedString::from).collect();
+        ui.set_unsaved_changes(ModelRc::new(Rc::new(VecModel::from(labels))));
+    }
     all_match
 }
 
