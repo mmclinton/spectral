@@ -73,7 +73,9 @@ export component VoiceTestCard inherits Rectangle {
                 width: 100px;
                 height: 58px;
                 text: root.is_recording ? "■ Stop" : "● Record";
-                enabled: root.mic_enabled;
+                // Stop must stay reachable even if the mic deactivates
+                // mid-recording (daemon death flips mic_enabled false).
+                enabled: root.mic_enabled || root.is_recording;
                 clicked => {
                     if (root.is_playing_original) {
                         root.is_playing_original = false;
