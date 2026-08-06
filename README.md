@@ -147,10 +147,12 @@ cd spectral/packaging/aur
 makepkg -si
 ```
 
-**Spectral is not on the AUR yet.** The AUR suspended new-account
-registrations — and with them first-time package submissions — during its
-June 2026 malware cleanup. Once registrations reopen, `spectral-mic` will
-be submitted and this becomes the install command:
+The PKGBUILD fetches and builds the pinned latest release tarball
+(currently v0.8.0), not the checkout it sits in, and declares x86_64
+only — no aarch64 Arch system has been tested.
+
+**Spectral is not on the AUR yet.** Submission of `spectral-mic` is
+pending; once it lands, this becomes the install command:
 
 ```bash
 paru -S spectral-mic   # or: yay -S spectral-mic — not available yet
