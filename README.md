@@ -210,7 +210,7 @@ would change, are in [packaging/flatpak](packaging/flatpak).
 The `spectral` binary doubles as a command-line client:
 
 ```bash
-spectral devices              # list input devices and their current ids
+spectral devices              # list input devices: id, channels, name
 spectral enable --device 62   # create the virtual mic
 spectral enable               # re-enable with the remembered settings or defaults
 spectral status               # show state, device, mic name, threshold, toggles
@@ -232,7 +232,7 @@ name, so a flagless `spectral enable` works across reboots and PipeWire
 restarts.
 
 Exit codes: 0 on success (including a no-op `disable`/`shutdown`), 1 on runtime
-failures, 2 on usage errors.
+failures (including `status` when no daemon is running), 2 on usage errors.
 
 ## How it works
 
@@ -254,7 +254,7 @@ protocol — see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 - **Your microphone isn't listed:** click "Refresh", or see the in-app "Not seeing your device?" guide.
 - **An application doesn't offer the virtual mic:** many applications enumerate input devices only at startup. Enable Spectral first, then restart the application.
-- **Multi-channel audio interfaces** (e.g. an Audient EVO4 exposed as "Analog Surround 4.0"): only the first two capture channels are used — the physical inputs on common interfaces. For a single mic, you'll get the best level selecting a mono or stereo profile for the interface in your sound settings.
+- **Multi-channel audio interfaces:** when the session manager splits an interface's inputs into separate sources, each shows up as its own labelled entry ("EVO4 Mic 1", "EVO4 Line 1", …) — pick the one your mic is plugged into. When the interface appears as a single multi-channel device instead (e.g. "Analog Surround 4.0"), only the first two capture channels are used; for a single mic, you'll get the best level selecting a mono or stereo profile for the interface in your sound settings.
 - **After a PipeWire restart** (e.g. `systemctl --user restart pipewire`): the device list points at devices that no longer exist — click "Refresh" and re-select before enabling.
 - **Something failed:** errors appear in the strip under the app bar; the daemon also logs to `$XDG_RUNTIME_DIR/spectral-daemon.log`.
 - **Voice-test recordings** are saved under `~/.local/state/spectral/recordings`.
