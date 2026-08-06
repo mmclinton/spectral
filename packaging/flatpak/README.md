@@ -92,9 +92,9 @@ input.
 
 ## Differences from the native builds
 
-- **No start at login.** The Nix module installs a systemd user service; the
-  Flatpak has no equivalent. The daemon outlives the GUI window, so the
-  virtual mic persists for the session, but not across logins.
+- **No start at login.** True of every Spectral build today — none installs
+  a user service. The daemon outlives the GUI window, so the virtual mic
+  persists for the session, but not across logins.
 - **The CLI answers to the app ID.** Flatpak exports a single command per
   application, named after the app ID, so it is `page.codeberg.mmc.Spectral`
   on `$PATH` rather than `spectral`.
