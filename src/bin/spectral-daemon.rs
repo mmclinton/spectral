@@ -2,17 +2,17 @@
 //! persists settings, and serves GUI/CLI clients on the Unix socket with
 //! one handler thread per connection. SIGTERM/SIGINT tear everything down.
 
-use spectral_lib::audio_devices::{find_node, get_node_details, get_node_name};
-use spectral_lib::audio_processor::VirtualMic;
-use spectral_lib::ipc::{
+use spectral_lib::platform::audio_devices::{find_node, get_node_details, get_node_name};
+use spectral_lib::platform::audio_processor::VirtualMic;
+use spectral_lib::platform::ipc::{
     DaemonCommand, DaemonResponse, DaemonServer, DaemonState, PROTOCOL_VERSION,
 };
-use spectral_lib::persistence::{
+use spectral_lib::platform::persistence::{
     PersistedState, get_filtered_recording_path, get_original_recording_path, load_state,
     remove_legacy_recordings, save_state,
 };
+use spectral_lib::platform::recorder::{NativePlayer, NativeRecorder, PlaybackKind};
 use spectral_lib::state::{AppState, MIC_NAME_MAX_LEN, Status, is_valid_mic_name, lock_or_recover};
-use spectral_lib::{NativePlayer, NativeRecorder, PlaybackKind};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -271,7 +271,7 @@ fn handle_enable(
 }
 
 fn handle_client(
-    conn: &mut spectral_lib::ipc::DaemonConnection,
+    conn: &mut spectral_lib::platform::ipc::DaemonConnection,
     state: Arc<AppState>,
     virtual_mic: Arc<Mutex<Option<VirtualMic>>>,
     recorder: Arc<Mutex<Option<NativeRecorder>>>,

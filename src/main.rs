@@ -7,8 +7,8 @@ mod cli;
 mod daemon_launch;
 mod fonts;
 
-use spectral_lib::audio_devices;
-use spectral_lib::ipc::{DaemonClient, DaemonCommand, DaemonResponse, DaemonState};
+use spectral_lib::platform::audio_devices;
+use spectral_lib::platform::ipc::{DaemonClient, DaemonCommand, DaemonResponse, DaemonState};
 use spectral_lib::state::{AudioDevice, MIC_NAME_MAX_LEN, Status};
 
 use slint::Model;
@@ -293,7 +293,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
             eprintln!("Cannot reach the daemon: {e}");
             (
                 DaemonState {
-                    protocol_version: spectral_lib::ipc::PROTOCOL_VERSION,
+                    protocol_version: spectral_lib::platform::ipc::PROTOCOL_VERSION,
                     status: Status::Inactive,
                     device_id: None,
                     device_node_name: None,

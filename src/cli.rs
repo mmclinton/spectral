@@ -3,8 +3,8 @@
 //! registry directly) without touching Slint.
 
 use crate::daemon_launch;
-use spectral_lib::audio_devices;
-use spectral_lib::ipc::{
+use spectral_lib::platform::audio_devices;
+use spectral_lib::platform::ipc::{
     DaemonClient, DaemonCommand, DaemonResponse, DaemonState, PROTOCOL_VERSION,
     wait_for_daemon_exit,
 };

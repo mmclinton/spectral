@@ -1,7 +1,7 @@
 //! Spawning the daemon and bootstrapping a connection — shared by the GUI
 //! launch path and the headless CLI.
 
-use spectral_lib::ipc::{
+use spectral_lib::platform::ipc::{
     DaemonClient, DaemonCommand, DaemonResponse, DaemonState, PROTOCOL_VERSION,
     wait_for_daemon_exit,
 };
