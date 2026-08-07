@@ -59,6 +59,7 @@
               pkgs.pacman
               pkgs.appstream
               pkgs.curl
+              pkgs.jq
               pkgs.cargo-deny
             ]
             ++ spectral.passthru.linkedLibs;
