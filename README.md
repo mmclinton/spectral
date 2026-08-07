@@ -39,8 +39,7 @@ Xiph.Org.
 - [Installation](#installation)
 - [Usage](#usage)
 - [How it works](#how-it-works)
-- [Troubleshooting](#troubleshooting)
-- [Known limitations](#known-limitations)
+- [Help](#help)
 - [How Spectral compares](#how-spectral-compares)
 - [Non-goals](#non-goals)
 - [Contributing](#contributing)
@@ -74,72 +73,17 @@ work but have not been validated.
 
 ## Installation
 
-> Nix and the AUR are the supported installation methods. A Flatpak manifest
-> is included and builds cleanly, but it has not yet been through a Flathub
-> review. Manual builds may work but are unsupported.
+Nix and the AUR are the supported installation methods. A Flatpak manifest is
+included and builds cleanly, but it has not yet been through a Flathub review.
+Manual builds may work but are unsupported.
 
-<details>
-<summary><strong>NixOS / Nix</strong></summary>
-
-A nixpkgs package has been submitted and is in review. Until it lands, install
-from this flake.
-
-**Option 1: Direct installation (try it out)**
+**Nix** — a nixpkgs package is in review; until it lands, use this flake:
 
 ```bash
-# Run directly without installing
 nix run git+https://codeberg.org/mmc/spectral
-
-# Or build and install to your profile
-nix profile add git+https://codeberg.org/mmc/spectral
 ```
 
-**Option 2: NixOS declarative installation**
-
-Add to your `flake.nix` inputs:
-
-```nix
-{
-  inputs = {
-    spectral.url = "git+https://codeberg.org/mmc/spectral";
-  };
-}
-```
-
-Then in your NixOS configuration:
-
-```nix
-{ inputs, ... }:
-{
-  imports = [ inputs.spectral.nixosModules.default ];
-
-  # Apply the overlay to make pkgs.spectral available
-  nixpkgs.overlays = [ inputs.spectral.overlays.default ];
-
-  # Enable Spectral
-  programs.spectral.enable = true;
-}
-```
-
-**Option 3: Using the overlay only**
-
-If you prefer manual control over installation:
-
-```nix
-{
-  nixpkgs.overlays = [ inputs.spectral.overlays.default ];
-
-  # Then use pkgs.spectral anywhere
-  environment.systemPackages = [ pkgs.spectral ];
-}
-```
-
-</details>
-
-<details>
-<summary><strong>Arch Linux (AUR)</strong></summary>
-
-Build from the PKGBUILD in this repository:
+**Arch Linux** — not on the AUR yet; build from the PKGBUILD in this repository:
 
 ```bash
 git clone https://codeberg.org/mmc/spectral.git
@@ -147,54 +91,11 @@ cd spectral/packaging/aur
 makepkg -si
 ```
 
-The PKGBUILD fetches and builds the pinned latest release tarball
-(currently v0.8.0), not the checkout it sits in, and declares x86_64
-only — no aarch64 Arch system has been tested.
+**Flatpak** — not on Flathub yet; build it yourself with `org.flatpak.Builder`.
 
-**Spectral is not on the AUR yet.** Submission of `spectral-mic` is
-pending; once it lands, this becomes the install command:
-
-```bash
-paru -S spectral-mic   # or: yay -S spectral-mic — not available yet
-```
-
-The package is named `spectral-mic` rather than `spectral` because the
-unrelated AUR package of that name ships a binary called `spectral` too.
-The PKGBUILD is maintained here under [packaging/aur](packaging/aur).
-
-</details>
-
-<details>
-<summary><strong>Flatpak</strong></summary>
-
-**Spectral is not on Flathub yet.** Until it is, build the Flatpak
-yourself — it needs only `flatpak` and the Flathub remote:
-
-```bash
-flatpak install -y flathub org.flatpak.Builder
-git clone https://codeberg.org/mmc/spectral.git
-cd spectral
-flatpak run --command=flathub-build org.flatpak.Builder --install \
-    packaging/flatpak/page.codeberg.mmc.Spectral.yaml
-flatpak run page.codeberg.mmc.Spectral
-```
-
-One difference from the native packages is worth knowing before you
-choose this route: Flatpak exports a single command per application,
-named after the app ID, so the headless CLI answers to
-`page.codeberg.mmc.Spectral` rather than to `spectral`:
-
-```bash
-page.codeberg.mmc.Spectral devices
-```
-
-Alias it if the full name grates — Flatpak has no way to export a shorter
-one.
-
-Details, including the full permission set and what a Flathub submission
-would change, are in [packaging/flatpak](packaging/flatpak).
-
-</details>
+Installing into your profile, the declarative NixOS module and overlay, the
+Flatpak build steps, and the caveats attached to each are in
+[docs/INSTALLATION.md](docs/INSTALLATION.md).
 
 ## Usage
 
@@ -205,34 +106,9 @@ would change, are in [packaging/flatpak](packaging/flatpak).
 5. Click "Enable" — the virtual microphone is created and becomes the system default input
 6. Applications that pin a specific device can select the virtual mic by name (default "Spectral-Mic"); "Rename"/"Reset" stage a new name, applied on the next Enable/Apply
 
-### Headless CLI
-
-The `spectral` binary doubles as a command-line client:
-
-```bash
-spectral devices              # list input devices: id, channels, name
-spectral enable --device 62   # create the virtual mic
-spectral enable               # re-enable with the remembered settings or defaults
-spectral status               # show state, device, mic name, threshold, toggles
-spectral disable              # tear the virtual mic down
-spectral shutdown             # stop the daemon
-```
-
-`enable` accepts:
-
-- `--device <id>`
-- `--threshold <0-100>`
-- `--mic-name <name>`
-- `--rumble-filter <on|off>`
-- `--auto-level <on|off>`
-
-Omitted flags keep the prior settings or defaults. Device ids are scoped to the
-running PipeWire instance — the daemon remembers the selected device by node
-name, so a flagless `spectral enable` works across reboots and PipeWire
-restarts.
-
-Exit codes: 0 on success (including a no-op `disable`/`shutdown`), 1 on runtime
-failures (including `status` when no daemon is running), 2 on usage errors.
+Everything the GUI does is also available from the terminal — `spectral enable`,
+`spectral status`, `spectral disable`. The full reference is in
+[docs/CLI.md](docs/CLI.md).
 
 ## How it works
 
@@ -250,20 +126,11 @@ stops; there is nothing left behind in the audio graph to clean up.
 For the full picture — module map, the real-time constraints, the IPC
 protocol — see [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Troubleshooting
+## Help
 
-- **Your microphone isn't listed:** click "Refresh", or see the in-app "Not seeing your device?" guide.
-- **An application doesn't offer the virtual mic:** many applications enumerate input devices only at startup. Enable Spectral first, then restart the application.
-- **Multi-channel audio interfaces:** when the session manager splits an interface's inputs into separate sources, each shows up as its own labelled entry ("EVO4 Mic 1", "EVO4 Line 1", …) — pick the one your mic is plugged into. When the interface appears as a single multi-channel device instead (e.g. "Analog Surround 4.0"), only the first two capture channels are used; for a single mic, you'll get the best level selecting a mono or stereo profile for the interface in your sound settings.
-- **After a PipeWire restart** (e.g. `systemctl --user restart pipewire`): the device list points at devices that no longer exist — click "Refresh" and re-select before enabling.
-- **Something failed:** errors appear in the strip under the app bar; the daemon also logs to `$XDG_RUNTIME_DIR/spectral-daemon.log`.
-- **Voice-test recordings** are saved under `~/.local/state/spectral/recordings`.
-
-## Known limitations
-
-- Disabling Spectral does not restore your previous default input. When the virtual mic disappears, WirePlumber picks a fallback, which may not be the microphone you started with — re-select it in your sound settings if it matters.
-- Inputs with more than two channels are untested. Bluetooth microphones work — validated with AirPods Pro 2 — but no other Bluetooth device or codec has been tried.
-- Voice-test recordings are not restored in the UI after relaunching the GUI.
+Devices that don't show up, applications that don't offer the virtual mic,
+multi-channel interfaces, and the current known limitations are covered in
+[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
 ## How Spectral compares
 
@@ -287,12 +154,9 @@ run EasyEffects and are happy with it, you don't need this.
 Bug reports and patches are welcome. Development happens on
 [Codeberg](https://codeberg.org/mmc/spectral); see
 [CONTRIBUTING.md](CONTRIBUTING.md) for the build, the required checks, and the
-commit conventions, and [ARCHITECTURE.md](docs/ARCHITECTURE.md) for a map of the
-codebase.
-
-A useful bug report includes your distribution, your PipeWire and WirePlumber
-versions (`pipewire --version`, `wireplumber --version`), the input device
-involved, and the daemon log from `$XDG_RUNTIME_DIR/spectral-daemon.log`.
+commit conventions, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a map
+of the codebase. What makes a bug report useful is listed under
+[Reporting a bug](docs/TROUBLESHOOTING.md#reporting-a-bug).
 
 ## Privacy
 

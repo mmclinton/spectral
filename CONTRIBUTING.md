@@ -3,6 +3,10 @@
 Spectral is developed on Codeberg: https://codeberg.org/mmc/spectral.
 Bug reports and patches are welcome via issues and pull requests there.
 
+For a map of the codebase, read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+What makes a bug report useful is listed under
+[Reporting a bug](docs/TROUBLESHOOTING.md#reporting-a-bug).
+
 ## Building
 
 Everything is pinned by the nix flake:
