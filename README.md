@@ -248,7 +248,7 @@ PipeWire object it creates, the virtual mic disappears cleanly when the daemon
 stops; there is nothing left behind in the audio graph to clean up.
 
 For the full picture — module map, the real-time constraints, the IPC
-protocol — see [ARCHITECTURE.md](ARCHITECTURE.md).
+protocol — see [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Troubleshooting
 
@@ -287,7 +287,7 @@ run EasyEffects and are happy with it, you don't need this.
 Bug reports and patches are welcome. Development happens on
 [Codeberg](https://codeberg.org/mmc/spectral); see
 [CONTRIBUTING.md](CONTRIBUTING.md) for the build, the required checks, and the
-commit conventions, and [ARCHITECTURE.md](ARCHITECTURE.md) for a map of the
+commit conventions, and [ARCHITECTURE.md](docs/ARCHITECTURE.md) for a map of the
 codebase.
 
 A useful bug report includes your distribution, your PipeWire and WirePlumber
