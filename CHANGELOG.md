@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Closing the window now stops the voice test. A clip that was playing kept
+  playing to its end after the window was gone, and a capture left running
+  went on to the recorder's internal cap; both are now stopped on exit. The
+  virtual mic is unaffected — it still outlives the window.
+
 ## [0.8.0] - 2026-07-31
 
 ### Added
@@ -458,6 +466,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nix is the only officially supported installation method
 - Requires PipeWire (with the PulseAudio compatibility layer) and WirePlumber
 
+[Unreleased]: https://codeberg.org/mmc/spectral/compare/v0.8.0...main
 [0.8.0]: https://codeberg.org/mmc/spectral/compare/v0.7.0...v0.8.0
 [0.7.0]: https://codeberg.org/mmc/spectral/compare/v0.6.2...v0.7.0
 [0.6.2]: https://codeberg.org/mmc/spectral/compare/v0.6.1...v0.6.2

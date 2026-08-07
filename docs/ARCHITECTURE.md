@@ -132,6 +132,15 @@ The GUI holds no authoritative state of its own. It polls the daemon on a 1 s
 heartbeat (250 ms during voice-test playback) and reconciles status and errors
 from the snapshot it gets back.
 
+Because that socket is opened per command and dropped again, the daemon has no
+disconnect to act on: a closed window looks exactly like an idle one. So the GUI
+sends the voice-test stops it still owes — `StopRecording`, `StopOriginal`,
+`StopFiltered` — after its event loop exits
+(`stop_playback_and_recording_on_exit`, `src/main.rs`). This is best effort; a
+killed process sends nothing, which is
+what the recorder's own duration cap backstops. The virtual mic deliberately
+survives the window and is never torn down here.
+
 ## Where to make common changes
 
 **Adding a DSP stage.** Write it as a struct in
