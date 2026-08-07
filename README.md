@@ -31,34 +31,17 @@ Xiph.Org.
        alt="Spectral's main window: an app bar with the status, a full-width input threshold band, then two columns of cards holding the input device list, the virtual mic name, the voice-processing switches and the voice test, above a footer with Disable and Apply">
 </div>
 
-<details>
-<summary>Table of Contents</summary>
-
-- [Features](#features)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Usage](#usage)
-- [How it works](#how-it-works)
-- [Help](#help)
-- [How Spectral compares](#how-spectral-compares)
-- [Non-goals](#non-goals)
-- [Contributing](#contributing)
-- [Privacy](#privacy)
-- [License](#license)
-
-</details>
-
 ## Features
 
-- Real-time RNNoise denoising, with a voice-activity gate you can dial from
-  off (denoise only) to strict
-- A native PipeWire virtual microphone that any application can select
+- Real-time RNNoise denoising, with a voice-activity gate you can dial from off
+  (denoise only) to strict
+- A native PipeWire virtual microphone that any application can select, and that
+  becomes your system default input when you enable it
 - A built-in voice test — record yourself and compare original against filtered
-- Becomes the system default input automatically when you enable it
 - Two optional voice-processing switches, both off by default: a rumble filter
   and automatic volume leveling
-- Settings persist across restarts, and your device is remembered by name, so
-  it survives reboots and PipeWire restarts
+- Settings persist across restarts, and your device is remembered by name, so it
+  survives reboots and PipeWire restarts
 - A headless CLI, so usage does not require the GUI
 
 ## Requirements
@@ -112,19 +95,15 @@ Everything the GUI does is also available from the terminal — `spectral enable
 
 ## How it works
 
-A background daemon owns all the audio work. It captures your chosen device,
-downmixes to mono, and runs each 10 ms frame through the processing chain:
-the optional rumble filter, then RNNoise, then the optional leveler, then the
-voice gate. The result feeds a PipeWire virtual source node — the microphone
-other applications see.
-
-The GUI and the CLI are thin clients. They talk to the daemon over a Unix
-socket and hold no audio state of their own. Because the daemon owns every
-PipeWire object it creates, the virtual mic disappears cleanly when the daemon
-stops; there is nothing left behind in the audio graph to clean up.
-
-For the full picture — module map, the real-time constraints, the IPC
-protocol — see [ARCHITECTURE.md](docs/ARCHITECTURE.md).
+A background daemon owns all the audio work: it captures your chosen device,
+downmixes to mono, and runs each 10 ms frame through the optional rumble filter,
+RNNoise, the optional leveler, and the voice gate before feeding a PipeWire
+virtual source node — the microphone other applications see. The GUI and the CLI
+are thin clients over a Unix socket, holding no audio state of their own, and
+because the daemon owns every PipeWire object it creates, the virtual mic
+disappears cleanly when the daemon stops. For the module map, the real-time
+constraints, and the IPC protocol, see
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Help
 
@@ -132,22 +111,23 @@ Devices that don't show up, applications that don't offer the virtual mic,
 multi-channel interfaces, and the current known limitations are covered in
 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
-## How Spectral compares
+## Alternatives
 
 If you're coming from **NoiseTorch**: it solved this problem for PulseAudio and
 is no longer maintained. Spectral targets PipeWire natively rather than loading
 PulseAudio modules, and adds a daemon with both a GUI and a CLI. Same core idea,
 same RNNoise denoiser.
 
-**EasyEffects** is a broader audio-effects suite that can do far more than
-noise suppression, including on output. Spectral does one thing. If you already
-run EasyEffects and are happy with it, you don't need this.
+**[EasyEffects](https://github.com/wwmm/easyeffects)** is a broader
+audio-effects suite that can do far more than noise suppression, including on
+output — which Spectral deliberately does not do. If you already run EasyEffects
+and are happy with it, you don't need this.
 
-## Non-goals
+## Privacy
 
-- Denoising incoming audio (a "headphones sink") — [EasyEffects](https://github.com/wwmm/easyeffects) covers this well.
-- Systems without PipeWire (pure PulseAudio, ALSA, or JACK).
-- Self-updating — package managers own updates.
+All processing happens on your machine. Spectral makes no network connections
+and has no telemetry. The only audio it writes to disk comes from voice-test
+recordings you start yourself, under `~/.local/state/spectral/recordings`.
 
 ## Contributing
 
@@ -157,12 +137,6 @@ Bug reports and patches are welcome. Development happens on
 commit conventions, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a map
 of the codebase. What makes a bug report useful is listed under
 [Reporting a bug](docs/TROUBLESHOOTING.md#reporting-a-bug).
-
-## Privacy
-
-All processing happens on your machine. Spectral makes no network connections
-and has no telemetry. The only audio it writes to disk comes from voice-test
-recordings you start yourself, under `~/.local/state/spectral/recordings`.
 
 ## License
 
