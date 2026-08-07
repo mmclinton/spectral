@@ -116,6 +116,66 @@ fn send_simple_command(ui_weak: &Weak<MainWindow>, command: DaemonCommand, actio
     }
 }
 
+/// The stop commands an exiting window still owes the daemon. The daemon owns
+/// the recorder and the players and has no way to notice this window is gone —
+/// the socket is opened per command, so a closed GUI looks exactly like an idle
+/// one. Without this, a clip plays on to its end and a capture runs to the
+/// recorder's duration cap after the window has already closed.
+fn exit_stop_commands(
+    is_recording: bool,
+    is_playing_original: bool,
+    is_playing_filtered: bool,
+) -> Vec<DaemonCommand> {
+    let mut commands = Vec::new();
+    if is_recording {
+        commands.push(DaemonCommand::StopRecording);
+    }
+    if is_playing_original {
+        commands.push(DaemonCommand::StopOriginal);
+    }
+    if is_playing_filtered {
+        commands.push(DaemonCommand::StopFiltered);
+    }
+    commands
+}
+
+/// Tear down whatever capture or playback the window still believes is
+/// running. Diagnostics go to stderr rather than the error line
+/// `send_simple_command` writes to, because the window this runs for is already
+/// gone. Best effort by design: a killed process cannot send anything, which is
+/// what the recorder's own duration cap remains the backstop for.
+fn stop_playback_and_recording_on_exit(ui: &MainWindow) {
+    let commands = exit_stop_commands(
+        ui.get_is_recording(),
+        ui.get_is_playing_original(),
+        ui.get_is_playing_filtered(),
+    );
+    if commands.is_empty() {
+        return;
+    }
+
+    let mut client = match DaemonClient::connect() {
+        Ok(client) => client,
+        Err(e) => {
+            eprintln!("warning: cannot reach the daemon to stop the voice test: {e}");
+            return;
+        }
+    };
+
+    for command in commands {
+        match client.send_command(command) {
+            Ok(DaemonResponse::Ok) => {}
+            Ok(DaemonResponse::Error(e)) => {
+                eprintln!("warning: daemon refused a voice-test stop on exit: {e}");
+            }
+            Ok(DaemonResponse::State(_)) => {
+                eprintln!("warning: unexpected response from daemon");
+            }
+            Err(e) => eprintln!("warning: failed to stop the voice test on exit: {e}"),
+        }
+    }
+}
+
 /// Whether the device at `idx` in the filtered list equals the applied device,
 /// treating an out-of-range index as "no device" (matches only when none is
 /// applied). The settings-change callbacks share this comparison.
@@ -819,7 +879,11 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    ui.run()?;
+    // Cleanup runs even when the loop errors out: either way the window is
+    // gone and the daemon must not be left holding the mic or the speakers.
+    let run_result = ui.run();
+    stop_playback_and_recording_on_exit(&ui);
+    run_result?;
 
     Ok(())
 }
@@ -1037,5 +1101,42 @@ mod tests {
                 "daemon {daemon:?}, local {local:?}"
             );
         }
+    }
+
+    #[test]
+    fn an_idle_window_owes_the_daemon_nothing_on_exit() {
+        assert!(exit_stop_commands(false, false, false).is_empty());
+    }
+
+    #[test]
+    fn a_capture_in_flight_is_stopped_on_exit() {
+        assert!(matches!(
+            exit_stop_commands(true, false, false).as_slice(),
+            [DaemonCommand::StopRecording]
+        ));
+    }
+
+    #[test]
+    fn each_playback_kind_is_stopped_by_its_own_command() {
+        assert!(matches!(
+            exit_stop_commands(false, true, false).as_slice(),
+            [DaemonCommand::StopOriginal]
+        ));
+        assert!(matches!(
+            exit_stop_commands(false, false, true).as_slice(),
+            [DaemonCommand::StopFiltered]
+        ));
+    }
+
+    #[test]
+    fn every_active_subsystem_is_stopped_on_exit() {
+        assert!(matches!(
+            exit_stop_commands(true, true, true).as_slice(),
+            [
+                DaemonCommand::StopRecording,
+                DaemonCommand::StopOriginal,
+                DaemonCommand::StopFiltered
+            ]
+        ));
     }
 }
