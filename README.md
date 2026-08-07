@@ -23,13 +23,13 @@ clatter, fans, and room tone go; your voice stays.
 noise suppressor by Jean-Marc Valin, developed at Mozilla and published through
 Xiph.Org.
 
-> **Status:** pre-1.0 and actively developed. The CLI surface and the settings
-> file may still change between releases; see [CHANGELOG.md](CHANGELOG.md).
-
 <div align="center">
   <img src="./assets/screenshot.png" width="820"
        alt="Spectral's main window: an app bar with the status, a full-width input threshold band, then two columns of cards holding the input device list, the virtual mic name, the voice-processing switches and the voice test, above a footer with Disable and Apply">
 </div>
+
+> **Status:** pre-1.0 and actively developed. The CLI surface and the settings
+> file may still change between releases; see [CHANGELOG.md](CHANGELOG.md).
 
 ## Features
 
@@ -56,28 +56,11 @@ work but have not been validated.
 
 ## Installation
 
-Nix and the AUR are the supported installation methods. A Flatpak manifest is
+**Nix** and the **AUR** are the supported installation methods. A Flatpak manifest is
 included and builds cleanly, but it has not yet been through a Flathub review.
 Manual builds may work but are unsupported.
 
-**Nix** — a nixpkgs package is in review; until it lands, use this flake:
-
-```bash
-nix run git+https://codeberg.org/mmc/spectral
-```
-
-**Arch Linux** — not on the AUR yet; build from the PKGBUILD in this repository:
-
-```bash
-git clone https://codeberg.org/mmc/spectral.git
-cd spectral/packaging/aur
-makepkg -si
-```
-
-**Flatpak** — not on Flathub yet; build it yourself with `org.flatpak.Builder`.
-
-Installing into your profile, the declarative NixOS module and overlay, the
-Flatpak build steps, and the caveats attached to each are in
+The installation, build steps, and caveats for each are in
 [docs/INSTALLATION.md](docs/INSTALLATION.md).
 
 ## Usage
