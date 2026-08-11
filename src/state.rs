@@ -163,19 +163,26 @@ mod tests {
     }
 
     #[test]
-    fn mic_name_length_bound_is_inclusive_and_counted_in_characters() {
+    fn mic_name_length_bound_admits_the_maximum_and_rejects_one_past_it() {
         assert!(is_valid_mic_name(&"x".repeat(MIC_NAME_MAX_LEN)));
         assert!(!is_valid_mic_name(&"x".repeat(MIC_NAME_MAX_LEN + 1)));
     }
 
-    /// The byte-wise implementation must agree with the character-wise rule
-    /// the doc comment states, including where multi-byte input makes byte
-    /// length and char count diverge.
+    /// Byte and char counting cannot diverge while the character class is
+    /// ASCII-only: multi-byte input is rejected on its characters whichever
+    /// length the gate compared. This pins that equivalence where it is
+    /// least obvious — a name that exactly fills the byte budget, and so
+    /// clears the length gate on either reading. The fixture is asserted
+    /// onto that boundary rather than assumed onto it, so a changed
+    /// [`MIC_NAME_MAX_LEN`] fails loudly instead of silently sliding off it.
     #[test]
-    fn multi_byte_input_within_the_byte_bound_is_still_rejected() {
-        let name = "\u{e9}".repeat(MIC_NAME_MAX_LEN / 2);
-        assert!(name.len() <= MIC_NAME_MAX_LEN);
-        assert!(name.chars().count() <= MIC_NAME_MAX_LEN);
+    fn multi_byte_input_at_the_byte_bound_is_still_rejected() {
+        let multi_byte = "\u{e9}".repeat(MIC_NAME_MAX_LEN / 2);
+        let pad = "x".repeat(MIC_NAME_MAX_LEN - multi_byte.len());
+        let name = format!("{multi_byte}{pad}");
+
+        assert_eq!(name.len(), MIC_NAME_MAX_LEN);
+        assert!(name.chars().count() < MIC_NAME_MAX_LEN);
         assert!(!is_valid_mic_name(&name));
     }
 }
