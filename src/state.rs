@@ -104,8 +104,9 @@ impl AppState {
     }
 }
 
-/// Upper bound for user-chosen virtual-mic names, in characters. Sized so
-/// a max-length name fits the GUI name field without scrolling.
+/// Upper bound for user-chosen virtual-mic names. Compared against byte
+/// length, which equals character count for every name the rule accepts.
+/// Sized so a max-length name fits the GUI name field without scrolling.
 pub const MIC_NAME_MAX_LEN: usize = 20;
 
 /// Validates a user-chosen mic name: non-empty, at most
@@ -125,8 +126,11 @@ pub fn is_valid_mic_name(name: &str) -> bool {
 }
 
 /// The rule [`is_valid_mic_name`] enforces, in the words shown to the user.
-/// Lives beside the predicate so that relaxing the character set cannot
-/// leave the CLI and the daemon describing a rule neither one applies.
+///
+/// Only the length is derived. The character class is prose, so relaxing
+/// the byte test above means editing this string in the same change — it
+/// sits here, one screen away, so that the edit is hard to miss rather
+/// than scattered across the CLI, the daemon and the pipeline.
 pub fn mic_name_rule() -> String {
     format!("only [A-Za-z0-9_-] allowed, 1-{MIC_NAME_MAX_LEN} chars")
 }
