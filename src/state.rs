@@ -123,3 +123,48 @@ pub fn is_valid_mic_name(name: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mic_names_are_ascii_alphanumerics_underscore_and_hyphen() {
+        let cases = [
+            ("Spectral-Mic", true),
+            ("a", true),
+            ("A1_b-2", true),
+            ("_", true),
+            ("-", true),
+            ("", false),
+            ("has space", false),
+            ("bang!", false),
+            ("dot.separated", false),
+            ("slash/es", false),
+            ("caf\u{e9}", false),
+            ("\u{1f3a4}", false),
+            ("tab\there", false),
+            ("new\nline", false),
+        ];
+        for (name, expected) in cases {
+            assert_eq!(is_valid_mic_name(name), expected, "name {name:?}");
+        }
+    }
+
+    #[test]
+    fn mic_name_length_bound_is_inclusive_and_counted_in_characters() {
+        assert!(is_valid_mic_name(&"x".repeat(MIC_NAME_MAX_LEN)));
+        assert!(!is_valid_mic_name(&"x".repeat(MIC_NAME_MAX_LEN + 1)));
+    }
+
+    /// The byte-wise implementation must agree with the character-wise rule
+    /// the doc comment states, including where multi-byte input makes byte
+    /// length and char count diverge.
+    #[test]
+    fn multi_byte_input_within_the_byte_bound_is_still_rejected() {
+        let name = "\u{e9}".repeat(MIC_NAME_MAX_LEN / 2);
+        assert!(name.len() <= MIC_NAME_MAX_LEN);
+        assert!(name.chars().count() <= MIC_NAME_MAX_LEN);
+        assert!(!is_valid_mic_name(&name));
+    }
+}
