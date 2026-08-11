@@ -800,4 +800,22 @@ mod tests {
         mix_to_mono(&[1.0, 0.5, -1.0, -1.0, 0.25, 0.25, 1.0, 1.0], 4, &mut out);
         assert_eq!(out, [24576.0, 8192.0]);
     }
+
+    #[test]
+    fn mix_to_mono_averages_only_the_front_pair_at_the_ceiling() {
+        // 8-channel frame: channels 3..8 must not contribute.
+        let mut out = vec![0.0f32; 1];
+        let frame = [1.0, 0.0, 9.0, 9.0, 9.0, 9.0, 9.0, 9.0];
+        mix_to_mono(&frame, 8, &mut out);
+        assert_eq!(out, [16384.0]);
+    }
+
+    #[test]
+    fn mix_to_mono_drops_a_trailing_partial_frame() {
+        // Five samples at two channels: two whole frames, the dangling
+        // sample is ignored rather than read as a half frame.
+        let mut out = vec![0.0f32; 2];
+        mix_to_mono(&[1.0, 1.0, 0.5, 0.5, 0.25], 2, &mut out);
+        assert_eq!(out, [32768.0, 16384.0]);
+    }
 }
