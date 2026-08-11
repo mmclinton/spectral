@@ -9,7 +9,7 @@ mod fonts;
 
 use spectral_lib::platform::audio_devices;
 use spectral_lib::platform::ipc::{DaemonClient, DaemonCommand, DaemonResponse, DaemonState};
-use spectral_lib::state::{AudioDevice, MIC_NAME_MAX_LEN, Status};
+use spectral_lib::state::{AudioDevice, Status, is_valid_mic_name};
 
 use slint::Model;
 use slint::ModelRc;
@@ -23,14 +23,11 @@ use std::rc::Rc;
 
 slint::include_modules!();
 
-/// Byte-wise on purpose: every permitted character is ASCII, so any string
-/// that passes the character check has byte length equal to char count, and
-/// both tests short-circuit without decoding an oversized paste end-to-end.
+/// [`is_valid_mic_name`] plus one relaxation: the field must be clearable
+/// mid-edit, so empty input passes here while the daemon-side validator
+/// rejects it.
 fn is_valid_mic_name_input(text: &str) -> bool {
-    text.len() <= MIC_NAME_MAX_LEN
-        && text
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    text.is_empty() || is_valid_mic_name(text)
 }
 
 fn filter_devices(devices: &[AudioDevice], mic_name: &str) -> Vec<AudioDevice> {
@@ -891,6 +888,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spectral_lib::state::MIC_NAME_MAX_LEN;
 
     fn device(id: u32, name: &str) -> AudioDevice {
         AudioDevice {
