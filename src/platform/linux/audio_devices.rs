@@ -109,10 +109,7 @@ pub fn get_input_devices() -> Result<Vec<AudioDevice>, Box<dyn Error>> {
         // TODO: Validate that "audio.channels" is reliably populated by PipeWire
         // for all device types. Some devices may not expose this property until
         // a stream is negotiated. Fallback to 2 (stereo) if not available.
-        let channels = props
-            .get("audio.channels")
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(2);
+        let channels = parse_channel_count(props.get("audio.channels"));
 
         (!name.to_lowercase().contains("monitor")).then_some(AudioDevice {
             id: global.id,
@@ -122,14 +119,24 @@ pub fn get_input_devices() -> Result<Vec<AudioDevice>, Box<dyn Error>> {
     })
 }
 
+/// Channel count when the node doesn't say: stereo, matching PipeWire's
+/// own default for unconfigured audio.
+const FALLBACK_CHANNELS: u32 = 2;
+
+/// Parse an `audio.channels` property value. Absent or unparsable means
+/// "unknown" and yields the fallback; a literal zero is clamped to mono
+/// rather than trusted.
+fn parse_channel_count(raw: Option<&str>) -> u32 {
+    raw.and_then(|s| s.parse::<u32>().ok())
+        .map(|n| n.max(1))
+        .unwrap_or(FALLBACK_CHANNELS)
+}
+
 /// Extract a node's channel count from its registry props, falling back to
 /// 2 (stereo) when `audio.channels` is absent — the same fallback
 /// `get_input_devices` applies.
 fn channels_from_props(props: &DictRef) -> u32 {
-    props
-        .get("audio.channels")
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(2)
+    parse_channel_count(props.get("audio.channels"))
 }
 
 /// Resolve a node's `node.name` and channel count by id in one registry
@@ -288,4 +295,27 @@ pub fn get_node_name(node_id: u32) -> Result<String, Box<dyn Error>> {
         .into_iter()
         .next()
         .ok_or_else(|| format!("Could not find node.name for node {node_id}").into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn channel_count_parsing_reads_clamps_zero_and_falls_back() {
+        let cases: [(Option<&str>, u32); 9] = [
+            (None, 2),
+            (Some("1"), 1),
+            (Some("2"), 2),
+            (Some("8"), 8),
+            (Some("16"), 16),
+            (Some("0"), 1),
+            (Some(""), 2),
+            (Some("abc"), 2),
+            (Some("-1"), 2),
+        ];
+        for (raw, expected) in cases {
+            assert_eq!(parse_channel_count(raw), expected, "raw {raw:?}");
+        }
+    }
 }
