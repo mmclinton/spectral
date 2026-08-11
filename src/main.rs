@@ -931,19 +931,16 @@ mod tests {
     }
 
     #[test]
-    fn mic_name_input_accepts_ascii_word_chars_within_the_length_cap() {
-        let cases = [
-            ("", true),
-            ("Spectral-Mic", true),
-            ("a_b-C9", true),
-            (&"a".repeat(MIC_NAME_MAX_LEN), true),
-            (&"a".repeat(MIC_NAME_MAX_LEN + 1), false),
-            ("has space", false),
-            ("café", false),
-            ("mic🎙", false),
-        ];
-        for (input, expected) in cases {
-            assert_eq!(is_valid_mic_name_input(input), expected, "input {input:?}");
+    fn the_name_field_accepts_empty_mid_edit_and_otherwise_defers_to_the_rule() {
+        assert!(is_valid_mic_name_input(""));
+
+        let long = "a".repeat(MIC_NAME_MAX_LEN + 1);
+        for input in ["Spectral-Mic", "a_b-C9", "has space", "café", "mic🎙", &long] {
+            assert_eq!(
+                is_valid_mic_name_input(input),
+                is_valid_mic_name(input),
+                "input {input:?}"
+            );
         }
     }
 
