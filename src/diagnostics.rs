@@ -70,6 +70,7 @@ pub fn build_diagnostics(
 
     lines.push(String::new());
     lines.push(format!("Report issues at {ISSUE_URL}"));
+    lines.push("Attach the daemon log named above.".to_string());
     lines.join("\n")
 }
 
@@ -227,7 +228,7 @@ mod tests {
     }
 
     #[test]
-    fn paths_versions_and_issue_url_are_always_present() {
+    fn paths_versions_and_the_reporting_footer_are_always_present() {
         for daemon_state in [None, Some(state())] {
             let dump = render(daemon_state.as_ref(), &[]);
 
@@ -235,7 +236,10 @@ mod tests {
             assert!(dump.contains("protocol (gui): 2"));
             assert!(dump.contains("daemon log: /run/user/1000/spectral-daemon.log"));
             assert!(dump.contains("config: /home/user/.config/spectral/state.toml"));
-            assert!(dump.ends_with(&format!("Report issues at {ISSUE_URL}")));
+            // The modal shows no reporting advice of its own, so the dump has
+            // to be self-explanatory once pasted.
+            assert!(dump.contains(&format!("Report issues at {ISSUE_URL}")));
+            assert!(dump.ends_with("Attach the daemon log named above."));
         }
     }
 }

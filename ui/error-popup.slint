@@ -77,16 +77,12 @@ export component ErrorPopup inherits ModalPopup {
             content: root.error_text;
         }
 
+        // Where to report and what to attach are the last lines of the dump
+        // itself, not chrome around it: a pasted report then carries its own
+        // instructions, and the modal keeps one thing to read per card.
         CopyCard {
             title: "Diagnostics";
             content: root.diagnostics_text;
-        }
-
-        Text {
-            text: "Report issues at https://codeberg.org/mmc/spectral/issues — attach the daemon log (path in the diagnostics above).";
-            font-size: Theme.font_body;
-            color: Theme.text_muted;
-            wrap: word-wrap;
         }
     }
 }
