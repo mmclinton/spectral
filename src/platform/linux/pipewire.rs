@@ -6,7 +6,10 @@
 use super::audio_processor::AudioProcessor;
 use crate::state::lock_or_recover;
 use pipewire::spa::{
+    param::ParamType,
     param::audio::{AudioFormat, AudioInfoRaw, MAX_CHANNELS},
+    param::format::{MediaSubtype, MediaType},
+    param::format_utils,
     pod::Pod,
     utils::Direction,
 };
@@ -35,8 +38,10 @@ pub const OUTPUT_CHANNELS: u32 = 1;
 /// RNNoise requires exactly 480 samples (10ms at 48kHz) per frame.
 pub const RNNOISE_FRAME_SIZE: usize = 480;
 
-/// Channels beyond this will be clamped.
-/// TODO: Validate behavior with devices that have more than 8 channels
+/// Ceiling on capture channels. Wider devices are captured as their first
+/// eight channels — an unpositioned offer pairs channels by index, so the
+/// clamp keeps native order (channelmix `pair_mix`). Layouts above the
+/// ceiling fail closed via the Format check in the capture listener.
 pub const MAX_INPUT_CHANNELS: u32 = 8;
 
 /// Scaling factor for converting f32 PCM [-1.0, 1.0] to RNNoise's expected i16 range.
@@ -72,6 +77,13 @@ struct PipelineData {
     input_channels: u32,
     mono_scratch: Vec<f32>,
     processed_scratch: Vec<f32>,
+    /// True once the first Format param locked `input_channels` to the
+    /// granted count; a later Format changing it halts the pipeline.
+    format_locked: bool,
+    /// Poisoned by an unusable or renegotiated format: the process
+    /// callback drops deliveries rather than deinterleave with a wrong
+    /// stride.
+    halted: bool,
 }
 
 impl PipelineData {
@@ -99,6 +111,8 @@ impl PipelineData {
             input_channels: channels,
             mono_scratch: vec![0.0; RNNOISE_FRAME_SIZE],
             processed_scratch: vec![0.0; RNNOISE_FRAME_SIZE],
+            format_locked: false,
+            halted: false,
         }
     }
 }
@@ -124,9 +138,6 @@ impl NativeAudioPipeline {
     /// Start the native audio pipeline: capture `source_node` with
     /// `input_channels` channels, denoise, and feed the virtual mic
     /// named (and displayed as) `virtual_name`.
-    ///
-    /// TODO: Validate that PipeWire correctly negotiates the channel count
-    /// for various device types (USB mics, built-in mics, audio interfaces)
     pub fn start(
         processor: AudioProcessor,
         source_node: &str,
@@ -308,6 +319,7 @@ fn run_pipeline(
 
     let capture_data = pipeline_data.clone();
     let capture_failure = failure.clone();
+    let param_failure = failure.clone();
     let capture_ready = ready.clone();
     let _capture_listener = capture_stream
         .add_local_listener_with_user_data(capture_data)
@@ -317,6 +329,51 @@ fn run_pipeline(
             }
             StreamState::Paused | StreamState::Streaming => capture_ready.capture.set(true),
             _ => {}
+        })
+        // The granted format, not the offered one: PipeWire's adapter is
+        // free to convert, so the stride the deinterleave uses has to come
+        // from what negotiation actually settled on.
+        .param_changed(move |_stream, data, id, param| {
+            if id != ParamType::Format.as_raw() {
+                return;
+            }
+            let Some(param) = param else { return };
+            let Ok((media_type, media_subtype)) = format_utils::parse_format(param) else {
+                return;
+            };
+            if media_type != MediaType::Audio || media_subtype != MediaSubtype::Raw {
+                return;
+            }
+            let mut info = AudioInfoRaw::new();
+            let mut d = data.borrow_mut();
+            if info.parse(param).is_err() {
+                record_failure(
+                    &param_failure,
+                    "capture stream: unparsable Format param".to_string(),
+                );
+                d.halted = true;
+                return;
+            }
+            let granted = info.channels();
+            if granted == 0 || granted > MAX_INPUT_CHANNELS {
+                record_failure(
+                    &param_failure,
+                    format!("capture stream: {granted} channels outside 1..={MAX_INPUT_CHANNELS}"),
+                );
+                d.halted = true;
+            } else if d.format_locked && granted != d.input_channels {
+                let locked = d.input_channels;
+                record_failure(
+                    &param_failure,
+                    format!(
+                        "capture stream: format renegotiated from {locked} to {granted} channels mid-stream"
+                    ),
+                );
+                d.halted = true;
+            } else {
+                d.input_channels = granted;
+                d.format_locked = true;
+            }
         })
         .process(|stream, data| {
             process_capture_buffer(stream, data);
@@ -556,7 +613,16 @@ fn process_capture_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCe
                 input_channels,
                 mono_scratch,
                 processed_scratch,
+                format_locked: _,
+                halted,
             } = &mut *pipeline_data;
+
+            // A format we can't trust: drop the delivery rather than
+            // deinterleave it at the wrong stride. The daemon surfaces the
+            // recorded failure through its health poll.
+            if *halted {
+                return;
+            }
             let channels = *input_channels as usize;
 
             for audio_chunk in valid_data.chunks_exact(4) {
