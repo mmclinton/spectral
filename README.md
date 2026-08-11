@@ -23,13 +23,12 @@ clatter, fans, and room tone go; your voice stays.
 noise suppressor by Jean-Marc Valin, developed at Mozilla and published through
 Xiph.Org.
 
+## Screenshot
+
 <div align="center">
   <img src="./assets/screenshot.png" width="820"
        alt="Spectral's main window: an app bar with the status, a full-width input threshold band, then two columns of cards holding the input device list, the virtual mic name, the voice-processing switches and the voice test, above a footer with Disable and Apply">
 </div>
-
-> **Status:** pre-1.0 and actively developed. The CLI surface and the settings
-> file may still change between releases; see [CHANGELOG.md](CHANGELOG.md).
 
 ## Features
 
