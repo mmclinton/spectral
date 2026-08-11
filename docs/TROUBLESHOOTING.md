@@ -16,9 +16,12 @@ each shows up as its own labelled entry ("EVO4 Mic 1", "EVO4 Line 1", …) — p
 the one your mic is plugged into.
 
 When the interface appears as a single multi-channel device instead (e.g.
-"Analog Surround 4.0"), only the first two capture channels are used. For a
-single mic you will get the best level by selecting a mono or stereo profile for
-the interface in your sound settings.
+"Analog Surround 4.0"), Spectral captures its native channel count and
+averages only the first two channels into the virtual mic — on such
+interfaces those are the physical mic preamps, while the later channels
+usually carry loopback or monitor returns that must not bleed into the
+microphone. Devices with more than eight channels are captured as their
+first eight.
 
 ## The device list is stale after a PipeWire restart
 
