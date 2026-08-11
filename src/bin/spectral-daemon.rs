@@ -12,7 +12,7 @@ use spectral_lib::platform::persistence::{
     remove_legacy_recordings, save_state,
 };
 use spectral_lib::platform::recorder::{NativePlayer, NativeRecorder, PlaybackKind};
-use spectral_lib::state::{AppState, MIC_NAME_MAX_LEN, Status, is_valid_mic_name, lock_or_recover};
+use spectral_lib::state::{AppState, Status, is_valid_mic_name, lock_or_recover, mic_name_rule};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -183,9 +183,8 @@ fn handle_enable(
     let mic_name = match mic_name {
         Some(name) => {
             if !is_valid_mic_name(&name) {
-                return DaemonResponse::Error(format!(
-                    "Invalid mic name: only [A-Za-z0-9_-] allowed, 1-{MIC_NAME_MAX_LEN} chars"
-                ));
+                let rule = mic_name_rule();
+                return DaemonResponse::Error(format!("Invalid mic name: {rule}"));
             }
             name
         }

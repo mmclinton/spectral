@@ -124,6 +124,13 @@ pub fn is_valid_mic_name(name: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
+/// The rule [`is_valid_mic_name`] enforces, in the words shown to the user.
+/// Lives beside the predicate so that relaxing the character set cannot
+/// leave the CLI and the daemon describing a rule neither one applies.
+pub fn mic_name_rule() -> String {
+    format!("only [A-Za-z0-9_-] allowed, 1-{MIC_NAME_MAX_LEN} chars")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -8,7 +8,7 @@ use spectral_lib::platform::ipc::{
     DaemonClient, DaemonCommand, DaemonResponse, DaemonState, PROTOCOL_VERSION,
     wait_for_daemon_exit,
 };
-use spectral_lib::state::{MIC_NAME_MAX_LEN, Status, is_valid_mic_name};
+use spectral_lib::state::{Status, is_valid_mic_name, mic_name_rule};
 use std::ffi::OsString;
 use std::process::ExitCode;
 
@@ -148,9 +148,8 @@ where
                 }
                 let value = take_value(args, inline, "--mic-name")?;
                 if !is_valid_mic_name(&value) {
-                    return Err(format!(
-                        "invalid --mic-name '{value}': only [A-Za-z0-9_-] allowed, 1-{MIC_NAME_MAX_LEN} chars"
-                    ));
+                    let rule = mic_name_rule();
+                    return Err(format!("invalid --mic-name '{value}': {rule}"));
                 }
                 mic_name = Some(value);
             }
@@ -430,6 +429,7 @@ fn run_shutdown() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spectral_lib::state::MIC_NAME_MAX_LEN;
 
     fn p(args: &[&str]) -> Result<CliCommand, String> {
         parse(args.iter().map(OsString::from))
