@@ -5,10 +5,12 @@
 
 mod cli;
 mod daemon_launch;
+mod diagnostics;
 mod fonts;
 
 use spectral_lib::platform::audio_devices;
 use spectral_lib::platform::ipc::{DaemonClient, DaemonCommand, DaemonResponse, DaemonState};
+use spectral_lib::platform::persistence;
 use spectral_lib::state::{AudioDevice, MIC_NAME_MAX_LEN, Status};
 
 use slint::Model;
@@ -433,6 +435,13 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     // resetting the cache there re-arms the display for a failure that
     // recurs with the identical message within one poll tick.
     let last_daemon_error = Rc::new(std::cell::RefCell::new(None::<String>));
+    // The newest snapshot the poll has seen, for the diagnostics dump. A
+    // launch failure fabricates a defaults-only DaemonState upstream to keep
+    // the window open; seeding the cache with that would report invented
+    // settings as the daemon's, so it starts empty in exactly that case.
+    let last_daemon_state = Rc::new(std::cell::RefCell::new(
+        launch_error.is_none().then(|| daemon_state.clone()),
+    ));
 
     refresh_unsaved_changes(&ui, &filtered_devices.borrow(), &applied);
     update_ui_status(&ui_weak, daemon_state.status);
@@ -811,11 +820,17 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let applied = applied.clone();
         let current_status = current_status.clone();
         let last_daemon_error = last_daemon_error.clone();
+        let last_daemon_state = last_daemon_state.clone();
         move || {
             let Some(ui) = ui_weak.upgrade() else { return };
             match DaemonClient::connect() {
                 Ok(mut c) => match c.send_command(DaemonCommand::GetState) {
                     Ok(DaemonResponse::State(state)) => {
+                        // Only the success arm writes the cache: a failed poll
+                        // must leave the last known good snapshot standing,
+                        // since that is the one worth reporting.
+                        *last_daemon_state.borrow_mut() = Some(state.clone());
+
                         ui.set_is_playing_original(state.is_playing_original);
                         ui.set_is_playing_filtered(state.is_playing_filtered);
 
@@ -876,6 +891,28 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                     }
                 }
             }
+        }
+    });
+
+    ui.on_error_chip_clicked({
+        let ui_weak = ui_weak.clone();
+        let devices = filtered_devices.clone();
+        let last_daemon_state = last_daemon_state.clone();
+        move || {
+            let Some(ui) = ui_weak.upgrade() else { return };
+            // Snapshotted per open rather than bound: the dump is what was
+            // true when the user went looking, and reopening refreshes it.
+            ui.set_diagnostics_text(
+                diagnostics::build_diagnostics(
+                    last_daemon_state.borrow().as_ref(),
+                    &devices.borrow(),
+                    &daemon_launch::daemon_log_path(),
+                    &persistence::get_config_path(),
+                    std::env::var_os("FLATPAK_ID").is_some(),
+                )
+                .into(),
+            );
+            ui.set_show_error_popup(true);
         }
     });
 
