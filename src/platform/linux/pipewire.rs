@@ -6,7 +6,10 @@
 use super::audio_processor::AudioProcessor;
 use crate::state::lock_or_recover;
 use pipewire::spa::{
+    param::ParamType,
     param::audio::{AudioFormat, AudioInfoRaw, MAX_CHANNELS},
+    param::format::{MediaSubtype, MediaType},
+    param::format_utils,
     pod::Pod,
     utils::Direction,
 };
@@ -35,8 +38,11 @@ pub const OUTPUT_CHANNELS: u32 = 1;
 /// RNNoise requires exactly 480 samples (10ms at 48kHz) per frame.
 pub const RNNOISE_FRAME_SIZE: usize = 480;
 
-/// Channels beyond this will be clamped.
-/// TODO: Validate behavior with devices that have more than 8 channels
+/// Ceiling on capture channels. Wider devices are captured as their first
+/// eight channels — an unpositioned offer pairs channels by index, so the
+/// clamp keeps native order (channelmix `pair_mix`). Validated on 1- and
+/// 2-channel devices; wider layouts are untested but fail closed via the
+/// Format check in the capture listener.
 pub const MAX_INPUT_CHANNELS: u32 = 8;
 
 /// Scaling factor for converting f32 PCM [-1.0, 1.0] to RNNoise's expected i16 range.
@@ -72,12 +78,20 @@ struct PipelineData {
     input_channels: u32,
     mono_scratch: Vec<f32>,
     processed_scratch: Vec<f32>,
+    /// True once the first Format param locked `input_channels` to the
+    /// granted count; a later Format changing it halts the pipeline.
+    format_locked: bool,
+    /// Poisoned by an unusable or renegotiated format: the process
+    /// callback drops deliveries rather than deinterleave with a wrong
+    /// stride.
+    halted: bool,
 }
 
 impl PipelineData {
     fn new(processor: AudioProcessor, input_channels: u32) -> Self {
-        // Clamp channels to valid range
-        // TODO: Validate that channel clamping produces acceptable audio quality
+        // The offer is clamped to the same ceiling, so below it the format
+        // is exact and no conversion occurs; the clamp only engages for
+        // devices wider than MAX_INPUT_CHANNELS.
         let channels = input_channels.clamp(1, MAX_INPUT_CHANNELS);
         // Full worst-case reservations: the process callbacks push into
         // these on the RT thread, so growth there would mean an RT-path
@@ -86,7 +100,10 @@ impl PipelineData {
         // delivery; output is trimmed to OUTPUT_BUFFER_CAP only after a
         // whole delivery is processed, so it transiently exceeds the cap
         // by up to one delivery's worth of mono frames.
-        let input_capacity = (MAX_QUANTUM + RNNOISE_FRAME_SIZE) * channels as usize;
+        //
+        // Sized for the ceiling, not the request: the granted channel
+        // count arrives only with the Format param, after allocation.
+        let input_capacity = (MAX_QUANTUM + RNNOISE_FRAME_SIZE) * MAX_INPUT_CHANNELS as usize;
         let output_capacity = OUTPUT_BUFFER_CAP + MAX_QUANTUM;
         Self {
             processor,
@@ -95,6 +112,8 @@ impl PipelineData {
             input_channels: channels,
             mono_scratch: vec![0.0; RNNOISE_FRAME_SIZE],
             processed_scratch: vec![0.0; RNNOISE_FRAME_SIZE],
+            format_locked: false,
+            halted: false,
         }
     }
 }
@@ -117,16 +136,9 @@ fn record_failure(slot: &Mutex<Option<String>>, msg: String) {
 }
 
 impl NativeAudioPipeline {
-    /// Start the native audio pipeline.
-    ///
-    /// # Arguments
-    /// * `processor` - Audio processor for noise reduction
-    /// * `source_node` - PipeWire node name of the source device
-    /// * `virtual_name` - node name (and display name) of the virtual mic
-    /// * `input_channels` - Number of channels on the input device
-    ///
-    /// TODO: Validate that PipeWire correctly negotiates the channel count
-    /// for various device types (USB mics, built-in mics, audio interfaces)
+    /// Start the native audio pipeline: capture `source_node` with
+    /// `input_channels` channels, denoise, and feed the virtual mic
+    /// named (and displayed as) `virtual_name`.
     pub fn start(
         processor: AudioProcessor,
         source_node: &str,
@@ -153,7 +165,7 @@ impl NativeAudioPipeline {
             ) {
                 record_failure(&failure_clone, format!("pipeline error: {e}"));
                 let _ = ready_tx.send(Err(e.to_string()));
-                eprintln!("[Native Pipeline] ✗ Pipeline error: {}", e);
+                eprintln!("[pipeline] pipeline error: {e}");
             }
         });
 
@@ -165,16 +177,15 @@ impl NativeAudioPipeline {
             }),
             Ok(Err(e)) => {
                 let _ = pipeline_thread.join();
-                Err(format!("Pipeline setup failed: {}", e).into())
+                Err(format!("Pipeline setup failed: {e}").into())
             }
             Err(_) => {
                 // Don't join: a wedged setup thread would hang the daemon.
                 running.store(false, Ordering::SeqCst);
-                Err(format!(
-                    "Pipeline did not become ready within {:?}",
-                    PIPELINE_READY_TIMEOUT
+                Err(
+                    format!("Pipeline did not become ready within {PIPELINE_READY_TIMEOUT:?}")
+                        .into(),
                 )
-                .into())
             }
         }
     }
@@ -238,7 +249,7 @@ pub(crate) fn build_audio_format_pod(
             properties: audio_info.into(),
         }),
     )
-    .map_err(|e| format!("Failed to serialize audio format: {:?}", e))?
+    .map_err(|e| format!("Failed to serialize audio format: {e:?}"))?
     .0
     .into_inner();
 
@@ -265,7 +276,6 @@ fn run_pipeline(
     // Must use Rc because PipeWire callbacks are !Send
     let pipeline_data = Rc::new(RefCell::new(PipelineData::new(processor, channels)));
 
-    // TODO: Verify PipeWire format negotiation works correctly for mono (1 channel) devices
     let capture_format = build_audio_format_pod(AudioFormat::F32LE, SAMPLE_RATE, channels, None)?;
     let feed_format = build_audio_format_pod(
         AudioFormat::F32LE,
@@ -309,6 +319,7 @@ fn run_pipeline(
 
     let capture_data = pipeline_data.clone();
     let capture_failure = failure.clone();
+    let param_failure = failure.clone();
     let capture_ready = ready.clone();
     let _capture_listener = capture_stream
         .add_local_listener_with_user_data(capture_data)
@@ -318,6 +329,51 @@ fn run_pipeline(
             }
             StreamState::Paused | StreamState::Streaming => capture_ready.capture.set(true),
             _ => {}
+        })
+        // The granted format, not the offered one: PipeWire's adapter is
+        // free to convert, so the stride the deinterleave uses has to come
+        // from what negotiation actually settled on.
+        .param_changed(move |_stream, data, id, param| {
+            if id != ParamType::Format.as_raw() {
+                return;
+            }
+            let Some(param) = param else { return };
+            let Ok((media_type, media_subtype)) = format_utils::parse_format(param) else {
+                return;
+            };
+            if media_type != MediaType::Audio || media_subtype != MediaSubtype::Raw {
+                return;
+            }
+            let mut info = AudioInfoRaw::new();
+            let mut d = data.borrow_mut();
+            if info.parse(param).is_err() {
+                record_failure(
+                    &param_failure,
+                    "capture stream: unparsable Format param".to_string(),
+                );
+                d.halted = true;
+                return;
+            }
+            let granted = info.channels();
+            if granted == 0 || granted > MAX_INPUT_CHANNELS {
+                record_failure(
+                    &param_failure,
+                    format!("capture stream: {granted} channels outside 1..={MAX_INPUT_CHANNELS}"),
+                );
+                d.halted = true;
+            } else if d.format_locked && granted != d.input_channels {
+                let locked = d.input_channels;
+                record_failure(
+                    &param_failure,
+                    format!(
+                        "capture stream: format renegotiated from {locked} to {granted} channels mid-stream"
+                    ),
+                );
+                d.halted = true;
+            } else {
+                d.input_channels = granted;
+                d.format_locked = true;
+            }
         })
         .process(|stream, data| {
             process_capture_buffer(stream, data);
@@ -430,7 +486,8 @@ fn run_pipeline(
             .loop_()
             .iterate(std::time::Duration::from_millis(10));
         if res < 0 {
-            record_failure(failure, format!("main loop iterate failed: errno {}", -res));
+            let errno = -res;
+            record_failure(failure, format!("main loop iterate failed: errno {errno}"));
             break;
         }
         if lock_or_recover(failure).is_some() {
@@ -556,7 +613,16 @@ fn process_capture_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCe
                 input_channels,
                 mono_scratch,
                 processed_scratch,
+                format_locked: _,
+                halted,
             } = &mut *pipeline_data;
+
+            // A format we can't trust: drop the delivery rather than
+            // deinterleave it at the wrong stride. The daemon surfaces the
+            // recorded failure through its health poll.
+            if *halted {
+                return;
+            }
             let channels = *input_channels as usize;
 
             for audio_chunk in valid_data.chunks_exact(4) {
@@ -671,8 +737,10 @@ mod tests {
         assert!(!positioned.unwrap().is_empty(), "Pod should have content");
     }
 
-    /// The RT process callbacks must never grow these Vecs; the
-    /// constructor has to reserve the worst case each one can reach.
+    /// The RT process callbacks must never grow these Vecs, and the
+    /// granted channel count is only known once Format negotiation lands —
+    /// after allocation. So the input ring must fit the channel ceiling
+    /// regardless of the count the constructor was given.
     #[test]
     fn pipeline_buffers_are_fully_reserved_up_front() {
         use crate::state::AppState;
@@ -681,10 +749,10 @@ mod tests {
         for channels in [1, 2, MAX_INPUT_CHANNELS] {
             let processor = AudioProcessor::new(Arc::new(AppState::new()));
             let data = PipelineData::new(processor, channels);
-            let ch = channels as usize;
             assert!(
-                data.input_buffer.capacity() >= (MAX_QUANTUM + RNNOISE_FRAME_SIZE) * ch,
-                "input capacity too small for {channels} channels"
+                data.input_buffer.capacity()
+                    >= (MAX_QUANTUM + RNNOISE_FRAME_SIZE) * MAX_INPUT_CHANNELS as usize,
+                "input capacity below the channel ceiling (ctor arg {channels})"
             );
             assert!(
                 data.output_buffer.capacity() >= OUTPUT_BUFFER_CAP + MAX_QUANTUM,
@@ -731,5 +799,23 @@ mod tests {
         let mut out = vec![0.0f32; 2];
         mix_to_mono(&[1.0, 0.5, -1.0, -1.0, 0.25, 0.25, 1.0, 1.0], 4, &mut out);
         assert_eq!(out, [24576.0, 8192.0]);
+    }
+
+    #[test]
+    fn mix_to_mono_averages_only_the_front_pair_at_the_ceiling() {
+        // 8-channel frame: channels 3..8 must not contribute.
+        let mut out = vec![0.0f32; 1];
+        let frame = [1.0, 0.0, 9.0, 9.0, 9.0, 9.0, 9.0, 9.0];
+        mix_to_mono(&frame, 8, &mut out);
+        assert_eq!(out, [16384.0]);
+    }
+
+    #[test]
+    fn mix_to_mono_drops_a_trailing_partial_frame() {
+        // Five samples at two channels: two whole frames, the dangling
+        // sample is ignored rather than read as a half frame.
+        let mut out = vec![0.0f32; 2];
+        mix_to_mono(&[1.0, 1.0, 0.5, 0.5, 0.25], 2, &mut out);
+        assert_eq!(out, [32768.0, 16384.0]);
     }
 }

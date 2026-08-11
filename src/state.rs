@@ -22,8 +22,9 @@ pub struct AudioDevice {
     pub id: u32,
     /// Human-readable description shown in device pickers.
     pub name: String,
-    /// Number of audio channels (1=mono, 2=stereo, etc.)
-    /// TODO: Validate channel handling for devices with >2 channels (e.g., multichannel interfaces)
+    /// Channel count as reported by the node's own info props (1 = mono);
+    /// 2 can also mean "unknown" — the fallback when a node dies before
+    /// reporting or omits `audio.channels`.
     #[serde(default = "default_channels")]
     pub channels: u32,
 }
