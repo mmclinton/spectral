@@ -117,13 +117,9 @@ fn record_failure(slot: &Mutex<Option<String>>, msg: String) {
 }
 
 impl NativeAudioPipeline {
-    /// Start the native audio pipeline.
-    ///
-    /// # Arguments
-    /// * `processor` - Audio processor for noise reduction
-    /// * `source_node` - PipeWire node name of the source device
-    /// * `virtual_name` - node name (and display name) of the virtual mic
-    /// * `input_channels` - Number of channels on the input device
+    /// Start the native audio pipeline: capture `source_node` with
+    /// `input_channels` channels, denoise, and feed the virtual mic
+    /// named (and displayed as) `virtual_name`.
     ///
     /// TODO: Validate that PipeWire correctly negotiates the channel count
     /// for various device types (USB mics, built-in mics, audio interfaces)
@@ -153,7 +149,7 @@ impl NativeAudioPipeline {
             ) {
                 record_failure(&failure_clone, format!("pipeline error: {e}"));
                 let _ = ready_tx.send(Err(e.to_string()));
-                eprintln!("[Native Pipeline] ✗ Pipeline error: {}", e);
+                eprintln!("[pipeline] pipeline error: {e}");
             }
         });
 
@@ -165,16 +161,15 @@ impl NativeAudioPipeline {
             }),
             Ok(Err(e)) => {
                 let _ = pipeline_thread.join();
-                Err(format!("Pipeline setup failed: {}", e).into())
+                Err(format!("Pipeline setup failed: {e}").into())
             }
             Err(_) => {
                 // Don't join: a wedged setup thread would hang the daemon.
                 running.store(false, Ordering::SeqCst);
-                Err(format!(
-                    "Pipeline did not become ready within {:?}",
-                    PIPELINE_READY_TIMEOUT
+                Err(
+                    format!("Pipeline did not become ready within {PIPELINE_READY_TIMEOUT:?}")
+                        .into(),
                 )
-                .into())
             }
         }
     }
@@ -238,7 +233,7 @@ pub(crate) fn build_audio_format_pod(
             properties: audio_info.into(),
         }),
     )
-    .map_err(|e| format!("Failed to serialize audio format: {:?}", e))?
+    .map_err(|e| format!("Failed to serialize audio format: {e:?}"))?
     .0
     .into_inner();
 
@@ -430,7 +425,8 @@ fn run_pipeline(
             .loop_()
             .iterate(std::time::Duration::from_millis(10));
         if res < 0 {
-            record_failure(failure, format!("main loop iterate failed: errno {}", -res));
+            let errno = -res;
+            record_failure(failure, format!("main loop iterate failed: errno {errno}"));
             break;
         }
         if lock_or_recover(failure).is_some() {

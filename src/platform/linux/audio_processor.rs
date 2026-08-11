@@ -105,18 +105,18 @@ impl VirtualMic {
         input_channels: u32,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         if !is_valid_mic_name(virtual_name) {
-            return Err(format!("Invalid mic name: {:?}", virtual_name).into());
+            return Err(format!("Invalid mic name: {virtual_name:?}").into());
         }
         let processor = AudioProcessor::new(state.clone());
 
         let audio_pipeline =
             NativeAudioPipeline::start(processor, source_node_name, virtual_name, input_channels)
-                .map_err(|e| format!("Failed to start audio pipeline: {}", e))?;
+                .map_err(|e| format!("Failed to start audio pipeline: {e}"))?;
 
         // The mic node exists once the pipeline is ready, so the configured
         // default targets a live name. Best-effort: never fails an enable.
         if let Err(e) = set_default_source(virtual_name) {
-            eprintln!("Warning: Failed to set default source: {}", e);
+            eprintln!("[daemon] warning: failed to set default source: {e}");
         }
 
         Ok(Self {

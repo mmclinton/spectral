@@ -287,5 +287,5 @@ pub fn get_node_name(node_id: u32) -> Result<String, Box<dyn Error>> {
     names
         .into_iter()
         .next()
-        .ok_or_else(|| format!("Could not find node.name for node {}", node_id).into())
+        .ok_or_else(|| format!("Could not find node.name for node {node_id}").into())
 }
