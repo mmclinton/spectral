@@ -24,8 +24,8 @@ use std::rc::Rc;
 slint::include_modules!();
 
 /// [`is_valid_mic_name`] plus one relaxation: the field must be clearable
-/// mid-edit, so empty input passes here while the daemon-side validator
-/// rejects it.
+/// mid-edit, so empty input passes here. Enabling on an empty name is
+/// refused by `on_enable_clicked`, which never sends it to the daemon.
 fn is_valid_mic_name_input(text: &str) -> bool {
     text.is_empty() || is_valid_mic_name(text)
 }

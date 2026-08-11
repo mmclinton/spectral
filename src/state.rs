@@ -112,11 +112,14 @@ pub const MIC_NAME_MAX_LEN: usize = 20;
 /// [`MIC_NAME_MAX_LEN`] characters, ASCII alphanumerics plus `_` and `-` —
 /// the name is embedded in PipeWire node properties, so it stays
 /// conservative.
+///
+/// Byte-wise on purpose: every permitted character is ASCII, so any name
+/// that passes the character test has byte length equal to char count, and
+/// an oversized paste is rejected without decoding it end-to-end.
 pub fn is_valid_mic_name(name: &str) -> bool {
-    let len = name.chars().count();
-    len > 0
-        && len <= MIC_NAME_MAX_LEN
+    !name.is_empty()
+        && name.len() <= MIC_NAME_MAX_LEN
         && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
