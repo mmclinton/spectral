@@ -27,7 +27,8 @@ at devices that no longer exist. Click "Refresh" and re-select before enabling.
 
 ## Something failed and I want to know why
 
-Errors appear in the strip under the app bar. The daemon also logs to
+An "Error" chip appears in the app bar next to the status. Click it for the
+full message and a diagnostics summary. The daemon also logs to
 `$XDG_RUNTIME_DIR/spectral-daemon.log`.
 
 ## Where are my voice-test recordings?
@@ -54,4 +55,5 @@ report includes:
 - your PipeWire and WirePlumber versions (`pipewire --version`,
   `wireplumber --version`);
 - the input device involved;
+- the Diagnostics box from the app bar's error details, if an error is showing;
 - the daemon log from `$XDG_RUNTIME_DIR/spectral-daemon.log`.

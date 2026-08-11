@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Errors now surface as a clickable "Error" chip in the app bar instead of a
+  one-line strip beneath it. The strip elided anything longer than the window
+  with no way to read the rest; the chip opens a details view with the full
+  message and a copyable diagnostics summary — versions, packaging, the log
+  and config paths, and the daemon's last known state — for bug reports.
+
 ### Fixed
 - Closing the window now stops the voice test. A clip that was playing kept
   playing to its end after the window was gone, and a capture left running
