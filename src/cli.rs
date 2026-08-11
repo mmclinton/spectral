@@ -8,7 +8,7 @@ use spectral_lib::platform::ipc::{
     DaemonClient, DaemonCommand, DaemonResponse, DaemonState, PROTOCOL_VERSION,
     wait_for_daemon_exit,
 };
-use spectral_lib::state::{MIC_NAME_MAX_LEN, Status, is_valid_mic_name};
+use spectral_lib::state::{Status, is_valid_mic_name, mic_name_rule};
 use std::ffi::OsString;
 use std::process::ExitCode;
 
@@ -31,7 +31,13 @@ pub enum CliCommand {
     Version,
 }
 
-const HELP: &str = "\
+/// Built at run time so the `--mic-name` line quotes [`mic_name_rule`]
+/// instead of restating it; a relaxed rule would otherwise leave `--help`
+/// advertising a constraint the parser no longer applies.
+fn help() -> String {
+    let rule = mic_name_rule();
+    format!(
+        "\
 Spectral — real-time noise suppression for PipeWire
 
 Usage: spectral [COMMAND]
@@ -44,7 +50,8 @@ Commands:
                                      defaults to the remembered device
                 --threshold <0-100>  voice gate threshold (0 = denoise only);
                                      defaults to the current setting
-                --mic-name <name>    virtual mic name ([A-Za-z0-9_-], max 20);
+                --mic-name <name>    virtual mic name;
+                                     {rule};
                                      defaults to the current setting
                 --rumble-filter <on|off>
                                      cut low-frequency rumble (below ~90 Hz)
@@ -70,7 +77,9 @@ works across reboots and PipeWire restarts.
 Exit codes:
   0  success (including a no-op disable or shutdown)
   1  runtime failure
-  2  usage error";
+  2  usage error"
+    )
+}
 
 /// Parses the arguments after argv\[0\]; an `Err` is a usage-error message
 /// destined for exit code 2. Both `--flag value` and `--flag=value` forms
@@ -148,9 +157,8 @@ where
                 }
                 let value = take_value(args, inline, "--mic-name")?;
                 if !is_valid_mic_name(&value) {
-                    return Err(format!(
-                        "invalid --mic-name '{value}': only [A-Za-z0-9_-] allowed, 1-{MIC_NAME_MAX_LEN} chars"
-                    ));
+                    let rule = mic_name_rule();
+                    return Err(format!("invalid --mic-name '{value}': {rule}"));
                 }
                 mic_name = Some(value);
             }
@@ -209,7 +217,8 @@ pub fn run(command: CliCommand) -> ExitCode {
         // Handled by main(); listed so the match stays exhaustive.
         CliCommand::Gui => ExitCode::SUCCESS,
         CliCommand::Help => {
-            println!("{HELP}");
+            let text = help();
+            println!("{text}");
             ExitCode::SUCCESS
         }
         CliCommand::Version => {
@@ -430,9 +439,15 @@ fn run_shutdown() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spectral_lib::state::MIC_NAME_MAX_LEN;
 
     fn p(args: &[&str]) -> Result<CliCommand, String> {
         parse(args.iter().map(OsString::from))
+    }
+
+    #[test]
+    fn help_quotes_the_mic_name_rule_the_parser_enforces() {
+        assert!(help().contains(&mic_name_rule()));
     }
 
     #[test]

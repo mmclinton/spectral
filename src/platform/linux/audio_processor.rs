@@ -4,7 +4,7 @@
 use super::audio_devices::set_default_source;
 use super::pipewire::{NativeAudioPipeline, RNNOISE_FRAME_SIZE, SAMPLE_RATE};
 use super::stages::{HighPass, Leveler, VoiceGate};
-use crate::state::{AppState, is_valid_mic_name};
+use crate::state::{AppState, is_valid_mic_name, mic_name_rule};
 use nnnoiseless::DenoiseState;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -106,7 +106,8 @@ impl VirtualMic {
         input_channels: u32,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         if !is_valid_mic_name(virtual_name) {
-            return Err(format!("Invalid mic name: {virtual_name:?}").into());
+            let rule = mic_name_rule();
+            return Err(format!("Invalid mic name {virtual_name:?}: {rule}").into());
         }
         let processor = AudioProcessor::new(state.clone());
 

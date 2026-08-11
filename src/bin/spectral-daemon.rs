@@ -12,7 +12,7 @@ use spectral_lib::platform::persistence::{
     remove_legacy_recordings, save_state,
 };
 use spectral_lib::platform::recorder::{NativePlayer, NativeRecorder, PlaybackKind};
-use spectral_lib::state::{AppState, MIC_NAME_MAX_LEN, Status, is_valid_mic_name, lock_or_recover};
+use spectral_lib::state::{AppState, Status, is_valid_mic_name, lock_or_recover, mic_name_rule};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -50,17 +50,13 @@ fn main() {
         }
     };
     if !is_valid_mic_name(&persisted.mic_name) {
-        eprintln!(
-            "Persisted mic_name {:?} is invalid, resetting to default",
-            persisted.mic_name
-        );
+        let invalid = &persisted.mic_name;
+        eprintln!("[daemon] persisted mic_name {invalid:?} is invalid, resetting to default");
         persisted.mic_name = "Spectral-Mic".to_string();
     }
     if !(0..=100).contains(&persisted.threshold) {
-        eprintln!(
-            "Persisted threshold {} is out of range, clamping",
-            persisted.threshold
-        );
+        let threshold = persisted.threshold;
+        eprintln!("[daemon] persisted threshold {threshold} is out of range, clamping");
         persisted.threshold = persisted.threshold.clamp(0, 100);
     }
     {
@@ -81,7 +77,7 @@ fn main() {
     let server = match DaemonServer::bind() {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("Failed to bind daemon socket: {}", e);
+            eprintln!("[daemon] failed to bind socket: {e}");
             return;
         }
     };
@@ -109,7 +105,7 @@ fn main() {
                         && e.kind() != std::io::ErrorKind::WouldBlock
                         && e.kind() != std::io::ErrorKind::TimedOut
                     {
-                        eprintln!("Client handler error: {}", e);
+                        eprintln!("[daemon] client handler error: {e}");
                     }
                 });
 
@@ -120,7 +116,7 @@ fn main() {
             }
             Err(e) => {
                 if e.kind() != std::io::ErrorKind::Interrupted {
-                    eprintln!("Failed to accept connection: {}", e);
+                    eprintln!("[daemon] failed to accept connection: {e}");
                 }
                 thread::sleep(Duration::from_millis(100));
             }
@@ -183,9 +179,8 @@ fn handle_enable(
     let mic_name = match mic_name {
         Some(name) => {
             if !is_valid_mic_name(&name) {
-                return DaemonResponse::Error(format!(
-                    "Invalid mic name: only [A-Za-z0-9_-] allowed, 1-{MIC_NAME_MAX_LEN} chars"
-                ));
+                let rule = mic_name_rule();
+                return DaemonResponse::Error(format!("Invalid mic name: {rule}"));
             }
             name
         }
@@ -246,7 +241,7 @@ fn handle_enable(
         rumble_filter,
         auto_level,
     }) {
-        eprintln!("Failed to persist settings: {}", e);
+        eprintln!("[daemon] failed to persist settings: {e}");
     }
 
     let mut mic_guard = lock_or_recover(virtual_mic);
@@ -263,7 +258,7 @@ fn handle_enable(
         }
         Err(e) => {
             state.update_status(Status::Inactive);
-            let msg = format!("Failed to create virtual mic: {}", e);
+            let msg = format!("Failed to create virtual mic: {e}");
             state.set_last_error(Some(msg.clone()));
             DaemonResponse::Error(msg)
         }
@@ -433,10 +428,9 @@ fn handle_client(
                         let source_node = match get_node_name(device_id) {
                             Ok(name) => name,
                             Err(e) => {
-                                eprintln!("[Recording] Failed to get source name: {}", e);
+                                eprintln!("[recorder] failed to get source name: {e}");
                                 conn.send_response(DaemonResponse::Error(format!(
-                                    "Failed to get source: {}",
-                                    e
+                                    "Failed to get source: {e}"
                                 )))?;
                                 continue;
                             }
@@ -480,10 +474,9 @@ fn handle_client(
                                         DaemonResponse::Ok
                                     }
                                     Err(e) => {
-                                        eprintln!("[Recording] NativeRecorder::start: {}", e);
+                                        eprintln!("[recorder] NativeRecorder::start: {e}");
                                         DaemonResponse::Error(format!(
-                                            "Failed to start recording: {}",
-                                            e
+                                            "Failed to start recording: {e}"
                                         ))
                                     }
                                 }
@@ -515,8 +508,8 @@ fn handle_client(
                                     DaemonResponse::Ok
                                 }
                                 Err(e) => {
-                                    eprintln!("[Playback] NativePlayer::start: {}", e);
-                                    DaemonResponse::Error(format!("Failed to play: {}", e))
+                                    eprintln!("[player] NativePlayer::start: {e}");
+                                    DaemonResponse::Error(format!("Failed to play: {e}"))
                                 }
                             }
                         }
@@ -539,8 +532,8 @@ fn handle_client(
                                     DaemonResponse::Ok
                                 }
                                 Err(e) => {
-                                    eprintln!("[Playback] NativePlayer::start: {}", e);
-                                    DaemonResponse::Error(format!("Failed to play: {}", e))
+                                    eprintln!("[player] NativePlayer::start: {e}");
+                                    DaemonResponse::Error(format!("Failed to play: {e}"))
                                 }
                             }
                         }
