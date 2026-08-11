@@ -6,10 +6,22 @@ use spectral_lib::platform::ipc::{
     wait_for_daemon_exit,
 };
 use std::error::Error;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
+/// Where the daemon's stdout and stderr land — `$XDG_RUNTIME_DIR`, falling
+/// back to `$HOME/tmp` and then `/tmp`. The GUI reports this path in its
+/// diagnostics dump, so the two must not drift apart.
+pub fn daemon_log_path() -> PathBuf {
+    let dir = std::env::var("XDG_RUNTIME_DIR")
+        .or_else(|_| std::env::var("HOME").map(|h| format!("{h}/tmp")))
+        .unwrap_or_else(|_| "/tmp".to_string());
+
+    PathBuf::from(dir).join("spectral-daemon.log")
+}
+
 /// Spawn `spectral-daemon` from the current executable's directory, logging
-/// to `$XDG_RUNTIME_DIR/spectral-daemon.log`.
+/// to [`daemon_log_path`].
 pub fn start_daemon() -> Result<(), Box<dyn Error>> {
     let current_exe = std::env::current_exe()?;
     let daemon_dir = current_exe
@@ -17,11 +29,7 @@ pub fn start_daemon() -> Result<(), Box<dyn Error>> {
         .ok_or("Failed to determine daemon directory (executable might be at root)")?;
     let daemon_path = daemon_dir.join("spectral-daemon");
 
-    let log_path = std::env::var("XDG_RUNTIME_DIR")
-        .or_else(|_| std::env::var("HOME").map(|h| format!("{}/tmp", h)))
-        .unwrap_or_else(|_| "/tmp".to_string());
-
-    let log_file = std::path::PathBuf::from(log_path).join("spectral-daemon.log");
+    let log_file = daemon_log_path();
     let log = std::fs::OpenOptions::new()
         .create(true)
         .write(true)
