@@ -76,8 +76,9 @@ struct PipelineData {
 
 impl PipelineData {
     fn new(processor: AudioProcessor, input_channels: u32) -> Self {
-        // Clamp channels to valid range
-        // TODO: Validate that channel clamping produces acceptable audio quality
+        // The offer is clamped to the same ceiling, so below it the format
+        // is exact and no conversion occurs; the clamp only engages for
+        // devices wider than MAX_INPUT_CHANNELS.
         let channels = input_channels.clamp(1, MAX_INPUT_CHANNELS);
         // Full worst-case reservations: the process callbacks push into
         // these on the RT thread, so growth there would mean an RT-path
@@ -86,7 +87,10 @@ impl PipelineData {
         // delivery; output is trimmed to OUTPUT_BUFFER_CAP only after a
         // whole delivery is processed, so it transiently exceeds the cap
         // by up to one delivery's worth of mono frames.
-        let input_capacity = (MAX_QUANTUM + RNNOISE_FRAME_SIZE) * channels as usize;
+        //
+        // Sized for the ceiling, not the request: the granted channel
+        // count arrives only with the Format param, after allocation.
+        let input_capacity = (MAX_QUANTUM + RNNOISE_FRAME_SIZE) * MAX_INPUT_CHANNELS as usize;
         let output_capacity = OUTPUT_BUFFER_CAP + MAX_QUANTUM;
         Self {
             processor,
@@ -667,8 +671,10 @@ mod tests {
         assert!(!positioned.unwrap().is_empty(), "Pod should have content");
     }
 
-    /// The RT process callbacks must never grow these Vecs; the
-    /// constructor has to reserve the worst case each one can reach.
+    /// The RT process callbacks must never grow these Vecs, and the
+    /// granted channel count is only known once Format negotiation lands —
+    /// after allocation. So the input ring must fit the channel ceiling
+    /// regardless of the count the constructor was given.
     #[test]
     fn pipeline_buffers_are_fully_reserved_up_front() {
         use crate::state::AppState;
@@ -677,10 +683,10 @@ mod tests {
         for channels in [1, 2, MAX_INPUT_CHANNELS] {
             let processor = AudioProcessor::new(Arc::new(AppState::new()));
             let data = PipelineData::new(processor, channels);
-            let ch = channels as usize;
             assert!(
-                data.input_buffer.capacity() >= (MAX_QUANTUM + RNNOISE_FRAME_SIZE) * ch,
-                "input capacity too small for {channels} channels"
+                data.input_buffer.capacity()
+                    >= (MAX_QUANTUM + RNNOISE_FRAME_SIZE) * MAX_INPUT_CHANNELS as usize,
+                "input capacity below the channel ceiling (ctor arg {channels})"
             );
             assert!(
                 data.output_buffer.capacity() >= OUTPUT_BUFFER_CAP + MAX_QUANTUM,
