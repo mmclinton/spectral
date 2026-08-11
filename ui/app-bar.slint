@@ -41,13 +41,68 @@ component StatusPill inherits Rectangle {
     }
 }
 
+// StatusPill's geometry in the error accent, plus a click target. It renders
+// only while an error is present, so it must not disturb the pill beside it:
+// the bar's height is fixed and the chip sits before the stretch spacer, so
+// appearing and disappearing costs no reflow.
+component ErrorChip inherits Rectangle {
+    callback clicked();
+
+    height: 26px;
+    horizontal-stretch: 0;
+    background: touch.has-hover ? Theme.border_subtle : Theme.inset;
+    border-color: Theme.error;
+    border-width: 1px;
+    border-radius: self.height / 2;
+
+    // No link role in Slint 1.15; button is the closest behavior match.
+    accessible-role: button;
+    accessible-label: "Error — show details";
+    accessible-action-default => {
+        root.clicked();
+    }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 8px;
+
+        VerticalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: Theme.error;
+            }
+        }
+
+        Text {
+            text: "Error";
+            font-size: Theme.font_caption;
+            font-weight: 700;
+            color: white;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
 export component AppBar inherits Rectangle {
     in property <string> status_text;
     in property <color> status_color;
     in property <bool> mic_enabled;
+    in property <bool> has_error;
 
     callback open_url(string);
     callback help_clicked();
+    callback error_chip_clicked();
 
     height: 52px;
     background: Theme.panel;
@@ -80,6 +135,16 @@ export component AppBar inherits Rectangle {
                 label: root.status_text;
                 pill_color: root.status_color;
                 enabled_look: root.mic_enabled;
+            }
+        }
+
+        if root.has_error: VerticalLayout {
+            alignment: center;
+
+            ErrorChip {
+                clicked => {
+                    root.error_chip_clicked();
+                }
             }
         }
 

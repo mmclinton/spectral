@@ -21,9 +21,10 @@ export component MainWindow inherits Window {
     // right-column card minimums); the margin absorbs real font metrics,
     // which vary with the user-resolved monospace family. The preferred
     // size is the launch size; the minimums only floor manual resizing.
-    // The 12px type floor cost the toggle rows ~6px, paid for by trimming
-    // the error strip and the threshold band, which were carrying ~20px of
-    // slack between them - hold that budget when either is touched.
+    // The 12px type floor cost the toggle rows ~6px; the threshold band still
+    // carries its share of that. The reserved error strip that carried the
+    // rest is gone - errors now live in the app bar's chip - so its 18px is
+    // slack again, which is why the minimums below did not move with it.
     min-width: 720px;
     min-height: 680px;
     preferred-width: 920px;
@@ -68,6 +69,7 @@ export component MainWindow inherits Window {
     callback play_filtered();
     callback stop_filtered();
     callback poll_daemon_state();
+    callback error_chip_clicked();
 
     // Always-on daemon reconcile: 1s heartbeat, 250ms while playback
     // glyphs need snappy updates
@@ -87,31 +89,17 @@ export component MainWindow inherits Window {
             // colors stay Theme-owned instead of duplicated as Rust hexes.
             status_color: root.mic_enabled ? Theme.ok : Theme.text_muted;
             mic_enabled: root.mic_enabled;
+            // Derived in Slint so the ~20 Rust error sites keep writing one
+            // string and nothing else: error_text stays the single store.
+            has_error: root.error_text != "";
             open_url(url) => {
                 root.open_url(url);
             }
             help_clicked => {
                 root.show_help_popup = true;
             }
-        }
-
-        // Reserved error strip: always present so an error appearing or
-        // clearing never shifts the content below it. Sized to the body line
-        // plus a hairline of breathing room - it is empty almost always, so
-        // it buys its height back for the cards below.
-        Rectangle {
-            height: 18px;
-
-            Text {
-                x: 20px;
-                width: parent.width - 40px;
-                height: 100%;
-                text: root.error_text;
-                font-size: Theme.font_body;
-                color: Theme.error;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-                overflow: elide;
+            error_chip_clicked => {
+                root.error_chip_clicked();
             }
         }
 
