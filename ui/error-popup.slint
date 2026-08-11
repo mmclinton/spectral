@@ -1,0 +1,92 @@
+// Modal overlay for the app bar's error chip: the full error text and a
+// diagnostics dump, both selectable and copyable for a bug report.
+//
+// The modal deliberately survives the error clearing underneath it — the chip
+// vanishes, this stays. Closing a window mid-copy is worse than showing a
+// message that has just been resolved.
+
+import { Theme } from "theme.slint";
+import { ModalPopup } from "modal-popup.slint";
+import { AppButton } from "controls.slint";
+
+// A titled card whose body is a read-only TextInput rather than a Text: the
+// user needs to select and copy it, and only TextInput offers select-all()
+// and copy(). read-only keeps the `text` binding intact, so a live-updating
+// error still tracks its source.
+component CopyCard inherits Rectangle {
+    in property <string> title;
+    in property <string> content;
+
+    background: Theme.inset;
+    border-color: Theme.border;
+    border-width: 1px;
+    border-radius: 6px;
+
+    VerticalLayout {
+        padding: 15px;
+        spacing: 8px;
+
+        HorizontalLayout {
+            spacing: 8px;
+
+            Text {
+                text: root.title;
+                font-size: Theme.font_title;
+                font-weight: 700;
+                color: Theme.accent;
+                vertical-alignment: center;
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+
+            AppButton {
+                text: "Copy";
+                clicked => {
+                    content_input.select-all();
+                    content_input.copy();
+                }
+            }
+        }
+
+        content_input := TextInput {
+            text: root.content;
+            read-only: true;
+            single-line: false;
+            wrap: word-wrap;
+            font-size: Theme.font_body;
+            color: Theme.text_primary;
+            selection-background-color: Theme.accent;
+            selection-foreground-color: white;
+        }
+    }
+}
+
+export component ErrorPopup inherits ModalPopup {
+    in property <string> error_text;
+    in property <string> diagnostics_text;
+
+    title: "Error Details";
+
+    VerticalLayout {
+        alignment: start;
+        spacing: 16px;
+        padding: 10px;
+
+        CopyCard {
+            title: "What happened";
+            content: root.error_text;
+        }
+
+        CopyCard {
+            title: "Diagnostics";
+            content: root.diagnostics_text;
+        }
+
+        Text {
+            text: "Report issues at https://codeberg.org/mmc/spectral/issues — attach the daemon log (path in the diagnostics above).";
+            font-size: Theme.font_body;
+            color: Theme.text_muted;
+            wrap: word-wrap;
+        }
+    }
+}

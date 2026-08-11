@@ -8,6 +8,7 @@ import { VoiceTestCard } from "voice-test-card.slint";
 import { Footer } from "footer.slint";
 import { DeviceHelpPopup } from "device-help-popup.slint";
 import { HelpPopup } from "help-popup.slint";
+import { ErrorPopup } from "error-popup.slint";
 
 export { InputDevice }
 
@@ -48,6 +49,10 @@ export component MainWindow inherits Window {
     in-out property <bool> mic_enabled: false;
     in-out property <bool> show_device_help_popup: false;
     in-out property <bool> show_help_popup: false;
+    // Rust opens this one (the chip click has to snapshot fresh diagnostics
+    // first); Slint closes it, like the help popups above.
+    in-out property <bool> show_error_popup: false;
+    in property <string> diagnostics_text;
     in-out property <bool> mic_name_invalid_flash: false;
     in-out property <[string]> unsaved_changes;
 
@@ -222,6 +227,16 @@ export component MainWindow inherits Window {
         height: parent.height;
         close_clicked => {
             root.show_help_popup = false;
+        }
+    }
+
+    if root.show_error_popup: ErrorPopup {
+        width: parent.width;
+        height: parent.height;
+        error_text: root.error_text;
+        diagnostics_text: root.diagnostics_text;
+        close_clicked => {
+            root.show_error_popup = false;
         }
     }
 }
