@@ -96,8 +96,9 @@ impl VirtualMic {
     /// streams, feed link), so the mic disappears with the daemon by
     /// construction.
     ///
-    /// TODO: Validate behavior with mono input devices (USB mics, built-in laptop mics)
-    /// TODO: Validate behavior with multichannel interfaces (>2 channels)
+    /// Channel handling is validated by listening on mono and stereo
+    /// capture; layouts above two channels negotiate their native count up
+    /// to the ceiling and are untested.
     pub fn create(
         state: Arc<AppState>,
         source_node_name: &str,

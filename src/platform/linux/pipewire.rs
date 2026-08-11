@@ -40,8 +40,9 @@ pub const RNNOISE_FRAME_SIZE: usize = 480;
 
 /// Ceiling on capture channels. Wider devices are captured as their first
 /// eight channels — an unpositioned offer pairs channels by index, so the
-/// clamp keeps native order (channelmix `pair_mix`). Layouts above the
-/// ceiling fail closed via the Format check in the capture listener.
+/// clamp keeps native order (channelmix `pair_mix`). Validated on 1- and
+/// 2-channel devices; wider layouts are untested but fail closed via the
+/// Format check in the capture listener.
 pub const MAX_INPUT_CHANNELS: u32 = 8;
 
 /// Scaling factor for converting f32 PCM [-1.0, 1.0] to RNNoise's expected i16 range.
@@ -275,7 +276,6 @@ fn run_pipeline(
     // Must use Rc because PipeWire callbacks are !Send
     let pipeline_data = Rc::new(RefCell::new(PipelineData::new(processor, channels)));
 
-    // TODO: Verify PipeWire format negotiation works correctly for mono (1 channel) devices
     let capture_format = build_audio_format_pod(AudioFormat::F32LE, SAMPLE_RATE, channels, None)?;
     let feed_format = build_audio_format_pod(
         AudioFormat::F32LE,
