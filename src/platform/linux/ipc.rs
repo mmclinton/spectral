@@ -462,11 +462,33 @@ mod tests {
             is_playing_filtered: true,
             last_error: Some("pipeline died".to_string()),
         };
+        // A fresh daemon's snapshot, pinned alongside the populated one
+        // because every `Option` here is `None`: a `skip_serializing_if`
+        // added to any of them would leave the golden above untouched
+        // while quietly dropping three keys from the reply clients see
+        // most often.
+        let idle_state = DaemonState {
+            protocol_version: PROTOCOL_VERSION,
+            status: Status::Inactive,
+            device_id: None,
+            device_node_name: None,
+            mic_name: "Spectral-Mic".to_string(),
+            threshold: 50,
+            rumble_filter: false,
+            auto_level: false,
+            is_playing_original: false,
+            is_playing_filtered: false,
+            last_error: None,
+        };
         let cases = [
             (DaemonResponse::Ok, r#""Ok""#),
             (
                 DaemonResponse::State(full_state),
                 r#"{"State":{"protocol_version":2,"status":"Active","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"is_playing_original":false,"is_playing_filtered":true,"last_error":"pipeline died"}}"#,
+            ),
+            (
+                DaemonResponse::State(idle_state),
+                r#"{"State":{"protocol_version":2,"status":"Inactive","device_id":null,"device_node_name":null,"mic_name":"Spectral-Mic","threshold":50,"rumble_filter":false,"auto_level":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}}"#,
             ),
             (
                 DaemonResponse::Error("no such device".to_string()),
