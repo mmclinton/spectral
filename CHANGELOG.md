@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- `spectral --help` and every invalid-mic-name rejection now quote one
+  shared wording of the name rule instead of restating it per call site,
+  so the text cannot drift from the check the daemon actually runs.
 - Errors now surface as a clickable "Error" chip in the app bar instead of a
   one-line strip beneath it. The strip elided anything longer than the window
   with no way to read the rest; the chip opens a details view with the full
@@ -15,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and config paths, and the daemon's last known state — for bug reports.
 
 ### Fixed
+- Device listings reported 2 channels for every input; the count is now
+  read from the device itself, so mono sources list as mono.
+- The virtual mic always captured its input as stereo. It now negotiates
+  the device's native channel count and verifies what PipeWire granted,
+  so multi-channel interfaces keep their loopback/monitor returns out of
+  the microphone.
 - Closing the window now stops the voice test. A clip that was playing kept
   playing to its end after the window was gone, and a capture left running
   went on to the recorder's internal cap; both are now stopped on exit. The

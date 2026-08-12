@@ -4,7 +4,7 @@
 use super::audio_devices::set_default_source;
 use super::pipewire::{NativeAudioPipeline, RNNOISE_FRAME_SIZE, SAMPLE_RATE};
 use super::stages::{HighPass, Leveler, VoiceGate};
-use crate::state::{AppState, is_valid_mic_name};
+use crate::state::{AppState, is_valid_mic_name, mic_name_rule};
 use nnnoiseless::DenoiseState;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -96,8 +96,9 @@ impl VirtualMic {
     /// streams, feed link), so the mic disappears with the daemon by
     /// construction.
     ///
-    /// TODO: Validate behavior with mono input devices (USB mics, built-in laptop mics)
-    /// TODO: Validate behavior with multichannel interfaces (>2 channels)
+    /// Channel handling is validated by listening on mono and stereo
+    /// capture; layouts above two channels negotiate their native count up
+    /// to the ceiling and are untested.
     pub fn create(
         state: Arc<AppState>,
         source_node_name: &str,
@@ -105,18 +106,19 @@ impl VirtualMic {
         input_channels: u32,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         if !is_valid_mic_name(virtual_name) {
-            return Err(format!("Invalid mic name: {:?}", virtual_name).into());
+            let rule = mic_name_rule();
+            return Err(format!("Invalid mic name {virtual_name:?}: {rule}").into());
         }
         let processor = AudioProcessor::new(state.clone());
 
         let audio_pipeline =
             NativeAudioPipeline::start(processor, source_node_name, virtual_name, input_channels)
-                .map_err(|e| format!("Failed to start audio pipeline: {}", e))?;
+                .map_err(|e| format!("Failed to start audio pipeline: {e}"))?;
 
         // The mic node exists once the pipeline is ready, so the configured
         // default targets a live name. Best-effort: never fails an enable.
         if let Err(e) = set_default_source(virtual_name) {
-            eprintln!("Warning: Failed to set default source: {}", e);
+            eprintln!("[daemon] warning: failed to set default source: {e}");
         }
 
         Ok(Self {

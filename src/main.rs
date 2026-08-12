@@ -11,7 +11,7 @@ mod fonts;
 use spectral_lib::platform::audio_devices;
 use spectral_lib::platform::ipc::{DaemonClient, DaemonCommand, DaemonResponse, DaemonState};
 use spectral_lib::platform::persistence;
-use spectral_lib::state::{AudioDevice, MIC_NAME_MAX_LEN, Status};
+use spectral_lib::state::{AudioDevice, Status, is_valid_mic_name};
 
 use slint::Model;
 use slint::ModelRc;
@@ -25,14 +25,11 @@ use std::rc::Rc;
 
 slint::include_modules!();
 
-/// Byte-wise on purpose: every permitted character is ASCII, so any string
-/// that passes the character check has byte length equal to char count, and
-/// both tests short-circuit without decoding an oversized paste end-to-end.
+/// [`is_valid_mic_name`] plus one relaxation: the field must be clearable
+/// mid-edit, so empty input passes here. Enabling on an empty name is
+/// refused by `on_enable_clicked`, which never sends it to the daemon.
 fn is_valid_mic_name_input(text: &str) -> bool {
-    text.len() <= MIC_NAME_MAX_LEN
-        && text
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    text.is_empty() || is_valid_mic_name(text)
 }
 
 fn filter_devices(devices: &[AudioDevice], mic_name: &str) -> Vec<AudioDevice> {
@@ -928,6 +925,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spectral_lib::state::MIC_NAME_MAX_LEN;
 
     fn device(id: u32, name: &str) -> AudioDevice {
         AudioDevice {
@@ -970,19 +968,16 @@ mod tests {
     }
 
     #[test]
-    fn mic_name_input_accepts_ascii_word_chars_within_the_length_cap() {
-        let cases = [
-            ("", true),
-            ("Spectral-Mic", true),
-            ("a_b-C9", true),
-            (&"a".repeat(MIC_NAME_MAX_LEN), true),
-            (&"a".repeat(MIC_NAME_MAX_LEN + 1), false),
-            ("has space", false),
-            ("café", false),
-            ("mic🎙", false),
-        ];
-        for (input, expected) in cases {
-            assert_eq!(is_valid_mic_name_input(input), expected, "input {input:?}");
+    fn the_name_field_accepts_empty_mid_edit_and_otherwise_defers_to_the_rule() {
+        assert!(is_valid_mic_name_input(""));
+
+        let long = "a".repeat(MIC_NAME_MAX_LEN + 1);
+        for input in ["Spectral-Mic", "a_b-C9", "has space", "café", "mic🎙", &long] {
+            assert_eq!(
+                is_valid_mic_name_input(input),
+                is_valid_mic_name(input),
+                "input {input:?}"
+            );
         }
     }
 

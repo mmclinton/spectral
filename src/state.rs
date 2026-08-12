@@ -22,8 +22,9 @@ pub struct AudioDevice {
     pub id: u32,
     /// Human-readable description shown in device pickers.
     pub name: String,
-    /// Number of audio channels (1=mono, 2=stereo, etc.)
-    /// TODO: Validate channel handling for devices with >2 channels (e.g., multichannel interfaces)
+    /// Channel count as reported by the node's own info props (1 = mono);
+    /// 2 can also mean "unknown" — the fallback when a node dies before
+    /// reporting or omits `audio.channels`.
     #[serde(default = "default_channels")]
     pub channels: u32,
 }
@@ -103,19 +104,85 @@ impl AppState {
     }
 }
 
-/// Upper bound for user-chosen virtual-mic names, in characters. Sized so
-/// a max-length name fits the GUI name field without scrolling.
+/// Upper bound for user-chosen virtual-mic names. Compared against byte
+/// length, which equals character count for every name the rule accepts.
+/// Sized so a max-length name fits the GUI name field without scrolling.
 pub const MIC_NAME_MAX_LEN: usize = 20;
 
 /// Validates a user-chosen mic name: non-empty, at most
 /// [`MIC_NAME_MAX_LEN`] characters, ASCII alphanumerics plus `_` and `-` —
 /// the name is embedded in PipeWire node properties, so it stays
 /// conservative.
+///
+/// Byte-wise on purpose: every permitted character is ASCII, so any name
+/// that passes the character test has byte length equal to char count, and
+/// an oversized paste is rejected without decoding it end-to-end.
 pub fn is_valid_mic_name(name: &str) -> bool {
-    let len = name.chars().count();
-    len > 0
-        && len <= MIC_NAME_MAX_LEN
+    !name.is_empty()
+        && name.len() <= MIC_NAME_MAX_LEN
         && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+/// The rule [`is_valid_mic_name`] enforces, in the words shown to the user.
+///
+/// Only the length is derived. The character class is prose, so relaxing
+/// the byte test above means editing this string in the same change — it
+/// sits here, one screen away, so that the edit is hard to miss rather
+/// than scattered across the CLI, the daemon and the pipeline.
+pub fn mic_name_rule() -> String {
+    format!("only [A-Za-z0-9_-] allowed, 1-{MIC_NAME_MAX_LEN} chars")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mic_names_are_ascii_alphanumerics_underscore_and_hyphen() {
+        let cases = [
+            ("Spectral-Mic", true),
+            ("a", true),
+            ("A1_b-2", true),
+            ("_", true),
+            ("-", true),
+            ("", false),
+            ("has space", false),
+            ("bang!", false),
+            ("dot.separated", false),
+            ("slash/es", false),
+            ("caf\u{e9}", false),
+            ("\u{1f3a4}", false),
+            ("tab\there", false),
+            ("new\nline", false),
+        ];
+        for (name, expected) in cases {
+            assert_eq!(is_valid_mic_name(name), expected, "name {name:?}");
+        }
+    }
+
+    #[test]
+    fn mic_name_length_bound_admits_the_maximum_and_rejects_one_past_it() {
+        assert!(is_valid_mic_name(&"x".repeat(MIC_NAME_MAX_LEN)));
+        assert!(!is_valid_mic_name(&"x".repeat(MIC_NAME_MAX_LEN + 1)));
+    }
+
+    /// Byte and char counting cannot diverge while the character class is
+    /// ASCII-only: multi-byte input is rejected on its characters whichever
+    /// length the gate compared. This pins that equivalence where it is
+    /// least obvious — a name that exactly fills the byte budget, and so
+    /// clears the length gate on either reading. The fixture is asserted
+    /// onto that boundary rather than assumed onto it, so a changed
+    /// [`MIC_NAME_MAX_LEN`] fails loudly instead of silently sliding off it.
+    #[test]
+    fn multi_byte_input_at_the_byte_bound_is_still_rejected() {
+        let multi_byte = "\u{e9}".repeat(MIC_NAME_MAX_LEN / 2);
+        let pad = "x".repeat(MIC_NAME_MAX_LEN - multi_byte.len());
+        let name = format!("{multi_byte}{pad}");
+
+        assert_eq!(name.len(), MIC_NAME_MAX_LEN);
+        assert!(name.chars().count() < MIC_NAME_MAX_LEN);
+        assert!(!is_valid_mic_name(&name));
+    }
 }
