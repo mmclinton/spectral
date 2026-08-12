@@ -383,6 +383,34 @@ mod tests {
         assert!(serde_json::from_str::<DaemonState>(OLD_STATE).is_err());
     }
 
+    /// The mirror of [`missing_option_fields_parse_as_none`] for the command
+    /// direction. Commands carry no version field, so this tolerance *is*
+    /// the compatibility story on that side, and it is what the bump policy
+    /// on [`PROTOCOL_VERSION`] means by "adding an `Option` field is
+    /// compatible" — a claim nothing exercised for commands until now.
+    #[test]
+    fn a_pre_0_5_enable_parses_with_the_added_fields_as_none() {
+        let old = r#"{"Enable":{"device_id":5,"mic_name":"My-Mic","threshold":70}}"#;
+        let command: DaemonCommand =
+            serde_json::from_str(old).expect("an old client's Enable must still parse");
+        match command {
+            DaemonCommand::Enable {
+                device_id,
+                mic_name,
+                threshold,
+                rumble_filter,
+                auto_level,
+            } => {
+                assert_eq!(device_id, Some(5));
+                assert_eq!(mic_name.as_deref(), Some("My-Mic"));
+                assert_eq!(threshold, Some(70));
+                assert_eq!(rumble_filter, None, "0.5 added this field");
+                assert_eq!(auto_level, None, "0.5 added this field");
+            }
+            other => panic!("expected Enable, got {other:?}"),
+        }
+    }
+
     // Serialize, deserialize, re-serialize: the wire form must be
     // byte-stable across the round trip, so a serde representation change
     // fails here instead of silently drifting on the socket. The decoded
