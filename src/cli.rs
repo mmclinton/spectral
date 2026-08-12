@@ -464,6 +464,31 @@ mod tests {
         assert!(help().contains(&mic_name_rule()));
     }
 
+    /// The help table is built from the constants, so its numbers cannot
+    /// drift from the code — but the values themselves are the contract:
+    /// this pins them so changing one is a deliberate edit of this test.
+    #[test]
+    fn exit_codes_match_the_std_constants_and_the_documented_values() {
+        assert_eq!(ExitCode::from(EXIT_SUCCESS), ExitCode::SUCCESS);
+        assert_eq!(ExitCode::from(EXIT_FAILURE), ExitCode::FAILURE);
+        assert_eq!(usage_error_exit(), ExitCode::from(2));
+    }
+
+    #[test]
+    fn gui_help_and_version_exit_with_success() {
+        assert_eq!(run(CliCommand::Gui), ExitCode::SUCCESS);
+        assert_eq!(run(CliCommand::Help), ExitCode::SUCCESS);
+        assert_eq!(run(CliCommand::Version), ExitCode::SUCCESS);
+    }
+
+    #[test]
+    fn help_documents_all_three_exit_codes() {
+        let text = help();
+        assert!(text.contains("0  success (including a no-op disable or shutdown)"));
+        assert!(text.contains("1  runtime failure"));
+        assert!(text.contains("2  usage error"));
+    }
+
     #[test]
     fn bare_invocation_is_gui() {
         assert_eq!(p(&[]), Ok(CliCommand::Gui));
