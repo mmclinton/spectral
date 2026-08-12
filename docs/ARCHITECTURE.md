@@ -17,8 +17,13 @@ The daemon is the single owner of audio state. Clients connect over a Unix
 socket at `$XDG_RUNTIME_DIR/spectral-daemon.sock`, and the daemon serves one
 handler thread per connection. Either client auto-spawns the daemon if none is
 running; a lock on `$XDG_RUNTIME_DIR/spectral-daemon.pid` decides ownership when
-two try at once. The socket and the pid file both require the runtime dir;
-without it the client fails outright rather than guessing another location.
+two try at once. The socket and the pid file both require the runtime dir, and
+unlike the log path below there is no second location to fall back to. The
+clients do not report that as its own condition, though: `DaemonClient::connect`
+produces the precise error and every caller collapses it into "daemon not
+running", so `disable` and `shutdown` exit 0, `status` exits 1, and `enable`
+spawns a daemon that cannot bind and then waits out the connect-retry window
+before reporting.
 
 Daemon diagnostics are not written by the daemon, which only ever writes to its
 inherited stdout and stderr. A client that spawns it redirects those to
