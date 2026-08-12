@@ -31,6 +31,20 @@ pub enum CliCommand {
     Version,
 }
 
+/// The success exit code, interpolated into the help table below so the
+/// text cannot drift from the value the process returns.
+pub const EXIT_SUCCESS: u8 = 0;
+/// The runtime-failure exit code; see [`EXIT_SUCCESS`].
+pub const EXIT_FAILURE: u8 = 1;
+/// The usage-error exit code; see [`EXIT_SUCCESS`].
+pub const EXIT_USAGE_ERROR: u8 = 2;
+
+/// The exit code for a usage error — argument parsing failed before any
+/// command ran. One of the three codes the help table documents.
+pub fn usage_error_exit() -> ExitCode {
+    ExitCode::from(EXIT_USAGE_ERROR)
+}
+
 /// Built at run time so the `--mic-name` line quotes [`mic_name_rule`]
 /// instead of restating it; a relaxed rule would otherwise leave `--help`
 /// advertising a constraint the parser no longer applies.
@@ -75,9 +89,9 @@ remembers the selected device by node name, so a flagless `enable`
 works across reboots and PipeWire restarts.
 
 Exit codes:
-  0  success (including a no-op disable or shutdown)
-  1  runtime failure
-  2  usage error"
+  {EXIT_SUCCESS}  success (including a no-op disable or shutdown)
+  {EXIT_FAILURE}  runtime failure
+  {EXIT_USAGE_ERROR}  usage error"
     )
 }
 
