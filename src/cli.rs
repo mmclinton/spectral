@@ -533,11 +533,16 @@ mod tests {
     ];
 
     /// Forces a new [`CliCommand`] to declare whether it is spelled as a
-    /// subcommand before the suite builds. It cannot be waved through with a
-    /// bare arm — the arm has to name the word or say there is none — and
-    /// naming one that is absent from [`SUBCOMMANDS`] then fails the test
-    /// below. A variant that lies with `None` still escapes; nothing here
-    /// can catch that, and an undocumented subcommand is not contract.
+    /// subcommand: the match is exhaustive, so the variant will not compile
+    /// until its arm names a word or says there is none.
+    ///
+    /// That is the entire guarantee, and it is weaker than it looks. Nothing
+    /// iterates the variants, so a word named here does not have to join
+    /// [`SUBCOMMANDS`], and the tests below — which walk that table, not this
+    /// function — never see it. A new subcommand can still ship undocumented
+    /// with the suite green. What the compile error buys is putting whoever
+    /// adds one in front of this table; closing the gap for real needs
+    /// variant iteration we do not have.
     fn subcommand_word(command: &CliCommand) -> Option<&'static str> {
         match command {
             CliCommand::Enable { .. } => Some("enable"),
