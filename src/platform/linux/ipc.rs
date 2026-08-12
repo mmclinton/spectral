@@ -541,10 +541,27 @@ mod tests {
             is_playing_filtered: false,
             last_error: None,
         };
+        // The third status. It reaches clients on every enable and disable,
+        // and until now no golden carried its spelling, so renaming it was a
+        // wire break the suite would have passed.
+        let pending_state = DaemonState {
+            protocol_version: PROTOCOL_VERSION,
+            status: Status::Pending,
+            device_id: Some(42),
+            device_node_name: Some("alsa_input.usb-Blue_Yeti-00.analog-stereo".to_string()),
+            mic_name: "Spectral-Mic".to_string(),
+            threshold: 80,
+            rumble_filter: true,
+            auto_level: false,
+            is_playing_original: false,
+            is_playing_filtered: false,
+            last_error: None,
+        };
         let cases = [
             DaemonResponse::Ok,
             DaemonResponse::State(full_state),
             DaemonResponse::State(idle_state),
+            DaemonResponse::State(pending_state),
             DaemonResponse::Error("no such device".to_string()),
         ];
         for response in cases {
@@ -552,10 +569,15 @@ mod tests {
         }
     }
 
-    /// Coverage guard for the response table; see [`command_golden`].
-    /// `State` is split on `status` because the table exercises it twice.
-    /// `DaemonState` needs no equivalent — a new field lands in the JSON and
-    /// breaks the goldens on its own.
+    /// Coverage guard for the response table; see [`command_golden`] for what
+    /// that does and does not buy. Two separate things guard [`Status`], which
+    /// crosses the wire as a bare string. Matching on `status` instead of
+    /// through a wildcard makes these arms exhaustive over it, so a fourth
+    /// variant fails to compile rather than borrowing a neighbour's golden;
+    /// the spelling of the three that exist is pinned by having a golden
+    /// each, which is what a `serde` rename would break. `DaemonState`'s
+    /// *fields* need neither — a new one lands in the JSON and breaks all
+    /// three goldens on its own.
     fn response_golden(response: &DaemonResponse) -> &'static str {
         match response {
             DaemonResponse::Ok => r#""Ok""#,
@@ -565,7 +587,16 @@ mod tests {
             }) => {
                 r#"{"State":{"protocol_version":2,"status":"Active","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"is_playing_original":false,"is_playing_filtered":true,"last_error":"pipeline died"}}"#
             }
-            DaemonResponse::State(_) => {
+            DaemonResponse::State(DaemonState {
+                status: Status::Pending,
+                ..
+            }) => {
+                r#"{"State":{"protocol_version":2,"status":"Pending","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}}"#
+            }
+            DaemonResponse::State(DaemonState {
+                status: Status::Inactive,
+                ..
+            }) => {
                 r#"{"State":{"protocol_version":2,"status":"Inactive","device_id":null,"device_node_name":null,"mic_name":"Spectral-Mic","threshold":50,"rumble_filter":false,"auto_level":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}}"#
             }
             DaemonResponse::Error(_) => r#"{"Error":"no such device"}"#,
