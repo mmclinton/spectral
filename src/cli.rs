@@ -484,9 +484,34 @@ mod tests {
     #[test]
     fn help_documents_all_three_exit_codes() {
         let text = help();
-        assert!(text.contains("0  success (including a no-op disable or shutdown)"));
-        assert!(text.contains("1  runtime failure"));
-        assert!(text.contains("2  usage error"));
+        let (_, table) = text
+            .split_once("Exit codes:")
+            .expect("--help must carry an exit-code table");
+        for code in [EXIT_SUCCESS, EXIT_FAILURE, EXIT_USAGE_ERROR] {
+            assert!(
+                table.contains(&format!("\n  {code}  ")),
+                "exit code {code} is missing from the help table"
+            );
+        }
+    }
+
+    /// docs/CLI.md is the published reference and, per the stability
+    /// analysis, part of the same frozen contract as the parser. Markdown
+    /// cannot interpolate the constants the way [`help`] does, so this test
+    /// is the only thing standing between a code change and a doc that
+    /// silently keeps advertising the old number.
+    #[test]
+    fn the_cli_reference_documents_the_same_exit_codes() {
+        let doc = include_str!("../docs/CLI.md");
+        let (_, table) = doc
+            .split_once("## Exit codes")
+            .expect("docs/CLI.md must carry an exit-code table");
+        for code in [EXIT_SUCCESS, EXIT_FAILURE, EXIT_USAGE_ERROR] {
+            assert!(
+                table.contains(&format!("| `{code}` |")),
+                "exit code {code} is missing from the docs/CLI.md table"
+            );
+        }
     }
 
     #[test]
