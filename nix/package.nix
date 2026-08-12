@@ -13,6 +13,7 @@
   libxrandr,
   fontconfig,
   pipewire,
+  xdg-utils,
   versionCheckHook,
 }:
 let
@@ -65,8 +66,11 @@ rustPlatform.buildRustPackage {
     install -Dm644 assets/spectral.png $out/share/icons/hicolor/512x512/apps/page.codeberg.mmc.Spectral.png
     install -Dm644 THIRD-PARTY.md $out/share/licenses/spectral/THIRD-PARTY.md
 
+    # The GUI shells out to xdg-open for its Help links; hosts without
+    # xdg-utils would otherwise fail the spawn silently.
     wrapProgram $out/bin/spectral \
-      --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath dlopenLibs}"
+      --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath dlopenLibs}" \
+      --prefix PATH : "${lib.makeBinPath [ xdg-utils ]}"
   '';
 
   # Fails the build when the binary's version disagrees with `version`
