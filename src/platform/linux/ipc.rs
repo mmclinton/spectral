@@ -411,11 +411,13 @@ mod tests {
         }
     }
 
-    // Serialize, deserialize, re-serialize: the wire form must be
-    // byte-stable across the round trip, so a serde representation change
-    // fails here instead of silently drifting on the socket. The decoded
-    // value comes back with it because byte-stability alone would still
-    // hold if both directions mangled a payload the same way.
+    // Serialize, deserialize, re-serialize. What byte-stability catches on
+    // its own is an *asymmetric* representation — a field that serializes
+    // but not back, a one-way rename — because a symmetric change moves both
+    // directions together and still re-serializes to itself. Catching that
+    // is the goldens' job, in the callers, not this helper's. The decoded
+    // value comes back alongside the encoding so a caller can assert the
+    // payload survived and not merely that the bytes were stable.
     //
     // The frame is one JSON value per line (`writeln!` out, `read_line`
     // back), so a literal newline anywhere in the encoding would split one
@@ -467,12 +469,17 @@ mod tests {
         }
     }
 
-    /// A table cannot enforce its own coverage — a new variant would simply
-    /// go unpinned. Keeping the goldens *here* rather than beside the cases
-    /// is what makes the exhaustiveness bite: the compiler demands an arm,
-    /// and the only thing an arm can return is a wire form, so there is no
-    /// way to go green without writing one. `Enable` is split by shape
-    /// because the table exercises it twice.
+    /// Keeping the goldens here rather than beside the cases means a new
+    /// variant cannot be added without authoring its wire form: the match is
+    /// exhaustive, and an arm has nothing to return but a `&str`.
+    ///
+    /// That is not the same as pinning it, which the earlier wording of this
+    /// comment claimed. This function is only ever called from inside the
+    /// loop over `cases`, so a variant with an arm but no `cases` entry is
+    /// never compared — and an arm returning a wrong literal is just as
+    /// green. What the guard buys is putting the wire form in front of
+    /// whoever adds a variant; extending `cases` is still on them.
+    /// `Enable` is split by shape because the table exercises it twice.
     fn command_golden(command: &DaemonCommand) -> &'static str {
         match command {
             DaemonCommand::Enable {
