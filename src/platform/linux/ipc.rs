@@ -385,16 +385,26 @@ mod tests {
 
     // Serialize, deserialize, re-serialize: the wire form must be
     // byte-stable across the round trip, so a serde representation change
-    // fails here instead of silently drifting on the socket.
-    fn round_trip<T>(value: &T) -> String
+    // fails here instead of silently drifting on the socket. The decoded
+    // value comes back with it because byte-stability alone would still
+    // hold if both directions mangled a payload the same way.
+    //
+    // The frame is one JSON value per line (`writeln!` out, `read_line`
+    // back), so a literal newline anywhere in the encoding would split one
+    // message into two and desynchronize the connection for good.
+    fn round_trip<T>(value: &T) -> (T, String)
     where
         T: Serialize + for<'de> Deserialize<'de>,
     {
         let json = serde_json::to_string(value).expect("must serialize");
+        assert!(
+            !json.contains('\n'),
+            "a raw newline in {json:?} would split the frame"
+        );
         let back: T = serde_json::from_str(&json).expect("must deserialize");
         let again = serde_json::to_string(&back).expect("must re-serialize");
         assert_eq!(again, json, "wire form changed across the round trip");
-        json
+        (back, json)
     }
 
     #[test]
@@ -431,7 +441,7 @@ mod tests {
             (DaemonCommand::StopFiltered, r#""StopFiltered""#),
         ];
         for (command, golden) in cases {
-            assert_eq!(round_trip(&command), golden);
+            assert_eq!(round_trip(&command).1, golden);
         }
     }
 
@@ -464,7 +474,7 @@ mod tests {
             ),
         ];
         for (response, golden) in cases {
-            assert_eq!(round_trip(&response), golden);
+            assert_eq!(round_trip(&response).1, golden);
         }
     }
 
@@ -473,17 +483,25 @@ mod tests {
         // Validation lives at the edges; the wire itself is
         // representation-only, so non-ASCII names and error text with
         // quotes, backslashes and newlines must arrive untouched.
-        let named = DaemonCommand::Enable {
+        let name = "caf\u{e9} \u{1f3a4}";
+        let (back, _) = round_trip(&DaemonCommand::Enable {
             device_id: None,
-            mic_name: Some("caf\u{e9} \u{1f3a4}".to_string()),
+            mic_name: Some(name.to_string()),
             threshold: None,
             rumble_filter: None,
             auto_level: None,
-        };
-        round_trip(&named);
-        round_trip(&DaemonResponse::Error(
-            "quote \" backslash \\ newline\n".to_string(),
-        ));
+        });
+        match back {
+            DaemonCommand::Enable { mic_name, .. } => assert_eq!(mic_name.as_deref(), Some(name)),
+            other => panic!("the round trip changed the variant: {other:?}"),
+        }
+
+        let reason = "quote \" backslash \\ newline\n";
+        let (back, _) = round_trip(&DaemonResponse::Error(reason.to_string()));
+        match back {
+            DaemonResponse::Error(text) => assert_eq!(text, reason),
+            other => panic!("the round trip changed the variant: {other:?}"),
+        }
     }
 
     #[test]
