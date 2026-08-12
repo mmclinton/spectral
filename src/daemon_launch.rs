@@ -9,9 +9,12 @@ use std::error::Error;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-/// Where the daemon's stdout and stderr land — `$XDG_RUNTIME_DIR`, falling
-/// back to `$HOME/tmp` and then `/tmp`. The GUI reports this path in its
-/// diagnostics dump, so the two must not drift apart.
+/// Where [`start_daemon`] points the child's stdout and stderr:
+/// `$XDG_RUNTIME_DIR`, else `$HOME/tmp`, else `/tmp`. The legs are a branch
+/// on which variable is set, not a recovery chain — `/tmp` is reached only
+/// when `HOME` is unset, never because `$HOME/tmp` turned out to be
+/// unwritable. The GUI reports this path in its diagnostics dump, so the two
+/// must not drift apart.
 pub fn daemon_log_path() -> PathBuf {
     let dir = std::env::var("XDG_RUNTIME_DIR")
         .or_else(|_| std::env::var("HOME").map(|h| format!("{h}/tmp")))
