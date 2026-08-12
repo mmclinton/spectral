@@ -382,4 +382,114 @@ mod tests {
     fn missing_protocol_version_fails_to_parse() {
         assert!(serde_json::from_str::<DaemonState>(OLD_STATE).is_err());
     }
+
+    // Serialize, deserialize, re-serialize: the wire form must be
+    // byte-stable across the round trip, so a serde representation change
+    // fails here instead of silently drifting on the socket.
+    fn round_trip<T>(value: &T) -> String
+    where
+        T: Serialize + for<'de> Deserialize<'de>,
+    {
+        let json = serde_json::to_string(value).expect("must serialize");
+        let back: T = serde_json::from_str(&json).expect("must deserialize");
+        let again = serde_json::to_string(&back).expect("must re-serialize");
+        assert_eq!(again, json, "wire form changed across the round trip");
+        json
+    }
+
+    #[test]
+    fn command_wire_forms_are_stable_round_trips() {
+        let cases = [
+            (
+                DaemonCommand::Enable {
+                    device_id: None,
+                    mic_name: None,
+                    threshold: None,
+                    rumble_filter: None,
+                    auto_level: None,
+                },
+                r#"{"Enable":{"device_id":null,"mic_name":null,"threshold":null,"rumble_filter":null,"auto_level":null}}"#,
+            ),
+            (
+                DaemonCommand::Enable {
+                    device_id: Some(5),
+                    mic_name: Some("My-Mic".to_string()),
+                    threshold: Some(70),
+                    rumble_filter: Some(true),
+                    auto_level: Some(false),
+                },
+                r#"{"Enable":{"device_id":5,"mic_name":"My-Mic","threshold":70,"rumble_filter":true,"auto_level":false}}"#,
+            ),
+            (DaemonCommand::Disable, r#""Disable""#),
+            (DaemonCommand::GetState, r#""GetState""#),
+            (DaemonCommand::Shutdown, r#""Shutdown""#),
+            (DaemonCommand::StartRecording, r#""StartRecording""#),
+            (DaemonCommand::StopRecording, r#""StopRecording""#),
+            (DaemonCommand::PlayOriginal, r#""PlayOriginal""#),
+            (DaemonCommand::StopOriginal, r#""StopOriginal""#),
+            (DaemonCommand::PlayFiltered, r#""PlayFiltered""#),
+            (DaemonCommand::StopFiltered, r#""StopFiltered""#),
+        ];
+        for (command, golden) in cases {
+            assert_eq!(round_trip(&command), golden);
+        }
+    }
+
+    #[test]
+    fn response_wire_forms_are_stable_round_trips() {
+        // The golden pins protocol_version at 2 as a literal: bumping the
+        // constant means deliberately editing this string.
+        let full_state = DaemonState {
+            protocol_version: PROTOCOL_VERSION,
+            status: Status::Active,
+            device_id: Some(42),
+            device_node_name: Some("alsa_input.usb-Blue_Yeti-00.analog-stereo".to_string()),
+            mic_name: "Spectral-Mic".to_string(),
+            threshold: 80,
+            rumble_filter: true,
+            auto_level: false,
+            is_playing_original: false,
+            is_playing_filtered: true,
+            last_error: Some("pipeline died".to_string()),
+        };
+        let cases = [
+            (DaemonResponse::Ok, r#""Ok""#),
+            (
+                DaemonResponse::State(full_state),
+                r#"{"State":{"protocol_version":2,"status":"Active","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"is_playing_original":false,"is_playing_filtered":true,"last_error":"pipeline died"}}"#,
+            ),
+            (
+                DaemonResponse::Error("no such device".to_string()),
+                r#"{"Error":"no such device"}"#,
+            ),
+        ];
+        for (response, golden) in cases {
+            assert_eq!(round_trip(&response), golden);
+        }
+    }
+
+    #[test]
+    fn unicode_and_escapes_survive_the_round_trip() {
+        // Validation lives at the edges; the wire itself is
+        // representation-only, so non-ASCII names and error text with
+        // quotes, backslashes and newlines must arrive untouched.
+        let named = DaemonCommand::Enable {
+            device_id: None,
+            mic_name: Some("caf\u{e9} \u{1f3a4}".to_string()),
+            threshold: None,
+            rumble_filter: None,
+            auto_level: None,
+        };
+        round_trip(&named);
+        round_trip(&DaemonResponse::Error(
+            "quote \" backslash \\ newline\n".to_string(),
+        ));
+    }
+
+    #[test]
+    fn protocol_version_is_pinned_at_2() {
+        // Bumping per the policy on the constant is legitimate; this
+        // literal makes sure that is always a deliberate edit.
+        assert_eq!(PROTOCOL_VERSION, 2);
+    }
 }
