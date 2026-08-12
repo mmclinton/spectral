@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   playing to its end after the window was gone, and a capture left running
   went on to the recorder's internal cap; both are now stopped on exit. The
   virtual mic is unaffected — it still outlives the window.
+- The Help links now open on minimal systems: the Nix package puts
+  `xdg-open` on the GUI's PATH instead of relying on the host to provide it.
 
 ## [0.8.0] - 2026-07-31
 
