@@ -18,19 +18,23 @@ socket at `$XDG_RUNTIME_DIR/spectral-daemon.sock`, and the daemon serves one
 handler thread per connection. Either client auto-spawns the daemon if none is
 running; a lock on `$XDG_RUNTIME_DIR/spectral-daemon.pid` decides ownership when
 two try at once. The socket and the pid file both require the runtime dir, and
-unlike the log path below there is no second location to fall back to. The
-clients do not report that as its own condition, though: `DaemonClient::connect`
-produces the precise error and every caller collapses it into "daemon not
-running", so `disable` and `shutdown` exit 0, `status` exits 1, and `enable`
-spawns a daemon that cannot bind and then waits out the connect-retry window
-before reporting.
+unlike the log path below there is no second location to fall back to.
+`DaemonClient::connect` names that condition exactly, but no caller shows the
+name to the user: `disable` and `shutdown` print "daemon not running" and exit
+0, `status` prints the same and exits 1, and `enable` discards the error in
+`connect_or_spawn` to go spawn a daemon instead — so what it finally reports is
+that attempt's failure, either an unwritable log path or, if the spawn worked
+and the daemon then could not bind, a connect timeout five seconds later.
 
 Daemon diagnostics are not written by the daemon, which only ever writes to its
 inherited stdout and stderr. A client that spawns it redirects those to
 `spectral-daemon.log` under `$XDG_RUNTIME_DIR`, or under `$HOME/tmp` if the
-runtime dir is unset, or under `/tmp` if `HOME` is unset too. A daemon started
-any other way — directly from a shell, from a service manager — logs wherever
-its parent's stdio points, and no such file exists.
+runtime dir is unset, or under `/tmp` if `HOME` is unset too. Only the file is
+created, never its directory, so the `$HOME/tmp` leg fails on any account that
+does not already have that directory — which is why a missing runtime dir
+usually surfaces as a spawn error rather than as the connect timeout above. A
+daemon started any other way — directly from a shell, from a service manager —
+logs wherever its parent's stdio points, and no such file exists.
 
 Because the daemon owns every PipeWire object it creates, the virtual mic
 disappears when the daemon exits. There is nothing to reap and no state left in
