@@ -518,6 +518,98 @@ mod tests {
         }
     }
 
+    /// The half of the frozen CLI surface no constant can render. The exit
+    /// codes reach `help()` by interpolation, but the subcommand set and the
+    /// `enable` flags are prose in two places — `help()` and docs/CLI.md —
+    /// with the parser as the third copy. This table is the one list all
+    /// three are checked against.
+    const SUBCOMMANDS: [&str; 5] = ["enable", "disable", "status", "devices", "shutdown"];
+    const ENABLE_FLAGS: [&str; 5] = [
+        "--device",
+        "--threshold",
+        "--mic-name",
+        "--rumble-filter",
+        "--auto-level",
+    ];
+
+    /// Forces a new [`CliCommand`] to declare whether it is spelled as a
+    /// subcommand before the suite builds. It cannot be waved through with a
+    /// bare arm — the arm has to name the word or say there is none — and
+    /// naming one that is absent from [`SUBCOMMANDS`] then fails the test
+    /// below. A variant that lies with `None` still escapes; nothing here
+    /// can catch that, and an undocumented subcommand is not contract.
+    fn subcommand_word(command: &CliCommand) -> Option<&'static str> {
+        match command {
+            CliCommand::Enable { .. } => Some("enable"),
+            CliCommand::Disable => Some("disable"),
+            CliCommand::Status => Some("status"),
+            CliCommand::Devices => Some("devices"),
+            CliCommand::Shutdown => Some("shutdown"),
+            CliCommand::Gui | CliCommand::Help | CliCommand::Version => None,
+        }
+    }
+
+    #[test]
+    fn every_subcommand_parses_and_is_documented_in_both_references() {
+        let help = help();
+        let doc = include_str!("../docs/CLI.md");
+        for word in SUBCOMMANDS {
+            let parsed = p(&[word]).unwrap_or_else(|e| panic!("`spectral {word}` must parse: {e}"));
+            assert_eq!(subcommand_word(&parsed), Some(word));
+            assert!(
+                help.contains(&format!("\n  {word}")),
+                "`{word}` is missing from the --help command list"
+            );
+            assert!(
+                doc.contains(&format!("spectral {word}")),
+                "`{word}` is missing from docs/CLI.md"
+            );
+        }
+    }
+
+    #[test]
+    fn every_enable_flag_is_recognized_and_documented_in_both_references() {
+        let help = help();
+        let doc = include_str!("../docs/CLI.md");
+        for flag in ENABLE_FLAGS {
+            // A flag the parser has dropped answers "unexpected argument"
+            // instead, which is what separates this from a spelling check.
+            assert_eq!(
+                p(&["enable", flag]),
+                Err(format!("{flag} requires a value")),
+                "the parser no longer recognizes {flag}"
+            );
+            assert!(help.contains(flag), "{flag} is missing from --help");
+            assert!(
+                doc.contains(&format!("`{flag} ")),
+                "{flag} is missing from the docs/CLI.md flag table"
+            );
+        }
+    }
+
+    /// The other direction: a flag added to either reference but not to
+    /// [`ENABLE_FLAGS`] fails here, so the table cannot fall behind the prose
+    /// the way docs/CLI.md fell behind the exit codes.
+    #[test]
+    fn neither_reference_documents_a_flag_the_table_does_not_carry() {
+        let options = ["--help", "--version"];
+        let help = help();
+        let doc = include_str!("../docs/CLI.md");
+        for (source, text) in [("--help", help.as_str()), ("docs/CLI.md", doc)] {
+            for word in text.split_whitespace() {
+                let flag = word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-');
+                // Markdown rules (`---`) share the prefix but carry no name.
+                if !flag.starts_with("--") || !flag.contains(|c: char| c.is_ascii_alphanumeric()) {
+                    continue;
+                }
+                assert!(
+                    ENABLE_FLAGS.contains(&flag) || options.contains(&flag),
+                    "{source} documents {flag}, which is in neither ENABLE_FLAGS nor the options"
+                );
+            }
+        }
+    }
+
     #[test]
     fn bare_invocation_is_gui() {
         assert_eq!(p(&[]), Ok(CliCommand::Gui));
