@@ -531,6 +531,11 @@ mod tests {
         "--rumble-filter",
         "--auto-level",
     ];
+    /// Long options that belong to no subcommand. Not part of the frozen
+    /// surface — they sit here so the reverse scan below has somewhere to
+    /// put a `--` token that is legitimately not an `enable` flag. Short
+    /// forms (`-h`, `-V`) go unchecked; the scan only looks at `--`.
+    const GLOBAL_OPTIONS: [&str; 2] = ["--help", "--version"];
 
     /// Forces a new [`CliCommand`] to declare whether it is spelled as a
     /// subcommand: the match is exhaustive, so the variant will not compile
@@ -601,19 +606,22 @@ mod tests {
     /// the way docs/CLI.md fell behind the exit codes.
     #[test]
     fn neither_reference_documents_a_flag_the_table_does_not_carry() {
-        let options = ["--help", "--version"];
         let help = help();
         let doc = include_str!("../docs/CLI.md");
         for (source, text) in [("--help", help.as_str()), ("docs/CLI.md", doc)] {
             for word in text.split_whitespace() {
                 let flag = word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-');
+                // Split on `=` the way `parse` does: both spellings name the
+                // same flag, and without this, documenting the `--flag=value`
+                // form the parser advertises would fail this test.
+                let flag = flag.split_once('=').map_or(flag, |(name, _)| name);
                 // Markdown rules (`---`) share the prefix but carry no name.
                 if !flag.starts_with("--") || !flag.contains(|c: char| c.is_ascii_alphanumeric()) {
                     continue;
                 }
                 assert!(
-                    ENABLE_FLAGS.contains(&flag) || options.contains(&flag),
-                    "{source} documents {flag}, which is in neither ENABLE_FLAGS nor the options"
+                    ENABLE_FLAGS.contains(&flag) || GLOBAL_OPTIONS.contains(&flag),
+                    "{source} documents {flag}, which is in neither ENABLE_FLAGS nor GLOBAL_OPTIONS"
                 );
             }
         }
