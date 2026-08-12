@@ -469,7 +469,26 @@ mod tests {
             (DaemonCommand::StopFiltered, r#""StopFiltered""#),
         ];
         for (command, golden) in cases {
+            in_the_command_table(&command);
             assert_eq!(round_trip(&command).1, golden);
+        }
+    }
+
+    /// A table cannot enforce its own coverage — a new variant would simply
+    /// go unpinned. This match is the compile-time reminder: adding one
+    /// fails the build until it also gets a golden above.
+    fn in_the_command_table(command: &DaemonCommand) {
+        match command {
+            DaemonCommand::Enable { .. }
+            | DaemonCommand::Disable
+            | DaemonCommand::GetState
+            | DaemonCommand::Shutdown
+            | DaemonCommand::StartRecording
+            | DaemonCommand::StopRecording
+            | DaemonCommand::PlayOriginal
+            | DaemonCommand::StopOriginal
+            | DaemonCommand::PlayFiltered
+            | DaemonCommand::StopFiltered => (),
         }
     }
 
@@ -524,7 +543,17 @@ mod tests {
             ),
         ];
         for (response, golden) in cases {
+            in_the_response_table(&response);
             assert_eq!(round_trip(&response).1, golden);
+        }
+    }
+
+    /// Coverage guard for the response table; see [`in_the_command_table`].
+    /// `DaemonState` needs no equivalent — a new field lands in the JSON and
+    /// breaks the goldens on its own.
+    fn in_the_response_table(response: &DaemonResponse) {
+        match response {
+            DaemonResponse::Ok | DaemonResponse::State(_) | DaemonResponse::Error(_) => (),
         }
     }
 
