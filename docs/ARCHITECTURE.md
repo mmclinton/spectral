@@ -81,6 +81,7 @@ the gate entirely (denoise only), and 1–100 map linearly onto a cutoff up to
 | `src/cli.rs` | Headless subcommand parsing and execution. Bare `spectral` launches the GUI. |
 | `src/fonts.rs` | Resolves the user's preferred monospaced family, which Slint cannot ask for itself. |
 | `src/daemon_launch.rs` | Spawning the daemon and bootstrapping a connection; shared by the GUI and CLI. |
+| `src/diagnostics.rs` | Renders the bug-report dump behind the GUI's error details modal, from in-process state only. |
 | `src/bin/spectral-daemon.rs` | Daemon main loop, connection handlers, and the lock-ordering convention. |
 | `src/platform/mod.rs` | The platform seam; re-exports `linux`. |
 | `src/platform/linux/pipewire.rs` | `NativeAudioPipeline`: the audio thread, capture stream, virtual source node, and link. |
