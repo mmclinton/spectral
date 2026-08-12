@@ -337,7 +337,7 @@ fn main() -> std::process::ExitCode {
         Ok(command) => cli::run(command),
         Err(msg) => {
             eprintln!("spectral: {msg}\nTry 'spectral --help'.");
-            ExitCode::from(2)
+            ExitCode::from(cli::EXIT_USAGE_ERROR)
         }
     }
 }
