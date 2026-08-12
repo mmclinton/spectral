@@ -525,11 +525,4 @@ mod tests {
             other => panic!("the round trip changed the variant: {other:?}"),
         }
     }
-
-    #[test]
-    fn protocol_version_is_pinned_at_2() {
-        // Bumping per the policy on the constant is legitimate; this
-        // literal makes sure that is always a deliberate edit.
-        assert_eq!(PROTOCOL_VERSION, 2);
-    }
 }

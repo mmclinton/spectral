@@ -475,9 +475,12 @@ mod tests {
         assert_eq!(EXIT_USAGE_ERROR, 2);
     }
 
+    /// The two arms that reach `run` without touching the daemon socket.
+    /// `Gui` is deliberately absent: `main` intercepts it before delegating,
+    /// so its arm here is unreachable and pinning it would only suggest
+    /// otherwise.
     #[test]
-    fn gui_help_and_version_exit_with_success() {
-        assert_eq!(run(CliCommand::Gui), ExitCode::SUCCESS);
+    fn help_and_version_exit_with_success() {
         assert_eq!(run(CliCommand::Help), ExitCode::SUCCESS);
         assert_eq!(run(CliCommand::Version), ExitCode::SUCCESS);
     }
