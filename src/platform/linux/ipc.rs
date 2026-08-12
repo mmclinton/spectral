@@ -438,57 +438,64 @@ mod tests {
     #[test]
     fn command_wire_forms_are_stable_round_trips() {
         let cases = [
-            (
-                DaemonCommand::Enable {
-                    device_id: None,
-                    mic_name: None,
-                    threshold: None,
-                    rumble_filter: None,
-                    auto_level: None,
-                },
-                r#"{"Enable":{"device_id":null,"mic_name":null,"threshold":null,"rumble_filter":null,"auto_level":null}}"#,
-            ),
-            (
-                DaemonCommand::Enable {
-                    device_id: Some(5),
-                    mic_name: Some("My-Mic".to_string()),
-                    threshold: Some(70),
-                    rumble_filter: Some(true),
-                    auto_level: Some(false),
-                },
-                r#"{"Enable":{"device_id":5,"mic_name":"My-Mic","threshold":70,"rumble_filter":true,"auto_level":false}}"#,
-            ),
-            (DaemonCommand::Disable, r#""Disable""#),
-            (DaemonCommand::GetState, r#""GetState""#),
-            (DaemonCommand::Shutdown, r#""Shutdown""#),
-            (DaemonCommand::StartRecording, r#""StartRecording""#),
-            (DaemonCommand::StopRecording, r#""StopRecording""#),
-            (DaemonCommand::PlayOriginal, r#""PlayOriginal""#),
-            (DaemonCommand::StopOriginal, r#""StopOriginal""#),
-            (DaemonCommand::PlayFiltered, r#""PlayFiltered""#),
-            (DaemonCommand::StopFiltered, r#""StopFiltered""#),
+            DaemonCommand::Enable {
+                device_id: None,
+                mic_name: None,
+                threshold: None,
+                rumble_filter: None,
+                auto_level: None,
+            },
+            DaemonCommand::Enable {
+                device_id: Some(5),
+                mic_name: Some("My-Mic".to_string()),
+                threshold: Some(70),
+                rumble_filter: Some(true),
+                auto_level: Some(false),
+            },
+            DaemonCommand::Disable,
+            DaemonCommand::GetState,
+            DaemonCommand::Shutdown,
+            DaemonCommand::StartRecording,
+            DaemonCommand::StopRecording,
+            DaemonCommand::PlayOriginal,
+            DaemonCommand::StopOriginal,
+            DaemonCommand::PlayFiltered,
+            DaemonCommand::StopFiltered,
         ];
-        for (command, golden) in cases {
-            in_the_command_table(&command);
-            assert_eq!(round_trip(&command).1, golden);
+        for command in cases {
+            assert_eq!(round_trip(&command).1, command_golden(&command));
         }
     }
 
     /// A table cannot enforce its own coverage — a new variant would simply
-    /// go unpinned. This match is the compile-time reminder: adding one
-    /// fails the build until it also gets a golden above.
-    fn in_the_command_table(command: &DaemonCommand) {
+    /// go unpinned. Keeping the goldens *here* rather than beside the cases
+    /// is what makes the exhaustiveness bite: the compiler demands an arm,
+    /// and the only thing an arm can return is a wire form, so there is no
+    /// way to go green without writing one. `Enable` is split by shape
+    /// because the table exercises it twice.
+    fn command_golden(command: &DaemonCommand) -> &'static str {
         match command {
-            DaemonCommand::Enable { .. }
-            | DaemonCommand::Disable
-            | DaemonCommand::GetState
-            | DaemonCommand::Shutdown
-            | DaemonCommand::StartRecording
-            | DaemonCommand::StopRecording
-            | DaemonCommand::PlayOriginal
-            | DaemonCommand::StopOriginal
-            | DaemonCommand::PlayFiltered
-            | DaemonCommand::StopFiltered => (),
+            DaemonCommand::Enable {
+                device_id: None,
+                mic_name: None,
+                threshold: None,
+                rumble_filter: None,
+                auto_level: None,
+            } => {
+                r#"{"Enable":{"device_id":null,"mic_name":null,"threshold":null,"rumble_filter":null,"auto_level":null}}"#
+            }
+            DaemonCommand::Enable { .. } => {
+                r#"{"Enable":{"device_id":5,"mic_name":"My-Mic","threshold":70,"rumble_filter":true,"auto_level":false}}"#
+            }
+            DaemonCommand::Disable => r#""Disable""#,
+            DaemonCommand::GetState => r#""GetState""#,
+            DaemonCommand::Shutdown => r#""Shutdown""#,
+            DaemonCommand::StartRecording => r#""StartRecording""#,
+            DaemonCommand::StopRecording => r#""StopRecording""#,
+            DaemonCommand::PlayOriginal => r#""PlayOriginal""#,
+            DaemonCommand::StopOriginal => r#""StopOriginal""#,
+            DaemonCommand::PlayFiltered => r#""PlayFiltered""#,
+            DaemonCommand::StopFiltered => r#""StopFiltered""#,
         }
     }
 
@@ -528,32 +535,33 @@ mod tests {
             last_error: None,
         };
         let cases = [
-            (DaemonResponse::Ok, r#""Ok""#),
-            (
-                DaemonResponse::State(full_state),
-                r#"{"State":{"protocol_version":2,"status":"Active","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"is_playing_original":false,"is_playing_filtered":true,"last_error":"pipeline died"}}"#,
-            ),
-            (
-                DaemonResponse::State(idle_state),
-                r#"{"State":{"protocol_version":2,"status":"Inactive","device_id":null,"device_node_name":null,"mic_name":"Spectral-Mic","threshold":50,"rumble_filter":false,"auto_level":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}}"#,
-            ),
-            (
-                DaemonResponse::Error("no such device".to_string()),
-                r#"{"Error":"no such device"}"#,
-            ),
+            DaemonResponse::Ok,
+            DaemonResponse::State(full_state),
+            DaemonResponse::State(idle_state),
+            DaemonResponse::Error("no such device".to_string()),
         ];
-        for (response, golden) in cases {
-            in_the_response_table(&response);
-            assert_eq!(round_trip(&response).1, golden);
+        for response in cases {
+            assert_eq!(round_trip(&response).1, response_golden(&response));
         }
     }
 
-    /// Coverage guard for the response table; see [`in_the_command_table`].
+    /// Coverage guard for the response table; see [`command_golden`].
+    /// `State` is split on `status` because the table exercises it twice.
     /// `DaemonState` needs no equivalent — a new field lands in the JSON and
     /// breaks the goldens on its own.
-    fn in_the_response_table(response: &DaemonResponse) {
+    fn response_golden(response: &DaemonResponse) -> &'static str {
         match response {
-            DaemonResponse::Ok | DaemonResponse::State(_) | DaemonResponse::Error(_) => (),
+            DaemonResponse::Ok => r#""Ok""#,
+            DaemonResponse::State(DaemonState {
+                status: Status::Active,
+                ..
+            }) => {
+                r#"{"State":{"protocol_version":2,"status":"Active","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"is_playing_original":false,"is_playing_filtered":true,"last_error":"pipeline died"}}"#
+            }
+            DaemonResponse::State(_) => {
+                r#"{"State":{"protocol_version":2,"status":"Inactive","device_id":null,"device_node_name":null,"mic_name":"Spectral-Mic","threshold":50,"rumble_filter":false,"auto_level":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}}"#
+            }
+            DaemonResponse::Error(_) => r#"{"Error":"no such device"}"#,
         }
     }
 
