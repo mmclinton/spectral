@@ -31,19 +31,20 @@ pub enum CliCommand {
     Version,
 }
 
-/// The success exit code, interpolated into the help table below so the
-/// text cannot drift from the value the process returns.
-pub const EXIT_SUCCESS: u8 = 0;
-/// The runtime-failure exit code; see [`EXIT_SUCCESS`].
-pub const EXIT_FAILURE: u8 = 1;
-/// The usage-error exit code; see [`EXIT_SUCCESS`].
-pub const EXIT_USAGE_ERROR: u8 = 2;
+// The three codes documented in `help()` and docs/CLI.md. Only
+// EXIT_USAGE_ERROR is single-sourced in the strict sense: it has no std
+// spelling, so `main` returns it and both tables interpolate it. The other
+// two exist to render those tables — `run` returns std's own
+// `ExitCode::SUCCESS`/`FAILURE`, which is the idiomatic spelling and worth
+// keeping at 25 call sites. Nothing structural ties the two vocabularies
+// together, so a test below pins the equivalence instead.
 
-/// The exit code for a usage error — argument parsing failed before any
-/// command ran. One of the three codes the help table documents.
-pub fn usage_error_exit() -> ExitCode {
-    ExitCode::from(EXIT_USAGE_ERROR)
-}
+/// Success; mirrors `ExitCode::SUCCESS`.
+pub const EXIT_SUCCESS: u8 = 0;
+/// Runtime failure; mirrors `ExitCode::FAILURE`.
+pub const EXIT_FAILURE: u8 = 1;
+/// Usage error — argument parsing failed before any command ran.
+pub const EXIT_USAGE_ERROR: u8 = 2;
 
 /// Built at run time so the `--mic-name` line quotes [`mic_name_rule`]
 /// instead of restating it; a relaxed rule would otherwise leave `--help`
@@ -464,14 +465,14 @@ mod tests {
         assert!(help().contains(&mic_name_rule()));
     }
 
-    /// The help table is built from the constants, so its numbers cannot
-    /// drift from the code — but the values themselves are the contract:
-    /// this pins them so changing one is a deliberate edit of this test.
+    /// The tables render these constants, but `run` returns std's codes, so
+    /// this is what keeps the two vocabularies in agreement. The literal 2
+    /// is the contract: changing it has to be a deliberate edit here.
     #[test]
     fn exit_codes_match_the_std_constants_and_the_documented_values() {
         assert_eq!(ExitCode::from(EXIT_SUCCESS), ExitCode::SUCCESS);
         assert_eq!(ExitCode::from(EXIT_FAILURE), ExitCode::FAILURE);
-        assert_eq!(usage_error_exit(), ExitCode::from(2));
+        assert_eq!(EXIT_USAGE_ERROR, 2);
     }
 
     #[test]
