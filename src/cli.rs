@@ -565,9 +565,13 @@ mod tests {
                 help.contains(&format!("\n  {word}")),
                 "`{word}` is missing from the --help command list"
             );
+            // Anchored to a line start, which is the usage block: `devices`
+            // and `enable` also occur inside prose and a table cell, so an
+            // unanchored search stayed green when the block dropped them and
+            // only pinned the three words mentioned exactly once.
             assert!(
-                doc.contains(&format!("spectral {word}")),
-                "`{word}` is missing from docs/CLI.md"
+                doc.contains(&format!("\nspectral {word}")),
+                "`{word}` is missing from the docs/CLI.md usage block"
             );
         }
     }
