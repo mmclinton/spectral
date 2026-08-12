@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `spectral --help` and every invalid-mic-name rejection now quote one
+  shared wording of the name rule instead of restating it per call site,
+  so the text cannot drift from the check the daemon actually runs.
+
 ### Fixed
 - Device listings reported 2 channels for every input; the count is now
   read from the device itself, so mono sources list as mono.
