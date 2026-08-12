@@ -48,7 +48,7 @@ mod pid_file {
     }
 
     pub fn is_process_running(pid: u32) -> bool {
-        Path::new(&format!("/proc/{}", pid)).exists()
+        Path::new(&format!("/proc/{pid}")).exists()
     }
 
     pub fn cleanup(path: &Path) {
@@ -230,7 +230,7 @@ impl DaemonClient {
         command: DaemonCommand,
     ) -> Result<DaemonResponse, std::io::Error> {
         let json = serde_json::to_string(&command)?;
-        writeln!(self.reader.get_mut(), "{}", json)?;
+        writeln!(self.reader.get_mut(), "{json}")?;
         self.reader.get_mut().flush()?;
 
         let mut response_line = String::new();
@@ -346,7 +346,7 @@ impl DaemonConnection {
         }
 
         serde_json::from_str(&line).map_err(|e| {
-            eprintln!("[Daemon] Failed to parse command: {}", e);
+            eprintln!("[daemon] failed to parse command: {e}");
             std::io::Error::new(std::io::ErrorKind::InvalidData, e)
         })
     }
@@ -354,7 +354,7 @@ impl DaemonConnection {
     /// Writes one JSON response line and flushes it.
     pub fn send_response(&mut self, response: DaemonResponse) -> Result<(), std::io::Error> {
         let json = serde_json::to_string(&response)?;
-        writeln!(self.reader.get_mut(), "{}", json)?;
+        writeln!(self.reader.get_mut(), "{json}")?;
         self.reader.get_mut().flush()
     }
 }
