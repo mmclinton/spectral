@@ -17,7 +17,9 @@ The daemon is the single owner of audio state. Clients connect over a Unix
 socket at `$XDG_RUNTIME_DIR/spectral-daemon.sock`, and the daemon serves one
 handler thread per connection. Either client auto-spawns the daemon if none is
 running; a lock on `$XDG_RUNTIME_DIR/spectral-daemon.pid` decides ownership when
-two try at once. Daemon diagnostics go to `$XDG_RUNTIME_DIR/spectral-daemon.log`.
+two try at once. Daemon diagnostics go to `$XDG_RUNTIME_DIR/spectral-daemon.log`,
+falling back to `$HOME/tmp` and then `/tmp` when the runtime dir is unset — the
+socket and pid file have no such fallback.
 
 Because the daemon owns every PipeWire object it creates, the virtual mic
 disappears when the daemon exits. There is nothing to reap and no state left in
