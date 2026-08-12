@@ -31,10 +31,20 @@ targets the selected input device; an explicitly created link feeds a
 daemon-owned `Audio/Source/Virtual` node — the microphone other applications
 see.
 
+Capture negotiates the device's native channel count, clamped to
+`MAX_INPUT_CHANNELS` (8) — wider devices are captured as their first eight.
+The granted count arrives only with the first Format param and is verified
+there: a count outside `1..=8`, or one that changes once locked, halts the
+pipeline rather than deinterleaving with a wrong stride. The input ring is
+reserved for the ceiling up front, since the granted count is not known when
+the buffers are allocated.
+
 Per 480-sample frame (10 ms at 48 kHz — the size RNNoise requires):
 
 1. **Downmix to mono** and scale into the i16-range floats RNNoise expects
-   (`RNNOISE_SCALE_FACTOR`, `pipewire.rs`).
+   (`RNNOISE_SCALE_FACTOR`, `pipewire.rs`). Only the front pair is averaged
+   when the device offers more than two channels — the rest typically carry
+   loopback or monitor returns.
 2. **High-pass** at 90 Hz — the rumble filter, off by default. A 2nd-order
    Butterworth biquad, applied *before* the denoiser so RNNoise and its VAD
    analyze a rumble-free signal (`stages/highpass.rs`).
