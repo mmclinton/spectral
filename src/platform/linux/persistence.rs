@@ -159,8 +159,13 @@ mod tests {
     use super::*;
 
     /// The half of the schema contract that lets a new version read an old
-    /// file: every key added since must carry `#[serde(default)]`, so a file
-    /// written before it existed still loads.
+    /// file: a file written before these keys existed still loads, with each
+    /// of them at its default. What that costs an author differs by type —
+    /// `#[serde(default)]` is what carries `rumble_filter` and `auto_level`,
+    /// while `Option` fields get `None` from serde whether or not the
+    /// attribute is there. The assertions below are on the behavior, so they
+    /// hold either way; only the non-`Option` half is enforced by removing
+    /// the attribute.
     #[test]
     fn absent_optional_keys_fall_back_to_their_defaults() {
         let without_the_optional_keys = "device_id = 42\nmic_name = \"My-Mic\"\nthreshold = 65\n";
