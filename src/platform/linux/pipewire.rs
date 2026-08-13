@@ -24,7 +24,7 @@ use pipewire::{
 };
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -71,28 +71,52 @@ struct ReadyFlags {
     feed: Cell<bool>,
 }
 
+/// What negotiation settled on, shared between the `param_changed` handler
+/// and the capture `process` callback.
+///
+/// Atomic, and deliberately *not* fields of [`PipelineData`], because those
+/// two callbacks run on different threads: `param_changed` is a main-loop
+/// event while `process` runs on a PipeWire data thread under `RT_PROCESS`.
+/// `RefCell`'s borrow flag is a plain `Cell`, so a Format arriving while the
+/// data thread is mid-cycle would either race it — two live `&mut` to the
+/// same struct — or panic `BorrowMutError` out of an `extern "C"` callback,
+/// which aborts the daemon rather than unwinding. Atomics also give the halt
+/// a defined visibility across that boundary, which a plain `bool` did not.
+///
+/// `SeqCst` throughout: these are read once per delivery, not per sample, so
+/// the ordering costs nothing measurable and nobody has to reason about
+/// which pairs need acquire/release.
+struct FormatState {
+    /// Channel count negotiation granted — the stride the deinterleave uses.
+    channels: AtomicU32,
+    /// Set once the first Format locked `channels`; a later Format changing
+    /// it halts the pipeline.
+    locked: AtomicBool,
+    /// Poisoned by an unusable or renegotiated format: the process callback
+    /// drops deliveries rather than deinterleave with a wrong stride.
+    halted: AtomicBool,
+}
+
+impl FormatState {
+    fn new(channels: u32) -> Self {
+        Self {
+            channels: AtomicU32::new(channels),
+            locked: AtomicBool::new(false),
+            halted: AtomicBool::new(false),
+        }
+    }
+}
+
 struct PipelineData {
     processor: AudioProcessor,
     input_buffer: Vec<f32>,
     output_buffer: Vec<f32>,
-    input_channels: u32,
     mono_scratch: Vec<f32>,
     processed_scratch: Vec<f32>,
-    /// True once the first Format param locked `input_channels` to the
-    /// granted count; a later Format changing it halts the pipeline.
-    format_locked: bool,
-    /// Poisoned by an unusable or renegotiated format: the process
-    /// callback drops deliveries rather than deinterleave with a wrong
-    /// stride.
-    halted: bool,
 }
 
 impl PipelineData {
-    fn new(processor: AudioProcessor, input_channels: u32) -> Self {
-        // The offer is clamped to the same ceiling, so below it the format
-        // is exact and no conversion occurs; the clamp only engages for
-        // devices wider than MAX_INPUT_CHANNELS.
-        let channels = input_channels.clamp(1, MAX_INPUT_CHANNELS);
+    fn new(processor: AudioProcessor) -> Self {
         // Full worst-case reservations: the process callbacks push into
         // these on the RT thread, so growth there would mean an RT-path
         // malloc at exactly the wrong moment (e.g. a stalled consumer).
@@ -109,11 +133,8 @@ impl PipelineData {
             processor,
             input_buffer: Vec::with_capacity(input_capacity),
             output_buffer: Vec::with_capacity(output_capacity),
-            input_channels: channels,
             mono_scratch: vec![0.0; RNNOISE_FRAME_SIZE],
             processed_scratch: vec![0.0; RNNOISE_FRAME_SIZE],
-            format_locked: false,
-            halted: false,
         }
     }
 }
@@ -274,7 +295,8 @@ fn run_pipeline(
     let channels = input_channels.clamp(1, MAX_INPUT_CHANNELS);
 
     // Must use Rc because PipeWire callbacks are !Send
-    let pipeline_data = Rc::new(RefCell::new(PipelineData::new(processor, channels)));
+    let pipeline_data = Rc::new(RefCell::new(PipelineData::new(processor)));
+    let format_state = Rc::new(FormatState::new(channels));
 
     let capture_format = build_audio_format_pod(AudioFormat::F32LE, SAMPLE_RATE, channels, None)?;
     let feed_format = build_audio_format_pod(
@@ -329,6 +351,11 @@ fn run_pipeline(
     let capture_failure = failure.clone();
     let param_failure = failure.clone();
     let capture_ready = ready.clone();
+    // Each callback carries its own handle rather than reaching through the
+    // listener's user data, which is what keeps the main-loop handler off
+    // the RT callback's `RefCell`. See [`FormatState`].
+    let param_format = format_state.clone();
+    let capture_format_state = format_state.clone();
     let _capture_listener = capture_stream
         .add_local_listener_with_user_data(capture_data)
         .state_changed(move |_stream, _data, _old, new| match new {
@@ -341,7 +368,7 @@ fn run_pipeline(
         // The granted format, not the offered one: PipeWire's adapter is
         // free to convert, so the stride the deinterleave uses has to come
         // from what negotiation actually settled on.
-        .param_changed(move |_stream, data, id, param| {
+        .param_changed(move |_stream, _data, id, param| {
             if id != ParamType::Format.as_raw() {
                 return;
             }
@@ -353,13 +380,12 @@ fn run_pipeline(
                 return;
             }
             let mut info = AudioInfoRaw::new();
-            let mut d = data.borrow_mut();
             if info.parse(param).is_err() {
                 record_failure(
                     &param_failure,
                     "capture stream: unparsable Format param".to_string(),
                 );
-                d.halted = true;
+                param_format.halted.store(true, Ordering::SeqCst);
                 return;
             }
             let granted = info.channels();
@@ -368,23 +394,27 @@ fn run_pipeline(
                     &param_failure,
                     format!("capture stream: {granted} channels outside 1..={MAX_INPUT_CHANNELS}"),
                 );
-                d.halted = true;
-            } else if d.format_locked && granted != d.input_channels {
-                let locked = d.input_channels;
+                param_format.halted.store(true, Ordering::SeqCst);
+            } else if param_format.locked.load(Ordering::SeqCst)
+                && granted != param_format.channels.load(Ordering::SeqCst)
+            {
+                let locked = param_format.channels.load(Ordering::SeqCst);
                 record_failure(
                     &param_failure,
                     format!(
                         "capture stream: format renegotiated from {locked} to {granted} channels mid-stream"
                     ),
                 );
-                d.halted = true;
+                param_format.halted.store(true, Ordering::SeqCst);
             } else {
-                d.input_channels = granted;
-                d.format_locked = true;
+                // Channels before locked: the process callback reads locked
+                // last, so it never sees the lock without the count.
+                param_format.channels.store(granted, Ordering::SeqCst);
+                param_format.locked.store(true, Ordering::SeqCst);
             }
         })
-        .process(|stream, data| {
-            process_capture_buffer(stream, data);
+        .process(move |stream, data| {
+            process_capture_buffer(stream, data, &capture_format_state);
         })
         .register()?;
 
@@ -596,7 +626,11 @@ fn mix_to_mono(input: &[f32], channels: usize, output: &mut [f32]) {
     }
 }
 
-fn process_capture_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCell<PipelineData>>) {
+fn process_capture_buffer(
+    stream: &pipewire::stream::Stream,
+    data: &mut Rc<RefCell<PipelineData>>,
+    format: &FormatState,
+) {
     if let Some(mut buffer) = stream.dequeue_buffer() {
         let datas = buffer.datas_mut();
         if datas.is_empty() {
@@ -612,26 +646,25 @@ fn process_capture_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCe
                 return;
             }
 
+            // A format we can't trust: drop the delivery rather than
+            // deinterleave it at the wrong stride. The daemon surfaces the
+            // recorded failure through its health poll. Checked before the
+            // borrow so a halted stream costs two atomic loads and nothing
+            // else.
+            if format.halted.load(Ordering::SeqCst) {
+                return;
+            }
+            let channels = format.channels.load(Ordering::SeqCst) as usize;
+
             let valid_data = &slice[chunk_offset..chunk_offset + chunk_size];
             let mut pipeline_data = data.borrow_mut();
             let PipelineData {
                 processor,
                 input_buffer,
                 output_buffer,
-                input_channels,
                 mono_scratch,
                 processed_scratch,
-                format_locked: _,
-                halted,
             } = &mut *pipeline_data;
-
-            // A format we can't trust: drop the delivery rather than
-            // deinterleave it at the wrong stride. The daemon surfaces the
-            // recorded failure through its health poll.
-            if *halted {
-                return;
-            }
-            let channels = *input_channels as usize;
 
             for audio_chunk in valid_data.chunks_exact(4) {
                 let sample = f32::from_le_bytes([
@@ -756,7 +789,7 @@ mod tests {
 
         for channels in [1, 2, MAX_INPUT_CHANNELS] {
             let processor = AudioProcessor::new(Arc::new(AppState::new()));
-            let data = PipelineData::new(processor, channels);
+            let data = PipelineData::new(processor);
             assert!(
                 data.input_buffer.capacity()
                     >= (MAX_QUANTUM + RNNOISE_FRAME_SIZE) * MAX_INPUT_CHANNELS as usize,
