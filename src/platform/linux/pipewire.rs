@@ -148,6 +148,26 @@ pub struct NativeAudioPipeline {
     pipeline_thread: Option<JoinHandle<()>>,
 }
 
+/// Why a granted format cannot be decoded, or `None` if it can.
+///
+/// Both process callbacks read 4-byte little-endian samples with a stride
+/// compiled in, and RNNoise's frame is 10 ms only at [`SAMPLE_RATE`] — so an
+/// encoding or rate we did not ask for cannot be reinterpreted, only
+/// refused. This is the same reasoning the channel check rests on, applied
+/// to the other two fields `AudioInfoRaw` carries.
+///
+/// `AudioFormat` has no `Debug`, hence the raw discriminant in the message;
+/// it maps to `SPA_AUDIO_FORMAT_*` in `spa/param/audio/raw.h`.
+fn unsupported_encoding(info: &AudioInfoRaw) -> Option<String> {
+    if info.format() != AudioFormat::F32LE {
+        return Some(format!("sample format {} is not F32LE", info.format().0));
+    }
+    if info.rate() != SAMPLE_RATE {
+        return Some(format!("{} Hz is not {SAMPLE_RATE}", info.rate()));
+    }
+    None
+}
+
 /// First error wins: later failures are usually cascades of the first.
 fn record_failure(slot: &Mutex<Option<String>>, msg: String) {
     let mut guard = lock_or_recover(slot);
@@ -388,6 +408,11 @@ fn run_pipeline(
                 param_format.halted.store(true, Ordering::SeqCst);
                 return;
             }
+            if let Some(why) = unsupported_encoding(&info) {
+                record_failure(&param_failure, format!("capture stream: {why}"));
+                param_format.halted.store(true, Ordering::SeqCst);
+                return;
+            }
             let granted = info.channels();
             if granted == 0 || granted > MAX_INPUT_CHANNELS {
                 record_failure(
@@ -442,7 +467,10 @@ fn run_pipeline(
 
     let feed_data = pipeline_data.clone();
     let feed_failure = failure.clone();
+    let feed_param_failure = failure.clone();
     let feed_ready = ready.clone();
+    let feed_param_format = format_state.clone();
+    let feed_format_state = format_state.clone();
     let _feed_listener = feed_stream
         .add_local_listener_with_user_data(feed_data)
         .state_changed(move |_stream, _data, _old, new| match new {
@@ -452,8 +480,43 @@ fn run_pipeline(
             StreamState::Paused | StreamState::Streaming => feed_ready.feed.set(true),
             _ => {}
         })
-        .process(|stream, data| {
-            process_source_buffer(stream, data);
+        // The output side needs the same guarantee as the input side:
+        // `process_source_buffer` writes f32 little-endian at a stride of 4
+        // and sizes silence the same way, so a grant it did not ask for
+        // would be written at the wrong width rather than refused. One
+        // `halted` covers both streams — either format being untrustworthy
+        // makes the whole pipeline untrustworthy.
+        .param_changed(move |_stream, _data, id, param| {
+            if id != ParamType::Format.as_raw() {
+                return;
+            }
+            let Some(param) = param else { return };
+            let Ok((media_type, media_subtype)) = format_utils::parse_format(param) else {
+                return;
+            };
+            if media_type != MediaType::Audio || media_subtype != MediaSubtype::Raw {
+                return;
+            }
+            let mut info = AudioInfoRaw::new();
+            let why = if info.parse(param).is_err() {
+                Some("unparsable Format param".to_string())
+            } else if let Some(why) = unsupported_encoding(&info) {
+                Some(why)
+            } else if info.channels() != OUTPUT_CHANNELS {
+                Some(format!(
+                    "{} channels is not the {OUTPUT_CHANNELS} the mic emits",
+                    info.channels()
+                ))
+            } else {
+                None
+            };
+            if let Some(why) = why {
+                record_failure(&feed_param_failure, format!("feed stream: {why}"));
+                feed_param_format.halted.store(true, Ordering::SeqCst);
+            }
+        })
+        .process(move |stream, data| {
+            process_source_buffer(stream, data, &feed_format_state);
         })
         .register()?;
 
@@ -715,7 +778,16 @@ fn cap_buffer(buf: &mut Vec<f32>, max: usize) {
     }
 }
 
-fn process_source_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCell<PipelineData>>) {
+fn process_source_buffer(
+    stream: &pipewire::stream::Stream,
+    data: &mut Rc<RefCell<PipelineData>>,
+    format: &FormatState,
+) {
+    // Same rule as the capture side: requeue the buffer untouched rather
+    // than write at a width negotiation did not agree to.
+    if format.halted.load(Ordering::SeqCst) {
+        return;
+    }
     if let Some(mut buffer) = stream.dequeue_buffer() {
         // How many frames the graph asks for; must be read before datas_mut.
         let requested = buffer.requested() as usize;
@@ -760,6 +832,35 @@ fn process_source_buffer(stream: &pipewire::stream::Stream, data: &mut Rc<RefCel
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Both process callbacks decode with a compiled-in width and rate, so
+    /// the guard has to reject anything else rather than reinterpret it.
+    /// Kept honest in both directions: the format we ask for must pass, or
+    /// the guard would halt every working pipeline.
+    #[test]
+    fn only_f32le_at_the_pipeline_rate_is_decodable() {
+        let cases = [
+            (AudioFormat::F32LE, SAMPLE_RATE, true),
+            (AudioFormat::S16LE, SAMPLE_RATE, false),
+            (AudioFormat::S32LE, SAMPLE_RATE, false),
+            (AudioFormat::F32BE, SAMPLE_RATE, false),
+            (AudioFormat::F32LE, 44100, false),
+            (AudioFormat::F32LE, 96000, false),
+            (AudioFormat::S16LE, 44100, false),
+        ];
+
+        for (format, rate, decodable) in cases {
+            let mut info = AudioInfoRaw::new();
+            info.set_format(format);
+            info.set_rate(rate);
+            assert_eq!(
+                unsupported_encoding(&info).is_none(),
+                decodable,
+                "format {} at {rate} Hz",
+                format.0
+            );
+        }
+    }
 
     #[test]
     fn test_audio_format_pod_creation() {
