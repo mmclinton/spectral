@@ -151,14 +151,18 @@ pub enum DaemonResponse {
     Error(String),
 }
 
-/// The directory holding the daemon's socket and pid file.
+/// The directory holding the daemon's socket, pid file and log.
 ///
 /// The XDG base-directory spec treats an unset *or empty* `XDG_RUNTIME_DIR`
 /// as absent, and a relative value is worse than absent: it would put the
 /// control socket in whatever directory the process happens to run from,
 /// outside the 0700 runtime dir and reachable by every other local user.
 /// One `is_absolute` check rejects all three.
-fn runtime_dir() -> Result<PathBuf, std::io::Error> {
+///
+/// Public because the client-side spawn path resolves the daemon's log file
+/// against the same directory; a second resolver there is what let the two
+/// drift apart.
+pub fn runtime_dir() -> Result<PathBuf, std::io::Error> {
     runtime_dir_from(std::env::var("XDG_RUNTIME_DIR").ok().as_deref()).ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::NotFound,

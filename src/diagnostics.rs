@@ -20,10 +20,15 @@ const ISSUE_URL: &str = "https://codeberg.org/mmc/spectral/issues";
 /// fresh fetch — an unreachable daemon is precisely when this text is worth
 /// reading, so a stale snapshot goes out under a "last known" label rather
 /// than being withheld.
+///
+/// `log_path` is `None` when the runtime dir could not be resolved, which is
+/// itself the most useful thing the dump can say: naming a path that was
+/// never opened would send the reporter hunting for a file that does not
+/// exist.
 pub fn build_diagnostics(
     daemon_state: Option<&DaemonState>,
     devices: &[AudioDevice],
-    log_path: &Path,
+    log_path: Option<&Path>,
     config_path: &Path,
     flatpak: bool,
 ) -> String {
@@ -31,7 +36,11 @@ pub fn build_diagnostics(
         format!("spectral version: {}", env!("CARGO_PKG_VERSION")),
         format!("protocol (gui): {PROTOCOL_VERSION}"),
         format!("packaging: {}", if flatpak { "flatpak" } else { "native" }),
-        format!("daemon log: {}", log_path.display()),
+        match log_path {
+            Some(path) => format!("daemon log: {}", path.display()),
+            None => "daemon log: unavailable (XDG_RUNTIME_DIR is not set to an absolute path)"
+                .to_string(),
+        },
         format!("config: {}", config_path.display()),
         String::new(),
     ];
@@ -70,7 +79,9 @@ pub fn build_diagnostics(
 
     lines.push(String::new());
     lines.push(format!("Report issues at {ISSUE_URL}"));
-    lines.push("Attach the daemon log named above.".to_string());
+    if log_path.is_some() {
+        lines.push("Attach the daemon log named above.".to_string());
+    }
     lines.join("\n")
 }
 
@@ -136,7 +147,7 @@ mod tests {
         build_diagnostics(
             daemon_state,
             devices,
-            Path::new("/run/user/1000/spectral-daemon.log"),
+            Some(Path::new("/run/user/1000/spectral-daemon.log")),
             Path::new("/home/user/.config/spectral/state.toml"),
             false,
         )
@@ -200,7 +211,7 @@ mod tests {
             let dump = build_diagnostics(
                 None,
                 &[],
-                Path::new("/tmp/spectral-daemon.log"),
+                Some(Path::new("/run/user/1000/spectral-daemon.log")),
                 Path::new("/tmp/state.toml"),
                 flatpak,
             );
@@ -241,5 +252,27 @@ mod tests {
             assert!(dump.contains(&format!("Report issues at {ISSUE_URL}")));
             assert!(dump.ends_with("Attach the daemon log named above."));
         }
+    }
+
+    /// No runtime dir means no log was ever opened. Naming a path anyway
+    /// would send the reporter after a file that does not exist, and telling
+    /// them to attach it would compound that.
+    #[test]
+    fn an_unresolvable_log_path_is_reported_as_unavailable() {
+        let dump = build_diagnostics(
+            Some(&state()),
+            &[],
+            None,
+            Path::new("/home/user/.config/spectral/state.toml"),
+            false,
+        );
+
+        assert!(
+            dump.contains(
+                "daemon log: unavailable (XDG_RUNTIME_DIR is not set to an absolute path)"
+            )
+        );
+        assert!(!dump.contains("Attach the daemon log"));
+        assert!(dump.ends_with(&format!("Report issues at {ISSUE_URL}")));
     }
 }

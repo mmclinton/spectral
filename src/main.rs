@@ -903,7 +903,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                 diagnostics::build_diagnostics(
                     last_daemon_state.borrow().as_ref(),
                     &devices.borrow(),
-                    &daemon_launch::daemon_log_path(),
+                    daemon_launch::daemon_log_path().ok().as_deref(),
                     &persistence::get_config_path(),
                     std::env::var_os("FLATPAK_ID").is_some(),
                 )

@@ -2,25 +2,23 @@
 //! launch path and the headless CLI.
 
 use spectral_lib::platform::ipc::{
-    DaemonClient, DaemonCommand, DaemonResponse, DaemonState, PROTOCOL_VERSION,
+    DaemonClient, DaemonCommand, DaemonResponse, DaemonState, PROTOCOL_VERSION, runtime_dir,
     wait_for_daemon_exit,
 };
 use std::error::Error;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-/// Where [`start_daemon`] points the child's stdout and stderr:
-/// `$XDG_RUNTIME_DIR`, else `$HOME/tmp`, else `/tmp`. The legs are a branch
-/// on which variable is set, not a recovery chain — `/tmp` is reached only
-/// when `HOME` is unset, never because `$HOME/tmp` turned out to be
-/// unwritable. The GUI reports this path in its diagnostics dump, so the two
-/// must not drift apart.
-pub fn daemon_log_path() -> PathBuf {
-    let dir = std::env::var("XDG_RUNTIME_DIR")
-        .or_else(|_| std::env::var("HOME").map(|h| format!("{h}/tmp")))
-        .unwrap_or_else(|_| "/tmp".to_string());
-
-    PathBuf::from(dir).join("spectral-daemon.log")
+/// Where [`start_daemon`] points the child's stdout and stderr, under the
+/// same runtime dir as the socket and pid file. There is deliberately no
+/// second location: a daemon that cannot resolve the runtime dir cannot bind
+/// its socket either, so a log written elsewhere would only describe a
+/// session that was already lost — and a predictable `/tmp` path opened with
+/// `truncate` is a symlink target on a shared system. Failing here is what
+/// makes the client report the missing runtime dir rather than a spawn error
+/// downstream of it.
+pub fn daemon_log_path() -> Result<PathBuf, std::io::Error> {
+    Ok(runtime_dir()?.join("spectral-daemon.log"))
 }
 
 /// Spawn `spectral-daemon` from the current executable's directory, logging
@@ -32,7 +30,7 @@ pub fn start_daemon() -> Result<(), Box<dyn Error>> {
         .ok_or("Failed to determine daemon directory (executable might be at root)")?;
     let daemon_path = daemon_dir.join("spectral-daemon");
 
-    let log_file = daemon_log_path();
+    let log_file = daemon_log_path()?;
     let log = std::fs::OpenOptions::new()
         .create(true)
         .write(true)
