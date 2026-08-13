@@ -2,7 +2,7 @@
 name = "spectral"
 version = "0.8.0"
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.92"
 license = "GPL-3.0-only"
 authors = ["mmc <codeberg.wilder850@simplelogin.com>"]
 repository = "https://codeberg.org/mmc/spectral"
