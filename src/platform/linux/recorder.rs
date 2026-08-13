@@ -348,10 +348,14 @@ fn run_recorder(
         }
     }
 
-    // Hold the streams and listeners through the end of the function so
-    // their PipeWire objects stay registered with the mainloop above.
-    let _ = (raw_stream, filtered_stream);
-
+    // Both streams and both listeners stay bound to the end of this
+    // function, so they unwind in reverse declaration order: each listener
+    // drops immediately before the stream it was added to. That order is
+    // load-bearing — `pw_stream_destroy` frees the memory holding the hook
+    // list, and a listener dropped afterwards unlinks its hook through it.
+    // Do not "hold" them with `let _ = (..)`: `_` binds nothing, so that
+    // drops the streams on the spot and leaves the listeners to outlive
+    // them, which is the exact inversion this comment exists to prevent.
     mainloop.quit();
     Ok(())
 }
