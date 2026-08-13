@@ -151,15 +151,33 @@ pub enum DaemonResponse {
     Error(String),
 }
 
-fn runtime_dir() -> Result<PathBuf, std::io::Error> {
-    std::env::var("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "XDG_RUNTIME_DIR is not set; cannot locate the daemon socket",
-            )
-        })
+/// The directory holding the daemon's socket, pid file and log.
+///
+/// The XDG base-directory spec treats an unset *or empty* `XDG_RUNTIME_DIR`
+/// as absent, and a relative value is worse than absent: it would put the
+/// control socket in whatever directory the process happens to run from,
+/// outside the 0700 runtime dir and reachable by every other local user.
+/// One `is_absolute` check rejects all three.
+///
+/// Public because the client-side spawn path resolves the daemon's log file
+/// against the same directory; a second resolver there is what let the two
+/// drift apart.
+pub fn runtime_dir() -> Result<PathBuf, std::io::Error> {
+    runtime_dir_from(std::env::var("XDG_RUNTIME_DIR").ok().as_deref()).ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "XDG_RUNTIME_DIR is not set to an absolute path; spectral needs it \
+             for the daemon socket, pid file and log",
+        )
+    })
+}
+
+/// The pure half of [`runtime_dir`]. Split out so the accept/reject rule is
+/// testable: reading it back through the environment would mean mutating
+/// process-global state that the parallel test harness shares.
+fn runtime_dir_from(value: Option<&str>) -> Option<PathBuf> {
+    let path = PathBuf::from(value?);
+    path.is_absolute().then_some(path)
 }
 
 fn get_socket_path() -> Result<PathBuf, std::io::Error> {
@@ -627,5 +645,26 @@ mod tests {
             DaemonResponse::Error(text) => assert_eq!(text, reason),
             other => panic!("the round trip changed the variant: {other:?}"),
         }
+    }
+
+    /// Only an absolute path may name the runtime dir. An empty value is
+    /// absent per the XDG spec, and a relative one would resolve the socket
+    /// and pid file against the process's cwd — world-reachable, unlike the
+    /// 0700 runtime dir they belong in.
+    #[test]
+    fn only_an_absolute_runtime_dir_is_accepted() {
+        for value in [None, Some(""), Some("relative/dir"), Some(" "), Some("~")] {
+            assert_eq!(
+                runtime_dir_from(value),
+                None,
+                "{value:?} must not resolve to a runtime dir"
+            );
+        }
+
+        assert_eq!(
+            runtime_dir_from(Some("/run/user/1000")),
+            Some(PathBuf::from("/run/user/1000")),
+            "an absolute path is the one accepted form"
+        );
     }
 }

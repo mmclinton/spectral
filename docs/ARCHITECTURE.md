@@ -17,24 +17,24 @@ The daemon is the single owner of audio state. Clients connect over a Unix
 socket at `$XDG_RUNTIME_DIR/spectral-daemon.sock`, and the daemon serves one
 handler thread per connection. Either client auto-spawns the daemon if none is
 running; a lock on `$XDG_RUNTIME_DIR/spectral-daemon.pid` decides ownership when
-two try at once. The socket and the pid file both require the runtime dir, and
-unlike the log path below there is no second location to fall back to.
-`DaemonClient::connect` names that condition exactly, but no caller shows the
-name to the user: `disable` and `shutdown` print "daemon not running" and exit
-0, `status` prints the same and exits 1, and `enable` discards the error in
-`connect_or_spawn` to go spawn a daemon instead — so what it finally reports is
-that attempt's failure, either an unwritable log path or, if the spawn worked
-and the daemon then could not bind, a connect timeout five seconds later.
+two try at once.
+
+The runtime dir is required, with no second location to fall back to. An unset,
+empty or relative `XDG_RUNTIME_DIR` is rejected as one condition — the XDG spec
+treats empty as absent, and a relative value would resolve the socket into the
+process's working directory, outside the mode-0700 runtime dir that is what
+actually keeps other local users out. What the user sees still depends on the
+caller: `disable` and `shutdown` print "daemon not running" and exit 0, `status`
+prints the same and exits 1, and only `enable` names the real cause — it reports
+the rejection from the spawn attempt, which fails before the daemon process is
+created rather than after a connect timeout.
 
 Daemon diagnostics are not written by the daemon, which only ever writes to its
 inherited stdout and stderr. A client that spawns it redirects those to
-`spectral-daemon.log` under `$XDG_RUNTIME_DIR`, or under `$HOME/tmp` if the
-runtime dir is unset, or under `/tmp` if `HOME` is unset too. Only the file is
-created, never its directory, so the `$HOME/tmp` leg fails on any account that
-does not already have that directory — which is why a missing runtime dir
-usually surfaces as a spawn error rather than as the connect timeout above. A
-daemon started any other way — directly from a shell, from a service manager —
-logs wherever its parent's stdio points, and no such file exists.
+`spectral-daemon.log` in the same runtime dir, resolved through the same check,
+so the log cannot land somewhere the socket could not. A daemon started any
+other way — directly from a shell, from a service manager — logs wherever its
+parent's stdio points, and no such file exists.
 
 Because the daemon owns every PipeWire object it creates, the virtual mic
 disappears when the daemon exits. There is nothing to reap and no state left in

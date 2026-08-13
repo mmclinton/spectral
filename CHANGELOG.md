@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and config paths, and the daemon's last known state — for bug reports.
 
 ### Fixed
+- `XDG_RUNTIME_DIR` must now be set to an absolute path, and Spectral says
+  so plainly when it is not. An empty value counted as set, which put the
+  daemon's control socket, pid file and log in the current working directory
+  instead of the runtime dir — outside the private directory that keeps
+  other local users from reaching them. An unset value reported "No such
+  file or directory" instead of naming the cause, and the daemon log no
+  longer falls back to `~/tmp` or `/tmp`.
 - Device listings reported 2 channels for every input; the count is now
   read from the device itself, so mono sources list as mono.
 - The virtual mic always captured its input as stereo. It now negotiates
