@@ -313,6 +313,14 @@ fn run_pipeline(
         *pipewire::keys::NODE_DESCRIPTION => "Spectral Native Capture",
         *pipewire::keys::NODE_LATENCY => "480/48000",
         "target.object" => source_node,
+        // Without this, a target that goes away — unplugged interface,
+        // suspended device, a Bluetooth mic dropping — makes WirePlumber
+        // relink us to whatever the default source now is, and the virtual
+        // mic keeps producing audio from a microphone the user never chose.
+        // Nothing reports it: no stream error, so `failure` stays empty and
+        // the pill still says Active. A hard error is the only honest
+        // outcome, and it is the signal any future re-attach has to key on.
+        "node.dont-reconnect" => "true",
     };
 
     let capture_stream = StreamBox::new(&core, "spectral-capture", capture_props)?;
