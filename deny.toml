@@ -18,7 +18,7 @@ ignore = [
   # 2026-07-17: quick-xml < 0.41 DoS-class issues (quadratic duplicate-
   # attribute check; unbounded NsReader allocation). Both locked versions
   # (0.36.2, 0.37.5) sit behind zbus_xml's semver range in the AT-SPI
-  # accessibility stack, pinned by slint =1.15.0 — cargo update cannot
+  # accessibility stack, pinned by slint =1.17.1 — cargo update cannot
   # cross to 0.41. Exposure is XML from the local session D-Bus (trusted
   # desktop session), not network input. Revisit on a slint bump.
   "RUSTSEC-2026-0194",
