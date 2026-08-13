@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Bumped Slint from 1.15.0 to 1.17.1 and fontique from 0.7 to 0.10.
+  The MSRV rises to 1.92 as a result. Slint 1.17 reads the default
+  font size from system settings on Linux, so typography may shift
+  slightly under some desktop configurations.
 - `spectral --help` and every invalid-mic-name rejection now quote one
   shared wording of the name rule instead of restating it per call site,
   so the text cannot drift from the check the daemon actually runs.
