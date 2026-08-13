@@ -158,19 +158,33 @@ fn write_state_to(path: &Path, state: &PersistedState) -> Result<(), io::Error> 
 mod tests {
     use super::*;
 
+    /// The half of the schema contract that lets a new version read an old
+    /// file: every key added since must carry `#[serde(default)]`, so a file
+    /// written before it existed still loads.
     #[test]
-    fn old_and_stale_state_formats_still_load() {
-        // `is_active` predates 0.2.x; `voice_smoothing` existed only in
-        // unreleased builds. Unknown keys must be ignored, missing toggles
-        // default off.
-        let old_format = "is_active = true\ndevice_id = 42\nmic_name = \"My-Mic\"\nthreshold = 65\nvoice_smoothing = true\n";
-        let state: PersistedState = toml::from_str(old_format).expect("old format must load");
+    fn absent_optional_keys_fall_back_to_their_defaults() {
+        let without_the_optional_keys = "device_id = 42\nmic_name = \"My-Mic\"\nthreshold = 65\n";
+        let state: PersistedState =
+            toml::from_str(without_the_optional_keys).expect("a file missing them must load");
         assert_eq!(state.device_id, Some(42));
-        assert_eq!(state.device_node_name, None);
         assert_eq!(state.mic_name, "My-Mic");
         assert_eq!(state.threshold, 65);
+        assert_eq!(state.device_node_name, None);
         assert!(!state.rumble_filter);
         assert!(!state.auto_level);
+    }
+
+    /// The other half: an older version must survive a file a newer one
+    /// wrote, which holds only while `PersistedState` stays free of
+    /// `deny_unknown_fields`. Downgrades are the case nobody tests by hand.
+    #[test]
+    fn keys_from_a_newer_version_are_ignored() {
+        let with_a_key_we_do_not_know =
+            "device_id = 42\nmic_name = \"My-Mic\"\nthreshold = 65\nnoise_model = \"deep\"\n";
+        let state: PersistedState =
+            toml::from_str(with_a_key_we_do_not_know).expect("an unknown key must not fail load");
+        assert_eq!(state.mic_name, "My-Mic");
+        assert_eq!(state.threshold, 65);
     }
 
     #[test]
