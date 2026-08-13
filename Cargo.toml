@@ -33,7 +33,7 @@ warnings = { level = "deny", priority = -1 }
 all = { level = "deny", priority = -1 }
 
 [dependencies]
-slint = { version = "=1.15.0", default-features = false, features = [
+slint = { version = "=1.17.1", default-features = false, features = [
     "compat-1-2",
     "std",
     "accessibility",
@@ -43,7 +43,7 @@ slint = { version = "=1.15.0", default-features = false, features = [
 pipewire = { version = "0.9", features = ["v0_3_77"] }
 # Slint's own font database, so a family name resolved here is one Slint can
 # look up. Kept in step with slint rather than upgraded independently.
-fontique = "0.7"
+fontique = "0.10"
 # Pinned to 0.5.1: 0.5.2 deletes the crate's own FFT and swaps rustfft for
 # easyfft, which adds a thread-local HashMap lookup and an extra copy per
 # transform on the audio path, and renormalizes the output — no functional
@@ -58,7 +58,7 @@ toml = "0.8"
 signal-hook = "0.3"
 
 [build-dependencies]
-slint-build = "=1.15.0"
+slint-build = "=1.17.1"
 
 [profile.release]
 # panic stays "unwind": lock_or_recover's poisoning recovery and the PipeWire
