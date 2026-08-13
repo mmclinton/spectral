@@ -85,6 +85,10 @@ struct CaptureSlot {
     writer: Option<hound::WavWriter<BufWriter<File>>>,
     samples_since_flush: u64,
     samples_written: u64,
+    /// Set by the capture callback when a sample fails to write, and drained
+    /// by the recorder loop. The callback cannot reach the failure slot, and
+    /// it must not keep writing once the file is broken.
+    write_error: Option<String>,
 }
 
 /// Handle to the recorder thread owning both capture streams (raw source +
@@ -224,6 +228,7 @@ fn run_recorder(
         writer: Some(open_wav_writer(&original)?),
         samples_since_flush: 0,
         samples_written: 0,
+        write_error: None,
     }));
     let raw_props = properties! {
         *pipewire::keys::MEDIA_TYPE => "Audio",
@@ -268,6 +273,7 @@ fn run_recorder(
         writer: Some(open_wav_writer(&filtered)?),
         samples_since_flush: 0,
         samples_written: 0,
+        write_error: None,
     }));
     let filtered_props = properties! {
         *pipewire::keys::MEDIA_TYPE => "Audio",
@@ -311,8 +317,23 @@ fn run_recorder(
             break;
         }
         // Callbacks only run inside iterate(), so borrowing between
-        // iterations cannot conflict. Overshoot is at most one callback of
-        // samples before the next check lands here.
+        // iterations cannot conflict.
+        //
+        // This check has to come before the cap: a failing writer stops
+        // advancing samples_written, so the cap below can never fire on one.
+        // Without this, a disk that fills while the GUI is gone leaves the
+        // thread looping forever with two capture streams open.
+        let write_error = raw_slot
+            .borrow_mut()
+            .write_error
+            .take()
+            .or_else(|| filtered_slot.borrow_mut().write_error.take());
+        if let Some(msg) = write_error {
+            record_failure(failure, msg);
+            break;
+        }
+        // Overshoot is at most one callback of samples before the next
+        // check lands here.
         if raw_slot.borrow().samples_written >= MAX_RECORDING_SAMPLES
             || filtered_slot.borrow().samples_written >= MAX_RECORDING_SAMPLES
         {
@@ -389,11 +410,15 @@ fn process_capture(stream: &pipewire::stream::Stream, data: &mut Rc<RefCell<Capt
         return;
     };
 
+    let mut write_error = None;
     for frame in bytes.chunks_exact(4) {
         let sample = f32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]);
-        if writer.write_sample(sample).is_err() {
-            // Disk full / I/O error: stop writing but leave the slot alive
-            // so the recorder loop can surface the failure via finalize.
+        if let Err(e) = writer.write_sample(sample) {
+            // Disk full or I/O error. Leave the writer in place so finalize
+            // still runs on what was captured, and hand the cause to the
+            // loop — it cannot be inferred from the counters, which stop
+            // advancing precisely because the writes stopped landing.
+            write_error = Some(format!("WAV write failed: {e}"));
             break;
         }
         since_flush += 1;
@@ -405,6 +430,9 @@ fn process_capture(stream: &pipewire::stream::Stream, data: &mut Rc<RefCell<Capt
     }
     slot.samples_since_flush = since_flush;
     slot.samples_written = written;
+    if write_error.is_some() {
+        slot.write_error = write_error;
+    }
 }
 
 fn open_wav_writer(
