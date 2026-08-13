@@ -9,7 +9,7 @@ use spectral_lib::platform::ipc::{
 };
 use spectral_lib::platform::persistence::{
     PersistedState, get_filtered_recording_path, get_original_recording_path, load_state,
-    remove_legacy_recordings, save_state,
+    save_state,
 };
 use spectral_lib::platform::recorder::{NativePlayer, NativeRecorder, PlaybackKind};
 use spectral_lib::state::{AppState, Status, is_valid_mic_name, lock_or_recover, mic_name_rule};
@@ -81,8 +81,6 @@ fn main() {
             return;
         }
     };
-
-    remove_legacy_recordings();
 
     let mut client_threads: Vec<thread::JoinHandle<()>> = Vec::new();
 

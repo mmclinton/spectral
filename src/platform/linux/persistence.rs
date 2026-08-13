@@ -109,33 +109,6 @@ pub fn get_recordings_dir() -> PathBuf {
     recordings_dir
 }
 
-/// Recordings lived under the config dir through v0.2.2; sweep the two known
-/// files best-effort so config-dir backups stop syncing stale audio. Anything
-/// else a user placed there is left alone.
-pub fn remove_legacy_recordings() {
-    let Ok(base) = get_safe_config_base() else {
-        return;
-    };
-    let legacy = base.join("spectral").join("recordings");
-    for name in ["original_output.wav", "filtered_output.wav"] {
-        let path = legacy.join(name);
-        if let Err(e) = fs::remove_file(&path)
-            && e.kind() != ErrorKind::NotFound
-        {
-            eprintln!(
-                "Failed to remove legacy recording {}: {}",
-                path.display(),
-                e
-            );
-        }
-    }
-    if let Err(e) = fs::remove_dir(&legacy)
-        && !matches!(e.kind(), ErrorKind::NotFound | ErrorKind::DirectoryNotEmpty)
-    {
-        eprintln!("Failed to remove legacy recordings dir: {}", e);
-    }
-}
-
 /// Location of the raw (pre-processing) voice-test capture.
 pub fn get_original_recording_path() -> PathBuf {
     get_recordings_dir().join("original_output.wav")

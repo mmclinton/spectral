@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   message and a copyable diagnostics summary — versions, packaging, the log
   and config paths, and the daemon's last known state — for bug reports.
 
+### Removed
+- Voice-test recordings left behind by 0.2.2 and older are no longer swept
+  up. Those versions kept the recordings under the config directory; the
+  daemon deleted the two stale files on every start so config backups stopped
+  syncing audio. Anyone still upgrading from that far back can delete
+  `~/.config/spectral/recordings/` by hand — current recordings live under
+  the state directory and are unaffected.
+
 ### Fixed
 - `XDG_RUNTIME_DIR` must now be set to an absolute path, and Spectral says
   so plainly when it is not. An empty value counted as set, which put the
