@@ -487,8 +487,22 @@ fn handle_client(
                         }
                     }
                     DaemonCommand::StopRecording => {
-                        if let Some(mut r) = lock_or_recover(&recorder).take() {
+                        // The recorder finalizes its writers only after its
+                        // loop exits, so a failure raised there — the header
+                        // rewrite on a full disk, which is where hound's
+                        // buffered tail usually lands — exists nowhere until
+                        // stop() has joined. Taking the recorder out of the
+                        // slot also puts it beyond the GetState reaper, so
+                        // this is the last chance anything has to read it.
+                        // Same ordering discipline as that reaper: record
+                        // after dropping the recorder guard (#7 is held, #6
+                        // must not be).
+                        let stop_error = lock_or_recover(&recorder).take().and_then(|mut r| {
                             r.stop();
+                            r.failure()
+                        });
+                        if let Some(msg) = stop_error {
+                            state.set_last_error(Some(format!("Recording failed: {msg}")));
                         }
                         DaemonResponse::Ok
                     }
