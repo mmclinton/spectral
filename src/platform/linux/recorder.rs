@@ -85,6 +85,27 @@ struct CaptureSlot {
     writer: Option<hound::WavWriter<BufWriter<File>>>,
     samples_since_flush: u64,
     samples_written: u64,
+    /// Set by the capture callback when a sample fails to write, and drained
+    /// by the recorder loop, which is the only side that can reach the
+    /// failure slot. The callback stops writing the delivery it failed on;
+    /// later deliveries still try, and simply overwrite this with their own
+    /// cause until the loop drains it a few milliseconds later. Harmless —
+    /// `BufWriter` keeps whatever it could not flush — and not worth a guard
+    /// on the audio path.
+    write_error: Option<String>,
+}
+
+/// The first write failure parked by either capture callback, cleared as it
+/// is read. Callbacks only run inside `iterate()`, so the two borrows here
+/// can never conflict with one.
+fn take_write_error(
+    raw: &Rc<RefCell<CaptureSlot>>,
+    filtered: &Rc<RefCell<CaptureSlot>>,
+) -> Option<String> {
+    raw.borrow_mut()
+        .write_error
+        .take()
+        .or_else(|| filtered.borrow_mut().write_error.take())
 }
 
 /// Handle to the recorder thread owning both capture streams (raw source +
@@ -205,9 +226,11 @@ fn run_recorder(
     let ready = Rc::new(RecorderReadyFlags::default());
     let format_pod = build_audio_format_pod(AudioFormat::F32LE, SAMPLE_RATE, 1, Some(&[MONO]))?;
 
-    // Surface any core/proxy error: a missing target.object with
-    // dont-reconnect=true reports here, which is exactly the case we want
-    // to fail loudly instead of silently recording the default source.
+    // Surface any core/proxy error the streams' own state_changed handlers
+    // do not see. An unresolvable target.object is not one of them: on the
+    // pipeline's identical setup that was observed arriving as a stream
+    // error, so both routes reach the same failure slot and neither is
+    // load-bearing alone.
     let core_failure = failure.clone();
     let _core_listener = core
         .add_listener_local()
@@ -224,6 +247,7 @@ fn run_recorder(
         writer: Some(open_wav_writer(&original)?),
         samples_since_flush: 0,
         samples_written: 0,
+        write_error: None,
     }));
     let raw_props = properties! {
         *pipewire::keys::MEDIA_TYPE => "Audio",
@@ -232,11 +256,13 @@ fn run_recorder(
         *pipewire::keys::NODE_NAME => "spectral-recorder-raw",
         *pipewire::keys::NODE_DESCRIPTION => "Spectral Voice-Test Recorder",
         "target.object" => source_node,
-        // Without this, a vanished target.object makes WirePlumber
-        // silently move the stream to the default source — a wrong-node
-        // recording, not an error. With it, a missing target is a hard
-        // error that surfaces through the failure slot.
+        // dont-reconnect stops WirePlumber silently moving the stream to
+        // the default source once it has been linked; dont-fallback is what
+        // makes an unresolvable target an error rather than a wrong-node
+        // recording. Neither covers the other's case — see the pair in
+        // `pipewire.rs` for which policy branch each one turns.
         "node.dont-reconnect" => "true",
+        "node.dont-fallback" => "true",
     };
     let raw_stream = StreamBox::new(&core, "spectral-recorder-raw", raw_props)?;
     let raw_slot_cb = raw_slot.clone();
@@ -268,6 +294,7 @@ fn run_recorder(
         writer: Some(open_wav_writer(&filtered)?),
         samples_since_flush: 0,
         samples_written: 0,
+        write_error: None,
     }));
     let filtered_props = properties! {
         *pipewire::keys::MEDIA_TYPE => "Audio",
@@ -277,6 +304,7 @@ fn run_recorder(
         *pipewire::keys::NODE_DESCRIPTION => "Spectral Voice-Test Recorder",
         "target.object" => mic_name,
         "node.dont-reconnect" => "true",
+        "node.dont-fallback" => "true",
     };
     let filtered_stream = StreamBox::new(&core, "spectral-recorder-filtered", filtered_props)?;
     let filtered_slot_cb = filtered_slot.clone();
@@ -311,8 +339,18 @@ fn run_recorder(
             break;
         }
         // Callbacks only run inside iterate(), so borrowing between
-        // iterations cannot conflict. Overshoot is at most one callback of
-        // samples before the next check lands here.
+        // iterations cannot conflict.
+        //
+        // This check has to come before the cap: a failing writer stops
+        // advancing samples_written, so the cap below can never fire on one.
+        // Without this, a disk that fills while the GUI is gone leaves the
+        // thread looping forever with two capture streams open.
+        if let Some(msg) = take_write_error(&raw_slot, &filtered_slot) {
+            record_failure(failure, msg);
+            break;
+        }
+        // Overshoot is at most one callback of samples before the next
+        // check lands here.
         if raw_slot.borrow().samples_written >= MAX_RECORDING_SAMPLES
             || filtered_slot.borrow().samples_written >= MAX_RECORDING_SAMPLES
         {
@@ -329,6 +367,13 @@ fn run_recorder(
             ready_sent = true;
             let _ = ready_tx.send(Ok(()));
         }
+    }
+
+    // The loop above tests `running` before it drains, so a stop landing in
+    // the same 10 ms window as the failing write would leave the cause in the
+    // slot: finalized over, and reported as a clean recording.
+    if let Some(msg) = take_write_error(&raw_slot, &filtered_slot) {
+        record_failure(failure, msg);
     }
 
     if !ready_sent {
@@ -348,10 +393,14 @@ fn run_recorder(
         }
     }
 
-    // Hold the streams and listeners through the end of the function so
-    // their PipeWire objects stay registered with the mainloop above.
-    let _ = (raw_stream, filtered_stream);
-
+    // Both streams and both listeners stay bound to the end of this
+    // function, so they unwind in reverse declaration order: each listener
+    // drops immediately before the stream it was added to. That order is
+    // load-bearing — `pw_stream_destroy` frees the memory holding the hook
+    // list, and a listener dropped afterwards unlinks its hook through it.
+    // Do not "hold" them with `let _ = (..)`: `_` binds nothing, so that
+    // drops the streams on the spot and leaves the listeners to outlive
+    // them, which is the exact inversion this comment exists to prevent.
     mainloop.quit();
     Ok(())
 }
@@ -385,11 +434,15 @@ fn process_capture(stream: &pipewire::stream::Stream, data: &mut Rc<RefCell<Capt
         return;
     };
 
+    let mut write_error = None;
     for frame in bytes.chunks_exact(4) {
         let sample = f32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]);
-        if writer.write_sample(sample).is_err() {
-            // Disk full / I/O error: stop writing but leave the slot alive
-            // so the recorder loop can surface the failure via finalize.
+        if let Err(e) = writer.write_sample(sample) {
+            // Disk full or I/O error. Leave the writer in place so finalize
+            // still runs on what was captured, and hand the cause to the
+            // loop — it cannot be inferred from the counters, which stop
+            // advancing precisely because the writes stopped landing.
+            write_error = Some(format!("WAV write failed: {e}"));
             break;
         }
         since_flush += 1;
@@ -401,6 +454,9 @@ fn process_capture(stream: &pipewire::stream::Stream, data: &mut Rc<RefCell<Capt
     }
     slot.samples_since_flush = since_flush;
     slot.samples_written = written;
+    if write_error.is_some() {
+        slot.write_error = write_error;
+    }
 }
 
 fn open_wav_writer(

@@ -9,7 +9,7 @@ use spectral_lib::platform::ipc::{
 };
 use spectral_lib::platform::persistence::{
     PersistedState, get_filtered_recording_path, get_original_recording_path, load_state,
-    remove_legacy_recordings, save_state,
+    save_state,
 };
 use spectral_lib::platform::recorder::{NativePlayer, NativeRecorder, PlaybackKind};
 use spectral_lib::state::{AppState, Status, is_valid_mic_name, lock_or_recover, mic_name_rule};
@@ -81,8 +81,6 @@ fn main() {
             return;
         }
     };
-
-    remove_legacy_recordings();
 
     let mut client_threads: Vec<thread::JoinHandle<()>> = Vec::new();
 
@@ -440,7 +438,7 @@ fn handle_client(
                         // so the mic must be up and healthy. Without this
                         // guard a recording with the mic disabled would
                         // silently produce an empty/truncated filtered file
-                        // (or hit the recorder's dont-reconnect error).
+                        // (or hit the recorder's dont-fallback error).
                         // The target name comes from the live mic itself:
                         // state.mic_name can already hold a newer name from
                         // an Enable that has not recreated the mic yet, and
@@ -489,8 +487,22 @@ fn handle_client(
                         }
                     }
                     DaemonCommand::StopRecording => {
-                        if let Some(mut r) = lock_or_recover(&recorder).take() {
+                        // The recorder finalizes its writers only after its
+                        // loop exits, so a failure raised there — the header
+                        // rewrite on a full disk, which is where hound's
+                        // buffered tail usually lands — exists nowhere until
+                        // stop() has joined. Taking the recorder out of the
+                        // slot also puts it beyond the GetState reaper, so
+                        // this is the last chance anything has to read it.
+                        // Same ordering discipline as that reaper: record
+                        // after dropping the recorder guard (#7 is held, #6
+                        // must not be).
+                        let stop_error = lock_or_recover(&recorder).take().and_then(|mut r| {
                             r.stop();
+                            r.failure()
+                        });
+                        if let Some(msg) = stop_error {
+                            state.set_last_error(Some(format!("Recording failed: {msg}")));
                         }
                         DaemonResponse::Ok
                     }

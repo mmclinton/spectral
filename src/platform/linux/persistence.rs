@@ -109,33 +109,6 @@ pub fn get_recordings_dir() -> PathBuf {
     recordings_dir
 }
 
-/// Recordings lived under the config dir through v0.2.2; sweep the two known
-/// files best-effort so config-dir backups stop syncing stale audio. Anything
-/// else a user placed there is left alone.
-pub fn remove_legacy_recordings() {
-    let Ok(base) = get_safe_config_base() else {
-        return;
-    };
-    let legacy = base.join("spectral").join("recordings");
-    for name in ["original_output.wav", "filtered_output.wav"] {
-        let path = legacy.join(name);
-        if let Err(e) = fs::remove_file(&path)
-            && e.kind() != ErrorKind::NotFound
-        {
-            eprintln!(
-                "Failed to remove legacy recording {}: {}",
-                path.display(),
-                e
-            );
-        }
-    }
-    if let Err(e) = fs::remove_dir(&legacy)
-        && !matches!(e.kind(), ErrorKind::NotFound | ErrorKind::DirectoryNotEmpty)
-    {
-        eprintln!("Failed to remove legacy recordings dir: {}", e);
-    }
-}
-
 /// Location of the raw (pre-processing) voice-test capture.
 pub fn get_original_recording_path() -> PathBuf {
     get_recordings_dir().join("original_output.wav")
@@ -185,19 +158,38 @@ fn write_state_to(path: &Path, state: &PersistedState) -> Result<(), io::Error> 
 mod tests {
     use super::*;
 
+    /// The half of the schema contract that lets a new version read an old
+    /// file: a file written before these keys existed still loads, with each
+    /// of them at its default. What that costs an author differs by type —
+    /// `#[serde(default)]` is what carries `rumble_filter` and `auto_level`,
+    /// while `Option` fields get `None` from serde whether or not the
+    /// attribute is there. The assertions below are on the behavior, so they
+    /// hold either way; only the non-`Option` half is enforced by removing
+    /// the attribute.
     #[test]
-    fn old_and_stale_state_formats_still_load() {
-        // `is_active` predates 0.2.x; `voice_smoothing` existed only in
-        // unreleased builds. Unknown keys must be ignored, missing toggles
-        // default off.
-        let old_format = "is_active = true\ndevice_id = 42\nmic_name = \"My-Mic\"\nthreshold = 65\nvoice_smoothing = true\n";
-        let state: PersistedState = toml::from_str(old_format).expect("old format must load");
+    fn absent_optional_keys_fall_back_to_their_defaults() {
+        let without_the_optional_keys = "device_id = 42\nmic_name = \"My-Mic\"\nthreshold = 65\n";
+        let state: PersistedState =
+            toml::from_str(without_the_optional_keys).expect("a file missing them must load");
         assert_eq!(state.device_id, Some(42));
-        assert_eq!(state.device_node_name, None);
         assert_eq!(state.mic_name, "My-Mic");
         assert_eq!(state.threshold, 65);
+        assert_eq!(state.device_node_name, None);
         assert!(!state.rumble_filter);
         assert!(!state.auto_level);
+    }
+
+    /// The other half: an older version must survive a file a newer one
+    /// wrote, which holds only while `PersistedState` stays free of
+    /// `deny_unknown_fields`. Downgrades are the case nobody tests by hand.
+    #[test]
+    fn keys_from_a_newer_version_are_ignored() {
+        let with_a_key_we_do_not_know =
+            "device_id = 42\nmic_name = \"My-Mic\"\nthreshold = 65\nnoise_model = \"deep\"\n";
+        let state: PersistedState =
+            toml::from_str(with_a_key_we_do_not_know).expect("an unknown key must not fail load");
+        assert_eq!(state.mic_name, "My-Mic");
+        assert_eq!(state.threshold, 65);
     }
 
     #[test]

@@ -21,7 +21,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   message and a copyable diagnostics summary — versions, packaging, the log
   and config paths, and the daemon's last known state — for bug reports.
 
+### Removed
+- Voice-test recordings left behind by 0.2.2 and older are no longer swept
+  up. Those versions kept the recordings under the config directory; the
+  daemon deleted the two stale files on every start so config backups stopped
+  syncing audio. Anyone still upgrading from that far back can delete
+  `~/.config/spectral/recordings/` by hand — current recordings live under
+  the state directory and are unaffected.
+
 ### Fixed
+- Unplugging the selected microphone no longer swaps it out from under
+  you. The virtual mic could be relinked to whatever your system's
+  default input had become — usually a built-in mic — and go on
+  denoising and broadcasting from it, with the status still reading
+  Active and the original device still named. A capture device that goes
+  away while the mic is running is now reported as an error instead.
+- Voice-test recordings now stop and report the problem when they cannot
+  be written. A disk that filled mid-recording left the capture running
+  with the error discarded, and could leave a truncated file presented as
+  a complete one — including when the write only failed as the file was
+  closed, which is where a full disk usually shows up.
 - `XDG_RUNTIME_DIR` must now be set to an absolute path, and Spectral says
   so plainly when it is not. An empty value counted as set, which put the
   daemon's control socket, pid file and log in the current working directory
