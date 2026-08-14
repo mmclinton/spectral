@@ -355,14 +355,24 @@ fn run_pipeline(
         *pipewire::keys::NODE_DESCRIPTION => "Spectral Native Capture",
         *pipewire::keys::NODE_LATENCY => "480/48000",
         "target.object" => source_node,
-        // Without this, a target that goes away — unplugged interface,
-        // suspended device, a Bluetooth mic dropping — makes WirePlumber
-        // relink us to whatever the default source now is, and the virtual
-        // mic keeps producing audio from a microphone the user never chose.
-        // Nothing reports it: no stream error, so `failure` stays empty and
-        // the pill still says Active. A hard error is the only honest
-        // outcome, and it is the signal any future re-attach has to key on.
+        // Two properties covering two halves of one hazard, neither a
+        // substitute for the other. Without them a target that goes away —
+        // unplugged interface, suspended device, a Bluetooth mic dropping —
+        // makes WirePlumber relink us to whatever the default source now
+        // is, and the virtual mic keeps denoising a microphone the user
+        // never chose, with `failure` empty and the pill still Active.
+        //
+        // `dont-reconnect` stops the move but reports nothing: the policy
+        // takes an early exit for an item that was already linked, which
+        // skips the branch that would error. On its own it trades a wrong
+        // mic for a silent one. `dont-fallback` is what makes an
+        // unresolvable target.object a client error and a destroyed node,
+        // and that error lands on the core listener below and reaches the
+        // failure slot. It also covers the case dont-reconnect cannot see,
+        // a target already gone at connect time, where the policy would
+        // otherwise pick the default before anything had been linked.
         "node.dont-reconnect" => "true",
+        "node.dont-fallback" => "true",
     };
 
     let capture_stream = StreamBox::new(&core, "spectral-capture", capture_props)?;

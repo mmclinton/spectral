@@ -222,8 +222,8 @@ fn run_recorder(
     let ready = Rc::new(RecorderReadyFlags::default());
     let format_pod = build_audio_format_pod(AudioFormat::F32LE, SAMPLE_RATE, 1, Some(&[MONO]))?;
 
-    // Surface any core/proxy error: a missing target.object with
-    // dont-reconnect=true reports here, which is exactly the case we want
+    // Surface any core/proxy error: an unresolvable target.object with
+    // dont-fallback=true reports here, which is exactly the case we want
     // to fail loudly instead of silently recording the default source.
     let core_failure = failure.clone();
     let _core_listener = core
@@ -250,11 +250,13 @@ fn run_recorder(
         *pipewire::keys::NODE_NAME => "spectral-recorder-raw",
         *pipewire::keys::NODE_DESCRIPTION => "Spectral Voice-Test Recorder",
         "target.object" => source_node,
-        // Without this, a vanished target.object makes WirePlumber
-        // silently move the stream to the default source — a wrong-node
-        // recording, not an error. With it, a missing target is a hard
-        // error that surfaces through the failure slot.
+        // dont-reconnect stops WirePlumber silently moving the stream to
+        // the default source once it has been linked; dont-fallback is what
+        // makes an unresolvable target an error rather than a wrong-node
+        // recording. Neither covers the other's case — see the pair in
+        // `pipewire.rs` for which policy branch each one turns.
         "node.dont-reconnect" => "true",
+        "node.dont-fallback" => "true",
     };
     let raw_stream = StreamBox::new(&core, "spectral-recorder-raw", raw_props)?;
     let raw_slot_cb = raw_slot.clone();
@@ -296,6 +298,7 @@ fn run_recorder(
         *pipewire::keys::NODE_DESCRIPTION => "Spectral Voice-Test Recorder",
         "target.object" => mic_name,
         "node.dont-reconnect" => "true",
+        "node.dont-fallback" => "true",
     };
     let filtered_stream = StreamBox::new(&core, "spectral-recorder-filtered", filtered_props)?;
     let filtered_slot_cb = filtered_slot.clone();

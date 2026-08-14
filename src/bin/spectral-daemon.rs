@@ -438,7 +438,7 @@ fn handle_client(
                         // so the mic must be up and healthy. Without this
                         // guard a recording with the mic disabled would
                         // silently produce an empty/truncated filtered file
-                        // (or hit the recorder's dont-reconnect error).
+                        // (or hit the recorder's dont-fallback error).
                         // The target name comes from the live mic itself:
                         // state.mic_name can already hold a newer name from
                         // an Enable that has not recreated the mic yet, and
