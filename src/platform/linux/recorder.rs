@@ -91,6 +91,19 @@ struct CaptureSlot {
     write_error: Option<String>,
 }
 
+/// The first write failure parked by either capture callback, cleared as it
+/// is read. Callbacks only run inside `iterate()`, so the two borrows here
+/// can never conflict with one.
+fn take_write_error(
+    raw: &Rc<RefCell<CaptureSlot>>,
+    filtered: &Rc<RefCell<CaptureSlot>>,
+) -> Option<String> {
+    raw.borrow_mut()
+        .write_error
+        .take()
+        .or_else(|| filtered.borrow_mut().write_error.take())
+}
+
 /// Handle to the recorder thread owning both capture streams (raw source +
 /// virtual-mic node) on a single PipeWire mainloop.
 pub struct NativeRecorder {
@@ -323,12 +336,7 @@ fn run_recorder(
         // advancing samples_written, so the cap below can never fire on one.
         // Without this, a disk that fills while the GUI is gone leaves the
         // thread looping forever with two capture streams open.
-        let write_error = raw_slot
-            .borrow_mut()
-            .write_error
-            .take()
-            .or_else(|| filtered_slot.borrow_mut().write_error.take());
-        if let Some(msg) = write_error {
+        if let Some(msg) = take_write_error(&raw_slot, &filtered_slot) {
             record_failure(failure, msg);
             break;
         }
@@ -350,6 +358,13 @@ fn run_recorder(
             ready_sent = true;
             let _ = ready_tx.send(Ok(()));
         }
+    }
+
+    // The loop above tests `running` before it drains, so a stop landing in
+    // the same 10 ms window as the failing write would leave the cause in the
+    // slot: finalized over, and reported as a clean recording.
+    if let Some(msg) = take_write_error(&raw_slot, &filtered_slot) {
+        record_failure(failure, msg);
     }
 
     if !ready_sent {
