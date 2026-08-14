@@ -903,28 +903,27 @@ mod tests {
         assert!(!positioned.unwrap().is_empty(), "Pod should have content");
     }
 
-    /// The RT process callbacks must never grow these Vecs, and the
-    /// granted channel count is only known once Format negotiation lands —
-    /// after allocation. So the input ring must fit the channel ceiling
-    /// regardless of the count the constructor was given.
+    /// The RT process callbacks must never grow these Vecs, and the granted
+    /// channel count is only known once Format negotiation lands — after
+    /// allocation, and on the other side of [`FormatState`]. So the input
+    /// ring has to fit the channel ceiling unconditionally: the constructor
+    /// is given no count to size itself against.
     #[test]
     fn pipeline_buffers_are_fully_reserved_up_front() {
         use crate::state::AppState;
         use std::sync::Arc;
 
-        for channels in [1, 2, MAX_INPUT_CHANNELS] {
-            let processor = AudioProcessor::new(Arc::new(AppState::new()));
-            let data = PipelineData::new(processor);
-            assert!(
-                data.input_buffer.capacity()
-                    >= (MAX_QUANTUM + RNNOISE_FRAME_SIZE) * MAX_INPUT_CHANNELS as usize,
-                "input capacity below the channel ceiling (ctor arg {channels})"
-            );
-            assert!(
-                data.output_buffer.capacity() >= OUTPUT_BUFFER_CAP + MAX_QUANTUM,
-                "output capacity below the cap plus one delivery"
-            );
-        }
+        let processor = AudioProcessor::new(Arc::new(AppState::new()));
+        let data = PipelineData::new(processor);
+        assert!(
+            data.input_buffer.capacity()
+                >= (MAX_QUANTUM + RNNOISE_FRAME_SIZE) * MAX_INPUT_CHANNELS as usize,
+            "input capacity below the channel ceiling"
+        );
+        assert!(
+            data.output_buffer.capacity() >= OUTPUT_BUFFER_CAP + MAX_QUANTUM,
+            "output capacity below the cap plus one delivery"
+        );
     }
 
     #[test]
