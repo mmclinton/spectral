@@ -34,9 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   you. The virtual mic could be relinked to whatever your system's
   default input had become — usually a built-in mic — and go on
   denoising and broadcasting from it, with the status still reading
-  Active and the original device still named. A capture device Spectral
-  cannot reach is now reported as an error instead, whether it disappears
-  while the mic is running or was already gone when you enabled it.
+  Active and the original device still named. A capture device that goes
+  away while the mic is running is now reported as an error instead.
 - Voice-test recordings now stop and report the problem when they cannot
   be written. A disk that filled mid-recording left the capture running
   with the error discarded, and could leave a truncated file presented as
