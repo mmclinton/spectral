@@ -86,6 +86,15 @@ struct ReadyFlags {
 /// `SeqCst` throughout: these are read once per delivery, not per sample, so
 /// the ordering costs nothing measurable and nobody has to reason about
 /// which pairs need acquire/release.
+///
+/// Held in an `Arc` rather than the `Rc` the rest of this module uses for
+/// callback state. Everything else here is shared only between callbacks the
+/// PipeWire loop runs on one thread; this is the one thing deliberately
+/// crossing to the data thread, and `Rc`'s refcount is not atomic even when
+/// its contents are. The clones all happen on the pipeline thread today, so
+/// `Rc` would work — but "works because nobody clones it from the RT side"
+/// is an invariant an audit has to re-establish, and `Arc` costs one
+/// allocation at startup to make it a property of the type.
 struct FormatState {
     /// Channel count negotiation granted — the stride the deinterleave uses.
     channels: AtomicU32,
@@ -316,7 +325,7 @@ fn run_pipeline(
 
     // Must use Rc because PipeWire callbacks are !Send
     let pipeline_data = Rc::new(RefCell::new(PipelineData::new(processor)));
-    let format_state = Rc::new(FormatState::new(channels));
+    let format_state = Arc::new(FormatState::new(channels));
 
     let capture_format = build_audio_format_pod(AudioFormat::F32LE, SAMPLE_RATE, channels, None)?;
     let feed_format = build_audio_format_pod(
@@ -442,8 +451,9 @@ fn run_pipeline(
                 );
                 param_format.halted.store(true, Ordering::SeqCst);
             } else {
-                // Channels before locked: the process callback reads locked
-                // last, so it never sees the lock without the count.
+                // `locked` is read only here, on the main loop, so this pair
+                // needs no ordering against the process callback — that side
+                // reads `halted` and `channels` and nothing else.
                 param_format.channels.store(granted, Ordering::SeqCst);
                 param_format.locked.store(true, Ordering::SeqCst);
             }
@@ -793,8 +803,12 @@ fn process_source_buffer(
     data: &mut Rc<RefCell<PipelineData>>,
     format: &FormatState,
 ) {
-    // Same rule as the capture side: requeue the buffer untouched rather
-    // than write at a width negotiation did not agree to.
+    // Same rule as the capture side, one cycle earlier: skip the dequeue
+    // entirely rather than write at a width negotiation did not agree to.
+    // The consumer sees no buffer this cycle, which is the honest output for
+    // a pipeline that cannot trust its format. (The capture side checks
+    // *after* its dequeue, because there the buffer is already ours and has
+    // to be recycled on Drop.)
     if format.halted.load(Ordering::SeqCst) {
         return;
     }
