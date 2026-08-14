@@ -366,11 +366,11 @@ fn run_pipeline(
         // takes an early exit for an item that was already linked, which
         // skips the branch that would error. On its own it trades a wrong
         // mic for a silent one. `dont-fallback` is what makes an
-        // unresolvable target.object a client error and a destroyed node,
-        // and that error lands on the core listener below and reaches the
-        // failure slot. It also covers the case dont-reconnect cannot see,
-        // a target already gone at connect time, where the policy would
-        // otherwise pick the default before anything had been linked.
+        // unresolvable target.object a client error and a destroyed node.
+        // Validated by unplugging a live capture device: it arrives as
+        // `StreamState::Error("defined target not found")` on the handler
+        // above — a stream error, not a core one, so the failure slot is
+        // reached through state_changed and the pill goes Inactive.
         "node.dont-reconnect" => "true",
         "node.dont-fallback" => "true",
     };

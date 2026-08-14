@@ -222,9 +222,11 @@ fn run_recorder(
     let ready = Rc::new(RecorderReadyFlags::default());
     let format_pod = build_audio_format_pod(AudioFormat::F32LE, SAMPLE_RATE, 1, Some(&[MONO]))?;
 
-    // Surface any core/proxy error: an unresolvable target.object with
-    // dont-fallback=true reports here, which is exactly the case we want
-    // to fail loudly instead of silently recording the default source.
+    // Surface any core/proxy error the streams' own state_changed handlers
+    // do not see. An unresolvable target.object is not one of them: on the
+    // pipeline's identical setup that was observed arriving as a stream
+    // error, so both routes reach the same failure slot and neither is
+    // load-bearing alone.
     let core_failure = failure.clone();
     let _core_listener = core
         .add_listener_local()
