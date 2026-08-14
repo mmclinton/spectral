@@ -86,8 +86,12 @@ struct CaptureSlot {
     samples_since_flush: u64,
     samples_written: u64,
     /// Set by the capture callback when a sample fails to write, and drained
-    /// by the recorder loop. The callback cannot reach the failure slot, and
-    /// it must not keep writing once the file is broken.
+    /// by the recorder loop, which is the only side that can reach the
+    /// failure slot. The callback stops writing the delivery it failed on;
+    /// later deliveries still try, and simply overwrite this with their own
+    /// cause until the loop drains it a few milliseconds later. Harmless —
+    /// `BufWriter` keeps whatever it could not flush — and not worth a guard
+    /// on the audio path.
     write_error: Option<String>,
 }
 
