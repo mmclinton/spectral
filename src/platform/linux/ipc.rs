@@ -14,12 +14,16 @@ const DAEMON_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const DAEMON_EXIT_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
-/// Client-side ceiling on waiting for a response, matching the server's
-/// per-connection read timeout. A legitimately slow command (Enable's ~5 s
-/// pipeline handshake, possibly queued behind another client's) stays well
-/// inside it; only a genuinely wedged daemon trips it. Without this the
-/// GUI's event-loop thread would block forever on a dead daemon.
-const CLIENT_READ_TIMEOUT: Duration = Duration::from_secs(30);
+/// Ceiling on waiting for the other side of a connection, applied by both
+/// ends so neither outlasts the other: a client left waiting on a request
+/// the daemon has already abandoned would hang for the difference.
+///
+/// A legitimately slow command (Enable's ~5 s pipeline handshake, possibly
+/// queued behind another client's) stays well inside it; only a genuinely
+/// wedged peer trips it. Without it the GUI's event-loop thread would
+/// block forever on a dead daemon, and a silent client would pin its
+/// handler thread just as long.
+const CONNECTION_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 mod pid_file {
     use std::fs;
@@ -249,7 +253,7 @@ impl DaemonClient {
     pub fn connect() -> Result<Self, std::io::Error> {
         let socket_path = get_socket_path()?;
         let stream = UnixStream::connect(socket_path)?;
-        stream.set_read_timeout(Some(CLIENT_READ_TIMEOUT))?;
+        stream.set_read_timeout(Some(CONNECTION_READ_TIMEOUT))?;
         Ok(Self {
             reader: BufReader::new(stream),
         })
@@ -383,12 +387,13 @@ pub struct DaemonConnection {
 }
 
 impl DaemonConnection {
-    /// Reads the next command line, timing out after 30 s so a silent
-    /// client cannot pin its handler thread forever.
+    /// Reads the next command line, timing out after
+    /// [`CONNECTION_READ_TIMEOUT`] so a silent client cannot pin its
+    /// handler thread forever.
     pub fn read_command(&mut self) -> Result<DaemonCommand, std::io::Error> {
         self.reader
             .get_ref()
-            .set_read_timeout(Some(Duration::from_secs(30)))?;
+            .set_read_timeout(Some(CONNECTION_READ_TIMEOUT))?;
 
         let mut line = String::new();
         self.reader.read_line(&mut line)?;
