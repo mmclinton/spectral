@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::{self, ErrorKind, Write};
+use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -97,9 +98,24 @@ pub fn get_config_path() -> Result<PathBuf, io::Error> {
 /// Refuses to fall back to `/tmp` for the reason given on
 /// [`get_config_path`], which applies with more force here: these are raw
 /// microphone captures.
+///
+/// For the same reason the directory is owner-only rather than whatever the
+/// umask allows. A 0755 recordings dir under a 0755 home — the default on
+/// Debian and Ubuntu, where NixOS's 0700 home would otherwise mask it —
+/// leaves an unprocessed recording of the user's microphone readable by
+/// every other local account.
 pub fn get_recordings_dir() -> Result<PathBuf, io::Error> {
-    let recordings_dir = get_safe_state_base()?.join("spectral").join("recordings");
-    fs::create_dir_all(&recordings_dir)?;
+    let state_base = get_safe_state_base()?;
+    // The XDG state dir itself is shared ground, so it keeps the umask;
+    // only Spectral's own subtree is narrowed. `mode` applies to the
+    // directories this call creates, never to one that already exists.
+    fs::create_dir_all(&state_base)?;
+
+    let recordings_dir = state_base.join("spectral").join("recordings");
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&recordings_dir)?;
     Ok(recordings_dir)
 }
 

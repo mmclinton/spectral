@@ -36,6 +36,7 @@ use pipewire::{
 use std::cell::{Cell, RefCell};
 use std::fs::{File, OpenOptions};
 use std::io::BufWriter;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -587,11 +588,17 @@ fn open_wav_writer(
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
+    // These are unprocessed recordings of the user's microphone, so they
+    // are owner-only. `mode` covers files this call creates; the explicit
+    // set_permissions also narrows one an earlier version left at 0644,
+    // since the paths are fixed and get reused.
     let file = OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)
+        .mode(0o600)
         .open(path)?;
+    file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
     Ok(hound::WavWriter::new(BufWriter::new(file), WAV_SPEC)?)
 }
 
