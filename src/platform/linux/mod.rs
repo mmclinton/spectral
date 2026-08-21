@@ -1,10 +1,5 @@
-//! Linux platform implementation
-//!
-//! This module contains all Linux-specific code for Spectral:
-//! - PipeWire audio pipeline integration
-//! - Audio device discovery via PipeWire
-//! - Unix domain socket IPC
-//! - XDG-compliant persistence
+//! All Linux-specific code for Spectral, reached by the binaries through the
+//! `platform::<module>` seam. See `docs/ARCHITECTURE.md` for the module map.
 
 pub mod audio_devices;
 pub mod audio_processor;

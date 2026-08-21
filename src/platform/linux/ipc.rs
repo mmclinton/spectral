@@ -37,8 +37,8 @@ mod pid_file {
             .and_then(|s| s.trim().parse().ok())
     }
 
-    /// Rewrites `file` (already opened and locked by the caller) with our
-    /// pid. Opened without truncate so a losing racer can't clobber the
+    /// Rewrites `file` (already opened and locked by the caller) with the
+    /// calling process pid. Opened without truncate so a losing racer can't clobber the
     /// winner's pid before the lock decides ownership; truncation happens
     /// here, under the lock.
     pub fn write_pid_to(mut file: &fs::File) -> io::Result<()> {
@@ -405,7 +405,7 @@ mod tests {
     /// direction. Commands carry no version field, so this tolerance *is*
     /// the compatibility story on that side, and it is what the bump policy
     /// on [`PROTOCOL_VERSION`] means by "adding an `Option` field is
-    /// compatible" — a claim nothing exercised for commands until now.
+    /// compatible" — the only test that exercises that claim for commands.
     #[test]
     fn a_pre_0_5_enable_parses_with_the_added_fields_as_none() {
         let old = r#"{"Enable":{"device_id":5,"mic_name":"My-Mic","threshold":70}}"#;
@@ -491,12 +491,12 @@ mod tests {
     /// variant cannot be added without authoring its wire form: the match is
     /// exhaustive, and an arm has nothing to return but a `&str`.
     ///
-    /// That is not the same as pinning it, which the earlier wording of this
-    /// comment claimed. This function is only ever called from inside the
-    /// loop over `cases`, so a variant with an arm but no `cases` entry is
-    /// never compared — and an arm returning a wrong literal is just as
-    /// green. What the guard buys is putting the wire form in front of
-    /// whoever adds a variant; extending `cases` is still on them.
+    /// It does not pin the form: this is only called from the loop over
+    /// `cases`, so a variant with an arm but no `cases` entry is never
+    /// compared, and an arm returning a wrong literal is just as green. The
+    /// guard puts the wire form in front of whoever adds a variant;
+    /// extending `cases` is still on them.
+    ///
     /// `Enable` is split by shape because the table exercises it twice.
     fn command_golden(command: &DaemonCommand) -> &'static str {
         match command {
@@ -559,9 +559,9 @@ mod tests {
             is_playing_filtered: false,
             last_error: None,
         };
-        // The third status. It reaches clients on every enable and disable,
-        // and until now no golden carried its spelling, so renaming it was a
-        // wire break the suite would have passed.
+        // The third status. It reaches clients on every enable and disable, so
+        // its spelling needs a golden of its own; without one, renaming it
+        // would be a wire break the suite passes.
         let pending_state = DaemonState {
             protocol_version: PROTOCOL_VERSION,
             status: Status::Pending,

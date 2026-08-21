@@ -1,6 +1,20 @@
 //! The long-lived backend: owns the virtual mic and all audio state,
 //! persists settings, and serves GUI/CLI clients on the Unix socket with
 //! one handler thread per connection. SIGTERM/SIGINT tear everything down.
+//!
+//! LOCK ORDERING CONVENTION: to prevent deadlocks, always acquire locks in
+//! this order (`state.threshold_val` is an atomic and exempt):
+//!
+//! 1. `state.mic_name`
+//! 2. `state.selected_device_id`
+//! 3. `state.device_node_name`
+//! 4. `virtual_mic`
+//! 5. `state.status`
+//! 6. `state.last_error`
+//! 7. `recorder`
+//! 8. `player`
+//!
+//! Keep guard scopes minimal; never hold two locks longer than necessary.
 
 use spectral_lib::platform::audio_devices::{find_node, get_node_details, get_node_name};
 use spectral_lib::platform::audio_processor::VirtualMic;
@@ -270,21 +284,6 @@ fn handle_client(
     recorder: Arc<Mutex<Option<NativeRecorder>>>,
     player: Arc<Mutex<Option<(PlaybackKind, NativePlayer)>>>,
 ) -> Result<(), std::io::Error> {
-    // LOCK ORDERING CONVENTION:
-    // To prevent deadlocks, always acquire locks in this order
-    // (state.threshold_val is an atomic and exempt):
-    // 1. state.mic_name
-    // 2. state.selected_device_id
-    // 3. state.device_node_name
-    // 4. virtual_mic
-    // 5. state.status
-    // 6. state.last_error
-    // 7. recorder
-    // 8. player
-    //
-    // Important: Release locks as soon as possible by limiting scope.
-    // Never hold multiple locks longer than necessary.
-
     loop {
         match conn.read_command() {
             Ok(command) => {
@@ -369,11 +368,11 @@ fn handle_client(
                         // Reap recorder failures into last_error for
                         // visibility. Recorders are not surfaced in
                         // DaemonState (no recording-active field exists
-                        // today and adding one changes the wire format,
-                        // out of scope), but a failed recording still
-                        // deserves to be torn down and reported. Same
-                        // ordering discipline: record after dropping the
-                        // recorder guard (#7 is held, #6 must not be).
+                        // today, and adding one is a wire-format change),
+                        // but a failed recording still deserves to be torn
+                        // down and reported. Same ordering discipline:
+                        // record after dropping the recorder guard (#7 is
+                        // held, #6 must not be).
                         let recorder_error = {
                             let mut guard = lock_or_recover(&recorder);
                             if let Some(r) = guard.as_ref()
