@@ -188,6 +188,20 @@ fn get_pid_file_path() -> Result<PathBuf, std::io::Error> {
     Ok(runtime_dir()?.join("spectral-daemon.pid"))
 }
 
+/// Where a spawned daemon's stdout and stderr go, beside the socket and pid
+/// file. There is deliberately no second location: a daemon that cannot
+/// resolve the runtime dir cannot bind its socket either, so a log written
+/// elsewhere would only describe a session that was already lost — and a
+/// predictable `/tmp` path opened with `truncate` is a symlink target on a
+/// shared system. Failing here is what makes the client report the missing
+/// runtime dir rather than a spawn error downstream of it.
+///
+/// Clients open this append-only and the winning daemon truncates it once,
+/// so two clients racing to spawn cannot interleave into it.
+pub fn daemon_log_path() -> Result<PathBuf, std::io::Error> {
+    Ok(runtime_dir()?.join("spectral-daemon.log"))
+}
+
 /// Wait for a previously running daemon to exit. Shutdown terminates the
 /// process without running Drop, so the socket file lingers; the pid file's
 /// process going away — the same condition `bind` checks — is the signal.

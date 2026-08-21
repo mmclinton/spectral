@@ -2,24 +2,11 @@
 //! launch path and the headless CLI.
 
 use spectral_lib::platform::ipc::{
-    DaemonClient, DaemonCommand, DaemonResponse, DaemonState, PROTOCOL_VERSION, runtime_dir,
+    DaemonClient, DaemonCommand, DaemonResponse, DaemonState, PROTOCOL_VERSION, daemon_log_path,
     wait_for_daemon_exit,
 };
 use std::error::Error;
-use std::path::PathBuf;
 use std::process::{Command, Stdio};
-
-/// Where [`start_daemon`] points the child's stdout and stderr, under the
-/// same runtime dir as the socket and pid file. There is deliberately no
-/// second location: a daemon that cannot resolve the runtime dir cannot bind
-/// its socket either, so a log written elsewhere would only describe a
-/// session that was already lost — and a predictable `/tmp` path opened with
-/// `truncate` is a symlink target on a shared system. Failing here is what
-/// makes the client report the missing runtime dir rather than a spawn error
-/// downstream of it.
-pub fn daemon_log_path() -> Result<PathBuf, std::io::Error> {
-    Ok(runtime_dir()?.join("spectral-daemon.log"))
-}
 
 /// Spawn `spectral-daemon` from the current executable's directory, logging
 /// to [`daemon_log_path`].
@@ -31,10 +18,15 @@ pub fn start_daemon() -> Result<(), Box<dyn Error>> {
     let daemon_path = daemon_dir.join("spectral-daemon");
 
     let log_file = daemon_log_path()?;
+    // Append, never truncate. Two clients can both find no daemon and both
+    // spawn one; only one child wins the pid lock, but with O_TRUNC the
+    // second client would first wipe what the winner had already logged and
+    // then leave the winner's file offset past EOF, padding the rest of the
+    // session's output with NULs. Starting the log clean is the winning
+    // daemon's job, once it knows it is the winner.
     let log = std::fs::OpenOptions::new()
         .create(true)
-        .write(true)
-        .truncate(true)
+        .append(true)
         .open(&log_file)?;
 
     let mut child = Command::new(&daemon_path)

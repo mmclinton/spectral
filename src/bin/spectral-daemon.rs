@@ -19,7 +19,7 @@
 use spectral_lib::platform::audio_devices::{find_node, get_node_details, get_node_name};
 use spectral_lib::platform::audio_processor::VirtualMic;
 use spectral_lib::platform::ipc::{
-    DaemonCommand, DaemonResponse, DaemonServer, DaemonState, PROTOCOL_VERSION,
+    DaemonCommand, DaemonResponse, DaemonServer, DaemonState, PROTOCOL_VERSION, daemon_log_path,
 };
 use spectral_lib::platform::persistence::{
     PersistedState, get_filtered_recording_path, get_original_recording_path, load_state,
@@ -31,6 +31,24 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+
+/// Drop whatever a previous session left in the log, now that the pid lock
+/// says this one owns it.
+///
+/// Truncating the inode is safe while our own stdout and stderr still point
+/// at it: clients open it with `O_APPEND`, so every write recomputes its
+/// offset from the end rather than from a stale one. Best effort — a log we
+/// cannot start clean is not a reason to refuse to run.
+fn start_log_afresh() {
+    let Ok(path) = daemon_log_path() else { return };
+    if let Err(e) = std::fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(&path)
+    {
+        eprintln!("[daemon] could not start the log afresh: {e}");
+    }
+}
 
 fn main() {
     let state = Arc::new(AppState::new());
@@ -55,6 +73,18 @@ fn main() {
             r.store(false, Ordering::SeqCst);
         }
     });
+
+    // Claim ownership before doing any work: a daemon that loses the pid
+    // lock has nothing to contribute, and everything below this point wants
+    // to be logged into a file this session owns.
+    let server = match DaemonServer::bind() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[daemon] failed to bind socket: {e}");
+            return;
+        }
+    };
+    start_log_afresh();
 
     let mut persisted = match load_state() {
         Ok(persisted) => persisted,
@@ -87,14 +117,6 @@ fn main() {
         *lock_or_recover(&state.selected_device_id) = persisted.device_id;
         *lock_or_recover(&state.device_node_name) = persisted.device_node_name.clone();
     }
-
-    let server = match DaemonServer::bind() {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("[daemon] failed to bind socket: {e}");
-            return;
-        }
-    };
 
     let mut client_threads: Vec<thread::JoinHandle<()>> = Vec::new();
 

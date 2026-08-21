@@ -9,7 +9,9 @@ mod diagnostics;
 mod fonts;
 
 use spectral_lib::platform::audio_devices;
-use spectral_lib::platform::ipc::{DaemonClient, DaemonCommand, DaemonResponse, DaemonState};
+use spectral_lib::platform::ipc::{
+    DaemonClient, DaemonCommand, DaemonResponse, DaemonState, daemon_log_path,
+};
 use spectral_lib::platform::persistence;
 use spectral_lib::state::{AudioDevice, Status, is_valid_mic_name};
 
@@ -924,7 +926,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                 diagnostics::build_diagnostics(
                     last_daemon_state.borrow().as_ref(),
                     &devices.borrow(),
-                    daemon_launch::daemon_log_path().ok().as_deref(),
+                    daemon_log_path().ok().as_deref(),
                     persistence::get_config_path().ok().as_deref(),
                     std::env::var_os("FLATPAK_ID").is_some(),
                 )

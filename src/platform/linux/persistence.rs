@@ -84,7 +84,7 @@ fn get_safe_state_base() -> Result<PathBuf, io::Error> {
 /// path under `/tmp`, and that is a symlink target on a shared system: every
 /// write here either creates a temp file or is read back and trusted
 /// (`state.toml`), and neither `File::create` nor `fs::read_to_string` refuses
-/// to follow a link another user planted first. `daemon_launch::daemon_log_path`
+/// to follow a link another user planted first. `ipc::daemon_log_path`
 /// already refuses `/tmp` for the same reason, and the payload here — the
 /// settings the daemon acts on — is worth more than the log. A daemon that cannot name a private directory
 /// should decline to persist, not persist somewhere world-writable.
