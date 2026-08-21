@@ -669,14 +669,10 @@ fn run_pipeline(
     Ok(())
 }
 
-/// Mix N channels down to mono.
-///
-/// Mono downmix scaled to the i16 range RNNoise expects. Only the first two
-/// channels are averaged: on USB interfaces exposing more (the EVO4's
 /// Coerces one decoded sample into the nominal PCM range.
 ///
 /// `f32::from_le_bytes` accepts every bit pattern, so a driver glitch or a
-/// hostile graph node can hand us NaN or an infinity. Both latch permanently
+/// hostile graph node can deliver NaN or an infinity. Both latch permanently
 /// downstream: the high-pass biquad's denormal snap tests `abs() <
 /// STATE_FLOOR`, which is false for NaN, and RNNoise keeps its own poisoned
 /// history — so a single bad sample silences the virtual mic until the
@@ -692,6 +688,10 @@ fn sanitize_sample(sample: f32) -> f32 {
     }
 }
 
+/// Mix N channels down to mono.
+///
+/// Mono downmix scaled to the i16 range RNNoise expects. Only the first two
+/// channels are averaged: on USB interfaces exposing more (the EVO4's
 /// surround-4.0 profile is FL FR RL RR), the front pair is the physical
 /// preamps while the rest carry loopback/monitor returns — averaging those
 /// in buries the mic under attenuation and system-audio bleed.
