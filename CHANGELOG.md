@@ -7,40 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Voice-test recordings are no longer readable by other users on the same
+  machine. The recordings directory and the two WAV files took whatever the
+  umask allowed, so on a distribution whose home directories are
+  world-readable (Debian and Ubuntu among them) any local account could read
+  an unprocessed capture of your microphone. Existing files are narrowed the
+  next time a recording is made.
+
 ### Fixed
 - A single corrupt sample from the capture device no longer silences the
   virtual mic until it is toggled off and on. Non-finite samples poisoned
   both the rumble filter and the denoiser permanently, and because the
   pipeline thread stayed alive the status kept reading Active while nothing
   came through.
-
-### Changed
-- Reorganized `spectral --help`: the `enable` flags now have their own
-  section instead of nesting under the command list, the header carries
-  the version, and an examples block shows the three invocations most
-  people need. Same commands, flags, and exit codes.
-- Bumped Slint from 1.15.0 to 1.17.1 and fontique from 0.7 to 0.10.
-  The MSRV rises to 1.92 as a result. Slint 1.17 reads the default
-  font size from system settings on Linux, so typography may shift
-  slightly under some desktop configurations.
-- `spectral --help` and every invalid-mic-name rejection now quote one
-  shared wording of the name rule instead of restating it per call site,
-  so the text cannot drift from the check the daemon actually runs.
-- Errors now surface as a clickable "Error" chip in the app bar instead of a
-  one-line strip beneath it. The strip elided anything longer than the window
-  with no way to read the rest; the chip opens a details view with the full
-  message and a copyable diagnostics summary — versions, packaging, the log
-  and config paths, and the daemon's last known state — for bug reports.
-
-### Removed
-- Voice-test recordings left behind by 0.2.2 and older are no longer swept
-  up. Those versions kept the recordings under the config directory; the
-  daemon deleted the two stale files on every start so config backups stopped
-  syncing audio. Anyone still upgrading from that far back can delete
-  `~/.config/spectral/recordings/` by hand — current recordings live under
-  the state directory and are unaffected.
-
-### Fixed
+- A daemon error no longer disappears for good if you refresh the device
+  list, run a voice test, or press Apply while it is showing. The error chip
+  now comes back on the next poll, and with it the route to the diagnostics
+  summary, for as long as the daemon still reports the problem.
+- Settings are no longer lost when two clients apply at the same time. The
+  GUI and a `spectral enable` could interleave into one temp file and rename
+  a spliced result over the settings, which then failed to parse and reset
+  everything to defaults on the next start. Settings are also flushed to
+  disk before being put into place, so a power cut cannot leave the file
+  empty.
+- Voice-test recordings can no longer be corrupted by a transient disk
+  error. A failed checkpoint left the writer positioned in the WAV header,
+  so the rest of the capture overwrote audio already recorded and the clip
+  played back as garbage; recording now stops and reports the cause.
+- The voice test now refuses a capture format it did not ask for instead of
+  writing it at the wrong width, which produced clips that played back at
+  the wrong speed with no error shown.
+- `spectral enable --mic-name` (and the other flags) no longer swallow the
+  next flag when their value is missing. `--mic-name --rumble-filter` used
+  to create a virtual mic called "--rumble-filter", leave the filter off,
+  and report success.
+- A daemon shutting down no longer deletes the socket of the daemon
+  replacing it, which left a running daemon nothing could connect to until
+  it was killed by hand.
+- A failure to reach a restarted daemon now reports why instead of a bare
+  "Failed to get daemon state after restart".
 - Unplugging the selected microphone no longer swaps it out from under
   you. The virtual mic could be relinked to whatever your system's
   default input had become — usually a built-in mic — and go on
@@ -71,6 +77,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   virtual mic is unaffected — it still outlives the window.
 - The Help links now open on minimal systems: the Nix package puts
   `xdg-open` on the GUI's PATH instead of relying on the host to provide it.
+
+### Changed
+- The GUI feels more responsive: the daemon now waits for connections
+  instead of polling for them every 100 ms, which removes up to that much
+  delay from every status update the window makes.
+- Reorganized `spectral --help`: the `enable` flags now have their own
+  section instead of nesting under the command list, the header carries
+  the version, and an examples block shows the three invocations most
+  people need. Same commands, flags, and exit codes.
+- Bumped Slint from 1.15.0 to 1.17.1 and fontique from 0.7 to 0.10.
+  The MSRV rises to 1.92 as a result. Slint 1.17 reads the default
+  font size from system settings on Linux, so typography may shift
+  slightly under some desktop configurations.
+- `spectral --help` and every invalid-mic-name rejection now quote one
+  shared wording of the name rule instead of restating it per call site,
+  so the text cannot drift from the check the daemon actually runs.
+- Errors now surface as a clickable "Error" chip in the app bar instead of a
+  one-line strip beneath it. The strip elided anything longer than the window
+  with no way to read the rest; the chip opens a details view with the full
+  message and a copyable diagnostics summary — versions, packaging, the log
+  and config paths, and the daemon's last known state — for bug reports.
+
+### Removed
+- Voice-test recordings left behind by 0.2.2 and older are no longer swept
+  up. Those versions kept the recordings under the config directory; the
+  daemon deleted the two stale files on every start so config backups stopped
+  syncing audio. Anyone still upgrading from that far back can delete
+  `~/.config/spectral/recordings/` by hand — current recordings live under
+  the state directory and are unaffected.
 
 ## [0.8.0] - 2026-07-31
 
