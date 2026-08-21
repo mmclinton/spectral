@@ -212,16 +212,28 @@ fn parse_toggle(value: &str, flag: &str) -> Result<bool, String> {
     }
 }
 
+/// The value for `flag`, from `--flag=value` if it was written that way and
+/// otherwise from the next argument.
+///
+/// A separate value that itself looks like a long flag is refused rather
+/// than consumed. Every value in this grammar is a number, `on`/`off`, or a
+/// mic name, and none of those may start with `--`, so a token that does is
+/// always a forgotten value rather than a real one: `--mic-name
+/// --rumble-filter` would otherwise name the mic `--rumble-filter` — which
+/// passes validation, since the name rule allows `-` — and silently drop
+/// the filter. A single dash is untouched, so a negative `--threshold -1`
+/// still reaches the range check that explains it.
 fn take_value<I>(args: &mut I, inline: Option<String>, flag: &str) -> Result<String, String>
 where
     I: Iterator<Item = Result<String, String>>,
 {
     match inline {
         Some(value) => Ok(value),
-        None => args
-            .next()
-            .transpose()?
-            .ok_or_else(|| format!("{flag} requires a value")),
+        None => match args.next().transpose()? {
+            Some(value) if !value.starts_with("--") => Ok(value),
+            Some(next) => Err(format!("{flag} requires a value, found '{next}'")),
+            None => Err(format!("{flag} requires a value")),
+        },
     }
 }
 
@@ -463,6 +475,55 @@ mod tests {
     #[test]
     fn help_quotes_the_mic_name_rule_the_parser_enforces() {
         assert!(help().contains(&mic_name_rule()));
+    }
+
+    /// A forgotten value used to be filled by the next flag. `--mic-name`
+    /// is the one that failed silently — the name rule allows `-`, so the
+    /// mic really was created called `--rumble-filter`.
+    #[test]
+    fn a_flag_never_swallows_the_flag_that_follows_it() {
+        for flag in ENABLE_FLAGS {
+            assert_eq!(
+                p(&["enable", flag, "--auto-level", "on"]),
+                Err(format!("{flag} requires a value, found '--auto-level'")),
+                "{flag} consumed the following flag as its value"
+            );
+        }
+    }
+
+    /// Only the double-dash form is a flag, so a negative number still
+    /// reaches the check that can explain it.
+    #[test]
+    fn a_negative_number_is_still_read_as_a_value() {
+        assert_eq!(
+            p(&["enable", "--threshold", "-1"]),
+            Err("invalid --threshold '-1': expected 0-100".to_string())
+        );
+    }
+
+    /// The inline form is the deliberate escape hatch for a value that
+    /// really does start with two dashes. The name rule allows `-`, so this
+    /// one is legal and must still go through — the guard is about a
+    /// missing value, not about the characters in a given one.
+    #[test]
+    fn an_inline_value_bypasses_the_lookalike_flag_guard() {
+        assert!(matches!(
+            p(&["enable", "--mic-name=--rumble-filter"]),
+            Ok(CliCommand::Enable { mic_name: Some(name), rumble_filter: None, .. })
+                if name == "--rumble-filter"
+        ));
+    }
+
+    #[test]
+    fn an_empty_inline_value_is_rejected_by_its_own_flag_rule() {
+        assert_eq!(
+            p(&["enable", "--rumble-filter="]),
+            Err("invalid --rumble-filter '': expected on|off".to_string())
+        );
+        assert_eq!(
+            p(&["enable", "--device="]),
+            Err("invalid --device '': expected a numeric id".to_string())
+        );
     }
 
     /// The tables render these constants, but `run` returns std's codes, so
