@@ -90,6 +90,10 @@ fn restart_and_refetch(
     let mut client = DaemonClient::connect_with_retry()?;
     match client.send_command(DaemonCommand::GetState) {
         Ok(DaemonResponse::State(state)) => Ok((client, state)),
-        _ => Err("Failed to get daemon state after restart".into()),
+        Ok(DaemonResponse::Error(e)) => {
+            Err(format!("Daemon refused GetState after restart: {e}").into())
+        }
+        Ok(DaemonResponse::Ok) => Err("Unexpected response from daemon after restart".into()),
+        Err(e) => Err(format!("Failed to get daemon state after restart: {e}").into()),
     }
 }
