@@ -22,10 +22,6 @@ export component MainWindow inherits Window {
     // right-column card minimums); the margin absorbs real font metrics,
     // which vary with the user-resolved monospace family. The preferred
     // size is the launch size; the minimums only floor manual resizing.
-    // The 12px type floor cost the toggle rows ~6px; the threshold band still
-    // carries its share of that. The reserved error strip that carried the
-    // rest is gone - errors now live in the app bar's chip - so its 18px is
-    // slack again, which is why the minimums below did not move with it.
     min-width: 720px;
     min-height: 680px;
     preferred-width: 920px;

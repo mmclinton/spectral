@@ -1,7 +1,6 @@
-//! Native PipeWire Audio Pipeline
-//!
-//! This module provides a native PipeWire client for audio capture and playback,
-//! using direct stream connections for low-latency noise reduction.
+//! The audio thread: a PipeWire client that captures the selected input,
+//! runs it through the processing chain, and feeds the daemon-owned virtual
+//! source over an explicitly created link.
 
 use super::audio_processor::AudioProcessor;
 use crate::state::lock_or_recover;
@@ -161,7 +160,7 @@ pub struct NativeAudioPipeline {
 ///
 /// Both process callbacks read 4-byte little-endian samples with a stride
 /// compiled in, and RNNoise's frame is 10 ms only at [`SAMPLE_RATE`] — so an
-/// encoding or rate we did not ask for cannot be reinterpreted, only
+/// encoding or rate other than the requested one cannot be reinterpreted, only
 /// refused. This is the same reasoning the channel check rests on, applied
 /// to the other two fields `AudioInfoRaw` carries.
 ///
@@ -367,7 +366,7 @@ fn run_pipeline(
         // Two properties covering two halves of one hazard, neither a
         // substitute for the other. Without them a target that goes away —
         // unplugged interface, suspended device, a Bluetooth mic dropping —
-        // makes WirePlumber relink us to whatever the default source now
+        // makes WirePlumber relink the stream to whatever the default source now
         // is, and the virtual mic keeps denoising a microphone the user
         // never chose, with `failure` empty and the pill still Active.
         //
@@ -377,8 +376,9 @@ fn run_pipeline(
         // mic for a silent one. `dont-fallback` is what makes an
         // unresolvable target.object a client error and a destroyed node.
         // Validated by unplugging a live capture device: it arrives as
-        // `StreamState::Error("defined target not found")` on the handler
-        // above — a stream error, not a core one, so the failure slot is
+        // `StreamState::Error("defined target not found")` in the
+        // `state_changed` handler below — a stream error, not a core one,
+        // so the failure slot is
         // reached through state_changed and the pill goes Inactive.
         "node.dont-reconnect" => "true",
         "node.dont-fallback" => "true",
@@ -723,7 +723,6 @@ fn mix_to_mono(input: &[f32], channels: usize, output: &mut [f32]) {
             })
             .sum();
 
-        // Scale to i16 range for RNNoise
         output[i] = (sum / channel_divisor) * RNNOISE_SCALE_FACTOR;
     }
 }
@@ -748,7 +747,7 @@ fn process_capture_buffer(
                 return;
             }
 
-            // A format we can't trust: drop the delivery rather than
+            // An untrusted format: drop the delivery rather than
             // deinterleave it at the wrong stride. The daemon surfaces the
             // recorded failure through its health poll. Checked before the
             // borrow so a halted stream costs two atomic loads and nothing
@@ -786,7 +785,6 @@ fn process_capture_buffer(
             let frame_size = RNNOISE_FRAME_SIZE * channels;
             let mut consumed = 0;
             while input_buffer.len() - consumed >= frame_size {
-                // Convert N channels to mono and scale to i16 range for RNNoise
                 mix_to_mono(
                     &input_buffer[consumed..consumed + frame_size],
                     channels,
@@ -794,7 +792,6 @@ fn process_capture_buffer(
                 );
                 processor.process_frame(mono_scratch, processed_scratch);
 
-                // Scale back to f32 PCM range [-1.0, 1.0]
                 for sample in processed_scratch.iter_mut() {
                     *sample /= RNNOISE_SCALE_FACTOR;
                 }
@@ -863,11 +860,12 @@ fn process_source_buffer(
                 samples
             };
 
-            // CRITICAL: Set the chunk size to indicate how many bytes we wrote
+            // PipeWire reads nothing from the buffer until the chunk
+            // describes it.
             let chunk = datas[0].chunk_mut();
             *chunk.offset_mut() = 0;
             *chunk.size_mut() = (samples * 4) as u32;
-            *chunk.stride_mut() = 4; // 4 bytes per sample (f32)
+            *chunk.stride_mut() = 4;
         }
     }
 }
@@ -878,7 +876,7 @@ mod tests {
 
     /// Both process callbacks decode with a compiled-in width and rate, so
     /// the guard has to reject anything else rather than reinterpret it.
-    /// Kept honest in both directions: the format we ask for must pass, or
+    /// Kept honest in both directions: the requested format must pass, or
     /// the guard would halt every working pipeline.
     #[test]
     fn only_f32le_at_the_pipeline_rate_is_decodable() {

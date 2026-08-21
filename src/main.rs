@@ -41,8 +41,7 @@ fn filter_devices(devices: &[AudioDevice], mic_name: &str) -> Vec<AudioDevice> {
 }
 
 /// The row model for the source panel. An empty slice yields an empty model —
-/// the panel renders its own empty state, never a placeholder row. The meta
-/// line stays empty until per-device props are proven reliable.
+/// the panel renders its own empty state, never a placeholder row.
 fn device_list_model(devices: &[AudioDevice]) -> ModelRc<InputDevice> {
     let rows: Vec<InputDevice> = devices
         .iter()
@@ -138,11 +137,10 @@ fn exit_stop_commands(
     commands
 }
 
-/// Tear down whatever capture or playback the window still believes is
-/// running. Diagnostics go to stderr rather than the error line
-/// `send_simple_command` writes to, because the window this runs for is already
-/// gone. Best effort by design: a killed process cannot send anything, which is
-/// what the recorder's own duration cap remains the backstop for.
+/// Send [`exit_stop_commands`] on the way out. Diagnostics go to stderr
+/// rather than the error line `send_simple_command` writes to, because the
+/// window this runs for is already gone. Best effort: a killed process sends
+/// nothing, and the recorder's own duration cap is the backstop for that.
 fn stop_playback_and_recording_on_exit(ui: &MainWindow) {
     let commands = exit_stop_commands(
         ui.get_is_recording(),

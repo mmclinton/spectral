@@ -43,9 +43,9 @@ pub fn start_daemon() -> Result<(), Box<dyn Error>> {
         .stderr(log)
         .spawn()?;
 
-    // The daemon normally outlives us, but if it crashes or is shut down
-    // while the GUI runs, a dropped Child would linger as a zombie in our
-    // process table. Reap it off-thread; process exit does not wait for
+    // The daemon normally outlives this process, but if it crashes or is shut
+    // down while the GUI runs, a dropped Child would linger as a zombie in
+    // the process table. Reap it off-thread; process exit does not wait for
     // this thread, so short-lived CLI invocations are unaffected.
     std::thread::spawn(move || {
         let _ = child.wait();

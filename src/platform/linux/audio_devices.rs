@@ -118,7 +118,7 @@ struct SourceNode {
 /// issued, so a second sync is queued behind every pending info event;
 /// the second `done` means those events have all been delivered.
 ///
-/// A node that dies between its global event and our bind keeps the
+/// A node that dies between its global event and the bind keeps the
 /// fallback count instead of failing the whole enumeration; any error on
 /// the core or registry still aborts, because a wedged query here would
 /// wedge the daemon (same rationale as `collect_globals`).
@@ -285,11 +285,8 @@ pub fn get_input_devices() -> Result<Vec<AudioDevice>, Box<dyn Error>> {
 }
 
 /// Resolve an `Audio/Source` node's `node.name` and true channel count by
-/// id in one pass — enable needs both.
-///
-/// # Errors
-/// Returns an error if the PipeWire connection fails or no `Audio/Source`
-/// node has that id.
+/// id in one pass — enable needs both. Errors if the connection fails or no
+/// such node has that id.
 pub fn get_node_details(node_id: u32) -> Result<(String, u32), Box<dyn Error>> {
     collect_source_nodes()?
         .into_iter()
@@ -392,9 +389,6 @@ pub fn set_default_source(node_name: &str) -> Result<(), Box<dyn Error>> {
 /// count by its `node.name`. Ids are scoped to one PipeWire instance, so
 /// the name is the durable handle. A missing node is `Ok(None)`, not an
 /// error.
-///
-/// # Errors
-/// Returns an error if the PipeWire connection fails.
 pub fn find_node(node_name: &str) -> Result<Option<(u32, u32)>, Box<dyn Error>> {
     Ok(collect_source_nodes()?
         .into_iter()
@@ -408,11 +402,8 @@ pub fn find_node_id(node_name: &str) -> Result<Option<u32>, Box<dyn Error>> {
 }
 
 /// Get the PipeWire node name for a device by its ID, straight from the
-/// registry — `node.name` is what streams and recorders target.
-///
-/// # Errors
-/// Returns an error if the PipeWire connection fails or no node with that
-/// id exposes a `node.name`.
+/// registry — `node.name` is what streams and recorders target. Errors if
+/// the connection fails or no node with that id exposes one.
 pub fn get_node_name(node_id: u32) -> Result<String, Box<dyn Error>> {
     let names = collect_globals(move |global| {
         if global.type_ != ObjectType::Node || global.id != node_id {
