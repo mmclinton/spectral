@@ -4,16 +4,15 @@
 //! lifecycle: a dedicated mainloop thread per subsystem, an `mpsc`
 //! ready-handshake with [`super::pipewire::PIPELINE_READY_TIMEOUT`], a
 //! `running: Arc<AtomicBool>` flag, a `failure: Arc<Mutex<Option<String>>>`
-//! slot (first error wins), and a `Drop` that calls `stop()`. Replaces the
-//! former `pw-record`/`pw-play` shell-out so the daemon no longer depends on
-//! the PipeWire *tools* package at runtime — only the libraries it links.
+//! slot (first error wins), and a `Drop` that calls `stop()`. The daemon
+//! depends only on the PipeWire libraries it links, never on the PipeWire
+//! *tools* package.
 //!
 //! WAV encoding/decoding uses `hound` (pure Rust, so it adds no C
 //! dependency); see <https://docs.rs/hound>.
 //!
-//! Both files are mono 48 kHz 32-bit float (matching `pw-record --channels 1
-//! --format f32`). Recording captures the raw f32 the graph delivers, with
-//! no i16 round-trip.
+//! Both files are mono 48 kHz 32-bit float. Recording captures the raw f32
+//! the graph delivers, with no i16 round-trip.
 
 use super::pipewire::{
     PIPELINE_READY_TIMEOUT, SAMPLE_RATE, build_audio_format_pod, unsupported_encoding,
@@ -94,9 +93,7 @@ const MAX_RECORDING_SAMPLES: u64 = 60 * SAMPLE_RATE as u64;
 /// at the same fixed stride — so a grant that differs would be
 /// reinterpreted at the wrong width rather than refused, and the voice test
 /// would compare two clips that are silently wrong (a stereo grant plays
-/// back at double speed) with nothing in the failure slot to say so. The
-/// pipeline guards both of its streams for exactly this reason, including
-/// the mono output side; the recorder simply predates that work.
+/// back at double speed) with nothing in the failure slot to say so.
 fn verify_granted_format(
     id: u32,
     param: Option<&Pod>,
@@ -223,8 +220,9 @@ impl NativeRecorder {
                 let _ = ready_tx.send(Err(e.to_string()));
                 eprintln!("[NativeRecorder] error: {e}");
             }
-            // Last thing this thread does: run_recorder has finalized both
-            // writers by now, so the paths are free for the next session.
+            // Last thing this thread does: run_recorder has finalized or
+            // dropped both writers by now, so the paths are free for the
+            // next session.
             RECORDER_SESSION_ACTIVE.store(false, Ordering::SeqCst);
         });
 
@@ -667,8 +665,7 @@ impl NativePlayer {
 
     /// Failure-aware liveness: returns true once the thread has exited for
     /// *any* reason — EOF reached, a stream/core error, or an unexpected
-    /// thread exit while `running` is still set. EOF-only would be a
-    /// liveness regression versus the previous `try_wait` on a child.
+    /// thread exit while `running` is still set.
     pub fn is_finished(&self) -> bool {
         if self.eof.load(Ordering::SeqCst) {
             return true;
@@ -992,10 +989,11 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
-    /// Sanity check that the shared constant matches the same value hound would
-    /// build for the recorder — keeps the two halves from drifting.
+    /// Pins the WAV spec the recorder writes and `load_wav` demands, with the
+    /// rate taken from `SAMPLE_RATE` so a rate change cannot desync the two
+    /// ends of the voice test.
     #[test]
-    fn wav_spec_matches_pw_record_defaults() {
+    fn wav_spec_pins_the_voice_test_contract() {
         assert_eq!(WAV_SPEC.channels, 1);
         assert_eq!(WAV_SPEC.sample_rate, SAMPLE_RATE);
         assert_eq!(WAV_SPEC.bits_per_sample, 32);

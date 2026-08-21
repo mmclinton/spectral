@@ -121,7 +121,8 @@ struct SourceNode {
 /// A node that dies between its global event and the bind keeps the
 /// fallback count instead of failing the whole enumeration; any error on
 /// the core or registry still aborts, because a wedged query here would
-/// wedge the daemon (same rationale as `collect_globals`).
+/// wedge the thread serving that client (same rationale as
+/// `collect_globals`).
 fn collect_source_nodes() -> Result<Vec<SourceNode>, Box<dyn Error>> {
     let mainloop = MainLoopRc::new(None)?;
     let context = ContextRc::new(&mainloop, None)?;
