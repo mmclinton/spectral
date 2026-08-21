@@ -9,16 +9,41 @@ targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
 [advisories]
 yanked = "deny"
 # Unmaintained-crate advisories only fail for direct dependencies — those we
-# can act on. slint's pinned GUI stack drags in a steady stream of
-# unmaintained transitive crates (atty, paste, rustybuzz, ttf-parser, ...)
-# with no safe upgrade; per-ID ignores for them would grow forever and train
-# rubber-stamping. Vulnerabilities still deny everywhere in the tree.
+# can act on. Vulnerabilities still deny everywhere in the tree.
+#
+# What this actually suppresses, re-derived 2026-08-21 by running with
+# unmaintained = "all": exactly three crates, all final upstream releases
+# with no upgrade to move to, ever.
+#
+#   paste 1.0.15      RUSTSEC-2024-0436  proc-macro; no runtime surface
+#   rustybuzz 0.20.1  RUSTSEC-2026-0206  via usvg -> resvg -> i-slint-common
+#   ttf-parser 0.25.1 RUSTSEC-2026-0192  same path, plus ab_glyph -> winit
+#
+# The load-bearing argument is reachability, not upgrade cost. Spectral ships
+# no SVG or bitmap asset — nothing in ui/ or src/ references one — so the
+# whole resvg/usvg decode stack is linked and never fed. ttf-parser is live
+# through winit's Wayland client-side title bar, which reads system fonts
+# from directories no other local user can write, and it is
+# #![forbid(unsafe_code)]. Adding an SVG/image asset, a theming option, or a
+# user-supplied-font feature invalidates this and puts an unmaintained parser
+# on an untrusted-input path with nobody upstream to report to. Prefer a
+# pre-rasterized PNG over an SVG if an asset is ever needed.
 unmaintained = "workspace"
+
+# Note the reporting gap: cargo-deny has a severity knob for `unmaintained`
+# but none for `unsound` or `notice`, so those pass silently and "advisories
+# ok" is narrower assurance than it reads. memmap2 0.9.10 (RUSTSEC-2026-0186)
+# sat in the tree unreported until a manual sweep found it. Sweep the DB by
+# hand at release Stage 0 rather than trusting the green line alone.
 
 [licenses]
 # The binary is GPL-3.0-only, so any GPL-3.0-compatible license is
-# acceptable; this list is exactly the atoms present in Cargo.lock today.
-# BSD-3-Clause (nnnoiseless) additionally requires the THIRD-PARTY.md notice.
+# acceptable. This list tracks the atoms present in Cargo.lock, with some
+# slack: cargo deny warns `license-not-encountered` for allowances no locked
+# crate currently uses (BSL-1.0 and NCSA today), which is informational, not
+# a policy error. BSD-2-Clause and BSD-3-Clause additionally require notices
+# in THIRD-PARTY.md — see the recipe at the foot of that file for which
+# crates actually incur the duty.
 allow = [
   "0BSD",
   "Apache-2.0",
