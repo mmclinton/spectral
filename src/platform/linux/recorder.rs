@@ -218,7 +218,7 @@ impl NativeRecorder {
             ) {
                 record_failure(&failure_clone, format!("recorder error: {e}"));
                 let _ = ready_tx.send(Err(e.to_string()));
-                eprintln!("[NativeRecorder] error: {e}");
+                eprintln!("[recorder] error: {e}");
             }
             // Last thing this thread does: run_recorder has finalized or
             // dropped both writers by now, so the paths are free for the
@@ -637,7 +637,7 @@ impl NativePlayer {
             ) {
                 record_failure(&failure_clone, format!("player error: {e}"));
                 let _ = ready_tx.send(Err(e.to_string()));
-                eprintln!("[NativePlayer] error: {e}");
+                eprintln!("[player] error: {e}");
             }
         });
 
@@ -654,11 +654,7 @@ impl NativePlayer {
             }
             Err(_) => {
                 running.store(false, Ordering::SeqCst);
-                Err(format!(
-                    "Player did not become ready within {:?}",
-                    PIPELINE_READY_TIMEOUT
-                )
-                .into())
+                Err(format!("Player did not become ready within {PIPELINE_READY_TIMEOUT:?}").into())
             }
         }
     }
