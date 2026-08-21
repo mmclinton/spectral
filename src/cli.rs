@@ -33,10 +33,11 @@ pub enum CliCommand {
 
 // The three codes documented in `help()` and docs/CLI.md. Only
 // EXIT_USAGE_ERROR is single-sourced in the strict sense: it has no std
-// spelling, so `main` returns it and both tables interpolate it. The other
-// two exist to render those tables — `run` returns std's own
+// spelling, so `main` returns it and `help()` interpolates it. The other
+// two exist to render that table — `run` returns std's own
 // `ExitCode::SUCCESS`/`FAILURE`, which is the idiomatic spelling and worth
-// keeping at 25 call sites. Nothing structural ties the two vocabularies
+// keeping at every call site. Markdown cannot interpolate, so docs/CLI.md
+// spells all three out. Nothing structural ties the two vocabularies
 // together, so a test below pins the equivalence instead.
 
 /// Success; mirrors `ExitCode::SUCCESS`.
@@ -498,11 +499,10 @@ mod tests {
         }
     }
 
-    /// docs/CLI.md is the published reference and, per the stability
-    /// analysis, part of the same frozen contract as the parser. Markdown
-    /// cannot interpolate the constants the way [`help`] does, so this test
-    /// is the only thing standing between a code change and a doc that
-    /// silently keeps advertising the old number.
+    /// docs/CLI.md is the published reference and part of the same frozen
+    /// contract as the parser. Markdown cannot interpolate the constants the
+    /// way [`help`] does, so this test is the only thing standing between a
+    /// code change and a doc that silently keeps advertising the old number.
     #[test]
     fn the_cli_reference_documents_the_same_exit_codes() {
         let doc = include_str!("../docs/CLI.md");
@@ -546,7 +546,7 @@ mod tests {
     /// function — never see it. A new subcommand can still ship undocumented
     /// with the suite green. What the compile error buys is putting whoever
     /// adds one in front of this table; closing the gap for real needs
-    /// variant iteration we do not have.
+    /// variant iteration Rust does not offer.
     fn subcommand_word(command: &CliCommand) -> Option<&'static str> {
         match command {
             CliCommand::Enable { .. } => Some("enable"),

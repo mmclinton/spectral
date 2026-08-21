@@ -95,9 +95,9 @@ struct CaptureSlot {
     write_error: Option<String>,
 }
 
-/// The first write failure parked by either capture callback, cleared as it
-/// is read. Callbacks only run inside `iterate()`, so the two borrows here
-/// can never conflict with one.
+/// A write failure parked by either capture callback, cleared as it is read;
+/// the raw slot wins when both hold one. Callbacks only run inside
+/// `iterate()`, so the two borrows here can never conflict with one.
 fn take_write_error(
     raw: &Rc<RefCell<CaptureSlot>>,
     filtered: &Rc<RefCell<CaptureSlot>>,
@@ -465,8 +465,6 @@ fn open_wav_writer(
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    // Truncate any stale file from a previous run; matches the previous
-    // pw-record behavior of overwriting in place.
     let file = OpenOptions::new()
         .create(true)
         .write(true)
@@ -859,7 +857,7 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
-    /// Sanity check that our constant matches the same value hound would
+    /// Sanity check that the shared constant matches the same value hound would
     /// build for the recorder — keeps the two halves from drifting.
     #[test]
     fn wav_spec_matches_pw_record_defaults() {

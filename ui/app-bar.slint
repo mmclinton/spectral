@@ -55,7 +55,8 @@ component ErrorChip inherits Rectangle {
     border-width: 1px;
     border-radius: self.height / 2;
 
-    // No link role in Slint 1.15; button is the closest behavior match.
+    // Slint's AccessibleRole has no link variant; button is the closest
+// behavior match.
     accessible-role: button;
     accessible-label: "Error — show details";
     accessible-action-default => {

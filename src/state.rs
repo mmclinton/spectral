@@ -30,7 +30,7 @@ pub struct AudioDevice {
 }
 
 fn default_channels() -> u32 {
-    2 // Default to stereo for backwards compatibility
+    2
 }
 
 /// The virtual mic's lifecycle state.
@@ -40,7 +40,8 @@ pub enum Status {
     Inactive,
     /// The pipeline is running and the virtual mic is available.
     Active,
-    /// Mid-transition: an enable or disable has started but not settled.
+    /// Staged-but-unapplied settings over a running mic. Set only by the
+    /// GUI; the daemon never reports it.
     Pending,
 }
 

@@ -84,8 +84,7 @@ fn get_safe_state_base() -> Result<PathBuf, io::Error> {
 /// (`state.toml`), and neither `fs::write` nor `fs::read_to_string` refuses to
 /// follow a link another user planted first. `daemon_launch::daemon_log_path`
 /// already refuses `/tmp` for the same reason, and the payload here — the
-/// settings the daemon acts on, and next to them the voice-test captures — is
-/// worth more than the log. A daemon that cannot name a private directory
+/// settings the daemon acts on — is worth more than the log. A daemon that cannot name a private directory
 /// should decline to persist, not persist somewhere world-writable.
 pub fn get_config_path() -> Result<PathBuf, io::Error> {
     Ok(get_safe_config_base()?.join("spectral").join("state.toml"))
