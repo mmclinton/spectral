@@ -129,14 +129,19 @@ impl PipelineData {
         // these on the RT thread, so growth there would mean an RT-path
         // malloc at exactly the wrong moment (e.g. a stalled consumer).
         // Input holds at most one leftover partial frame plus one maximal
-        // delivery; output is trimmed to OUTPUT_BUFFER_CAP only after a
-        // whole delivery is processed, so it transiently exceeds the cap
-        // by up to one delivery's worth of mono frames.
+        // delivery. Output is trimmed to OUTPUT_BUFFER_CAP only after the
+        // whole delivery is processed, so it transiently exceeds the cap by
+        // the mono frames one callback can emit — and the leftover partial
+        // frame carried in means that is one frame more than the delivery
+        // itself: with c channels, (480c-1 + 8192c) / 480c rounds down to
+        // 18 frames, not 17, at every c. The bound is
+        // (MAX_QUANTUM + RNNOISE_FRAME_SIZE) - 1/c mono samples, so one
+        // extra frame covers the whole channel range.
         //
         // Sized for the ceiling, not the request: the granted channel
         // count arrives only with the Format param, after allocation.
         let input_capacity = (MAX_QUANTUM + RNNOISE_FRAME_SIZE) * MAX_INPUT_CHANNELS as usize;
-        let output_capacity = OUTPUT_BUFFER_CAP + MAX_QUANTUM;
+        let output_capacity = OUTPUT_BUFFER_CAP + MAX_QUANTUM + RNNOISE_FRAME_SIZE;
         Self {
             processor,
             input_buffer: Vec::with_capacity(input_capacity),
@@ -938,9 +943,33 @@ mod tests {
             "input capacity below the channel ceiling"
         );
         assert!(
-            data.output_buffer.capacity() >= OUTPUT_BUFFER_CAP + MAX_QUANTUM,
-            "output capacity below the cap plus one delivery"
+            data.output_buffer.capacity() >= OUTPUT_BUFFER_CAP + MAX_QUANTUM + RNNOISE_FRAME_SIZE,
+            "output capacity below the cap plus one delivery and its carried frame"
         );
+    }
+
+    /// The reservation has to cover the worst callback at every channel
+    /// count, not just the arithmetic that looks obvious at one. Entry
+    /// length is the cap (the previous callback trimmed to it), the leftover
+    /// is one sample short of a whole frame, and the delivery is maximal.
+    #[test]
+    fn no_channel_count_can_grow_the_output_buffer_on_the_rt_path() {
+        use crate::state::AppState;
+        use std::sync::Arc;
+
+        let reserved = PipelineData::new(AudioProcessor::new(Arc::new(AppState::new())))
+            .output_buffer
+            .capacity();
+
+        for channels in 1..=MAX_INPUT_CHANNELS as usize {
+            let frame_size = RNNOISE_FRAME_SIZE * channels;
+            let buffered = (frame_size - 1) + MAX_QUANTUM * channels;
+            let peak = OUTPUT_BUFFER_CAP + (buffered / frame_size) * RNNOISE_FRAME_SIZE;
+            assert!(
+                peak <= reserved,
+                "at {channels} channels the peak is {peak} samples, past the reserved {reserved}"
+            );
+        }
     }
 
     #[test]
