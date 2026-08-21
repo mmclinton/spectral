@@ -79,6 +79,28 @@ fn clear_error(ui_weak: &Weak<MainWindow>) {
     show_error(ui_weak, "");
 }
 
+/// Whether a poll tick should push the daemon's `last_error` onto the
+/// window's error line and re-cache it.
+///
+/// Change alone is not enough. A daemon error is sticky — only Enable
+/// clears it — while any local `clear_error` (a device refresh, a
+/// successful voice-test command, a no-op Apply) blanks the line without
+/// touching the cache. Keyed on change alone, such a clear would retire a
+/// still-standing error for good, taking the app-bar chip with it, and the
+/// chip is the only route to the diagnostics dump.
+///
+/// So an empty line also re-shows: it means "nothing displayed", not
+/// "already displayed". That keeps the property the change test exists for
+/// — a fresher local message is non-empty, so a sticky daemon error cannot
+/// stomp it on the next tick.
+fn should_reconcile_daemon_error(
+    daemon_error: Option<&str>,
+    cached: Option<&str>,
+    line_is_empty: bool,
+) -> bool {
+    daemon_error != cached || (line_is_empty && daemon_error.is_some())
+}
+
 /// Send a command whose only interesting outcome is success or an error
 /// message; failures land in the window's error line, successes clear it.
 /// Returns whether the daemon acknowledged, so callers can roll back UI
@@ -852,10 +874,11 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
                         apply_pending_transition(&current_status, &ui_weak, all_match);
 
-                        // Show a daemon error only when it changes so a sticky
-                        // one can't stomp fresher local messages every tick;
-                        // None never clears (local errors must outlive a tick).
-                        if state.last_error != *last_daemon_error.borrow() {
+                        if should_reconcile_daemon_error(
+                            state.last_error.as_deref(),
+                            last_daemon_error.borrow().as_deref(),
+                            ui.get_error_text().is_empty(),
+                        ) {
                             if let Some(msg) = &state.last_error {
                                 show_error(&ui_weak, msg);
                             }
@@ -1168,5 +1191,44 @@ mod tests {
                 DaemonCommand::StopFiltered
             ]
         ));
+    }
+
+    #[test]
+    fn a_locally_cleared_daemon_error_comes_back_on_the_next_tick() {
+        assert!(should_reconcile_daemon_error(
+            Some("Virtual mic stopped"),
+            Some("Virtual mic stopped"),
+            true
+        ));
+    }
+
+    #[test]
+    fn a_standing_daemon_error_never_stomps_a_fresher_local_message() {
+        assert!(!should_reconcile_daemon_error(
+            Some("Virtual mic stopped"),
+            Some("Virtual mic stopped"),
+            false
+        ));
+    }
+
+    #[test]
+    fn a_changed_daemon_error_shows_whatever_the_line_already_holds() {
+        for line_is_empty in [true, false] {
+            assert!(should_reconcile_daemon_error(
+                Some("newer"),
+                Some("older"),
+                line_is_empty
+            ));
+        }
+    }
+
+    #[test]
+    fn an_empty_line_with_no_daemon_error_asks_for_nothing() {
+        assert!(!should_reconcile_daemon_error(None, None, true));
+    }
+
+    #[test]
+    fn a_resolved_daemon_error_is_re_cached_so_its_return_shows_again() {
+        assert!(should_reconcile_daemon_error(None, Some("stale"), false));
     }
 }
