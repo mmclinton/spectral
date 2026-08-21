@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::{self, ErrorKind, Write};
 use std::os::unix::fs::DirBuilderExt;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Settings that survive daemon restarts, stored as TOML under the XDG
@@ -44,29 +44,51 @@ impl Default for PersistedState {
     }
 }
 
+/// Absolute, and with no `..` component that could climb back out of the
+/// directory the caller means to stay inside.
+///
+/// Tested by component rather than by substring: `..` appears inside plenty
+/// of ordinary names — `~/dotfiles..bak` is a legal directory — and
+/// rejecting those sends settings somewhere the user did not configure.
+/// Only a whole `..` path element can traverse.
+fn is_safe_base(path: &Path) -> bool {
+    path.is_absolute() && !path.components().any(|c| c == Component::ParentDir)
+}
+
+/// Resolve an XDG base directory, falling back to `$HOME` plus
+/// `home_suffix`.
+///
+/// `var_os` rather than `var`: a path is bytes on Linux, and a non-UTF-8
+/// `HOME` is one this code can still join onto — reporting it as "HOME is
+/// not set" would be a wrong diagnostic for a directory that exists.
 fn safe_base_dir(xdg_var: &str, home_suffix: &[&str]) -> Result<PathBuf, io::Error> {
-    if let Ok(xdg_value) = std::env::var(xdg_var) {
-        let path = PathBuf::from(&xdg_value);
-        if path.is_absolute() && !xdg_value.contains("..") {
-            return Ok(path);
+    match std::env::var_os(xdg_var) {
+        // The XDG spec treats an empty value as absent, so fall through
+        // without a warning: nothing is wrong for the user to fix.
+        Some(value) if value.is_empty() => {}
+        Some(value) => {
+            let path = PathBuf::from(value);
+            if is_safe_base(&path) {
+                return Ok(path);
+            }
+            eprintln!("Warning: {xdg_var} is not a safe absolute path ({path:?}), using fallback");
         }
-        eprintln!("Warning: {xdg_var} contains invalid path '{xdg_value}', using fallback");
+        None => {}
     }
 
-    let home = std::env::var("HOME")
-        .map_err(|_| io::Error::new(ErrorKind::NotFound, "HOME is not set"))?;
+    let home = PathBuf::from(
+        std::env::var_os("HOME")
+            .ok_or_else(|| io::Error::new(ErrorKind::NotFound, "HOME is not set"))?,
+    );
 
-    let home_path = PathBuf::from(&home);
-    if !home_path.is_absolute() || home.contains("..") {
+    if !is_safe_base(&home) {
         return Err(io::Error::new(
             ErrorKind::InvalidInput,
-            format!("HOME contains invalid path: {}", home),
+            format!("HOME is not a safe absolute path: {home:?}"),
         ));
     }
 
-    Ok(home_suffix
-        .iter()
-        .fold(home_path, |path, part| path.join(part)))
+    Ok(home_suffix.iter().fold(home, |path, part| path.join(part)))
 }
 
 fn get_safe_config_base() -> Result<PathBuf, io::Error> {
@@ -321,6 +343,33 @@ mod tests {
         assert!(temp_files_in(&dir).is_empty(), "temp files must not leak");
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_base_dir_is_safe_unless_it_is_relative_or_can_climb_out() {
+        for accepted in [
+            "/home/mc/.config",
+            // `..` inside a name is not a parent-dir component; rejecting
+            // these silently redirected the user's settings elsewhere.
+            "/home/mc/dotfiles..bak/config",
+            "/home/mc/..hidden",
+            "/srv/a..b/c",
+        ] {
+            assert!(is_safe_base(Path::new(accepted)), "{accepted} must be safe");
+        }
+
+        for rejected in [
+            ".config",
+            "relative/path",
+            "/home/mc/../root/.config",
+            "/..",
+            "",
+        ] {
+            assert!(
+                !is_safe_base(Path::new(rejected)),
+                "{rejected} must be refused"
+            );
+        }
     }
 
     #[test]
