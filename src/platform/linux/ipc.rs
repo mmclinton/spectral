@@ -333,8 +333,14 @@ impl DaemonServer {
 
 impl Drop for DaemonServer {
     fn drop(&mut self) {
-        pid_file::cleanup(&self.pid_file_path);
+        // Socket first, pid file last: the lock lives on the pid file's
+        // inode, not its path, so unlinking that path opens the gate a
+        // successor can walk through — it creates a fresh inode, locks it,
+        // and binds its own socket, which the line below would then unlink
+        // out from under it. Releasing the gate last keeps the successor
+        // parked on `try_lock` until this daemon is fully torn down.
         let _ = std::fs::remove_file(&self.socket_path);
+        pid_file::cleanup(&self.pid_file_path);
     }
 }
 
