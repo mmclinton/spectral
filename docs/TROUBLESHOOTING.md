@@ -12,7 +12,7 @@ first, then restart the application.
 ## My multi-channel audio interface behaves oddly
 
 When the session manager splits an interface's inputs into separate sources,
-each shows up as its own labelled entry ("EVO4 Mic 1", "EVO4 Line 1", …) — pick
+each shows up as its own labeled entry ("EVO4 Mic 1", "EVO4 Line 1", …) — pick
 the one your mic is plugged into.
 
 When the interface appears as a single multi-channel device instead (e.g.

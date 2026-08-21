@@ -591,7 +591,7 @@ mod tests {
     /// that does and does not buy. Two separate things guard [`Status`], which
     /// crosses the wire as a bare string. Matching on `status` instead of
     /// through a wildcard makes these arms exhaustive over it, so a fourth
-    /// variant fails to compile rather than borrowing a neighbour's golden;
+    /// variant fails to compile rather than borrowing a neighbor's golden;
     /// the spelling of the three that exist is pinned by having a golden
     /// each, which is what a `serde` rename would break. `DaemonState`'s
     /// *fields* need neither — a new one lands in the JSON and breaks all
