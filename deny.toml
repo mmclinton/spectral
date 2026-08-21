@@ -14,16 +14,6 @@ yanked = "deny"
 # with no safe upgrade; per-ID ignores for them would grow forever and train
 # rubber-stamping. Vulnerabilities still deny everywhere in the tree.
 unmaintained = "workspace"
-ignore = [
-  # 2026-07-17: quick-xml < 0.41 DoS-class issues (quadratic duplicate-
-  # attribute check; unbounded NsReader allocation). Both locked versions
-  # (0.36.2, 0.37.5) sit behind zbus_xml's semver range in the AT-SPI
-  # accessibility stack, pinned by slint =1.17.1 — cargo update cannot
-  # cross to 0.41. Exposure is XML from the local session D-Bus (trusted
-  # desktop session), not network input. Revisit on a slint bump.
-  "RUSTSEC-2026-0194",
-  "RUSTSEC-2026-0195",
-]
 
 [licenses]
 # The binary is GPL-3.0-only, so any GPL-3.0-compatible license is
