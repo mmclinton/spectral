@@ -57,9 +57,13 @@ pub(crate) const PIPELINE_READY_TIMEOUT: Duration = Duration::from_secs(5);
 const OUTPUT_BUFFER_CAP: usize = SAMPLE_RATE as usize;
 
 /// Largest per-callback delivery the buffers reserve for, in samples per
-/// channel — PipeWire's default `clock.max-quantum`. A graph configured
-/// beyond it still works (the Vec grows once), but every stock
-/// configuration stays allocation-free on the RT path.
+/// channel — PipeWire's `default.clock.quantum-limit`, not its
+/// `default.clock.max-quantum` (2048). The limit is the ceiling PipeWire
+/// allocates buffers against and clamps max-quantum to, so it is the only
+/// one that bounds what a callback can actually be handed; sizing to 2048
+/// would reintroduce RT-path allocations on any graph tuned above it. A
+/// graph configured beyond the limit still works (the Vec grows once), but
+/// every stock configuration stays allocation-free.
 const MAX_QUANTUM: usize = 8192;
 
 /// Ready = both streams up and the feed link created; the daemon's Enable
@@ -115,6 +119,17 @@ impl FormatState {
     }
 }
 
+/// Shared by both process callbacks through one `Rc<RefCell<..>>`: the
+/// capture side appends to `output_buffer` and the feed side drains it.
+///
+/// That is sound only because a client context runs a single data loop,
+/// which is PipeWire's default (`context.num-data-loops = 1`) and puts both
+/// RT callbacks on the same thread. A user who sets it to -1 (num-cpus)
+/// splits them across threads, where `RefCell`'s borrow flag is a plain
+/// non-atomic `Cell` and the `Vec` mutation is a data race. Anything that
+/// would let the two streams run concurrently — a second data loop, or
+/// moving one stream to its own context — has to replace this with an
+/// SPSC ring first, not just add a lock.
 struct PipelineData {
     processor: AudioProcessor,
     input_buffer: Vec<f32>,
