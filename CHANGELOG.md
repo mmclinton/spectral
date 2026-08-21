@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- A single corrupt sample from the capture device no longer silences the
+  virtual mic until it is toggled off and on. Non-finite samples poisoned
+  both the rumble filter and the denoiser permanently, and because the
+  pipeline thread stayed alive the status kept reading Active while nothing
+  came through.
+
 ### Changed
 - Bumped Slint from 1.15.0 to 1.17.1 and fontique from 0.7 to 0.10.
   The MSRV rises to 1.92 as a result. Slint 1.17 reads the default

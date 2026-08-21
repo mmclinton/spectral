@@ -673,6 +673,25 @@ fn run_pipeline(
 ///
 /// Mono downmix scaled to the i16 range RNNoise expects. Only the first two
 /// channels are averaged: on USB interfaces exposing more (the EVO4's
+/// Coerces one decoded sample into the nominal PCM range.
+///
+/// `f32::from_le_bytes` accepts every bit pattern, so a driver glitch or a
+/// hostile graph node can hand us NaN or an infinity. Both latch permanently
+/// downstream: the high-pass biquad's denormal snap tests `abs() <
+/// STATE_FLOOR`, which is false for NaN, and RNNoise keeps its own poisoned
+/// history — so a single bad sample silences the virtual mic until the
+/// pipeline is rebuilt. Clamping to ±1.0 additionally closes the path where
+/// a finite but absurd sample becomes infinite under the RNNoise scale
+/// factor. Branch-only, so it stays RT-safe.
+#[inline]
+fn sanitize_sample(sample: f32) -> f32 {
+    if sample.is_finite() {
+        sample.clamp(-1.0, 1.0)
+    } else {
+        0.0
+    }
+}
+
 /// surround-4.0 profile is FL FR RL RR), the front pair is the physical
 /// preamps while the rest carry loopback/monitor returns — averaging those
 /// in buries the mic under attenuation and system-audio bleed.
@@ -756,7 +775,7 @@ fn process_capture_buffer(
                     audio_chunk[2],
                     audio_chunk[3],
                 ]);
-                input_buffer.push(sample);
+                input_buffer.push(sanitize_sample(sample));
             }
 
             // Process complete frames (480 samples per channel) in the
@@ -955,6 +974,38 @@ mod tests {
         let mut out = vec![0.0f32; 1];
         mix_to_mono(&[1.0, 1.0], 1, &mut out);
         assert_eq!(out, [32768.0]);
+    }
+
+    #[test]
+    fn non_finite_and_out_of_range_samples_are_coerced_into_pcm_range() {
+        let cases = [
+            (f32::NAN, 0.0),
+            (f32::INFINITY, 0.0),
+            (f32::NEG_INFINITY, 0.0),
+            (1e35, 1.0),
+            (-1e35, -1.0),
+            (2.0, 1.0),
+            (0.5, 0.5),
+            (-0.5, -0.5),
+            (0.0, 0.0),
+        ];
+        for (input, want) in cases {
+            let got = sanitize_sample(input);
+            assert_eq!(got, want, "sanitize_sample({input})");
+        }
+    }
+
+    #[test]
+    fn a_sanitized_frame_never_scales_to_infinity() {
+        // The ±1.0 clamp is what keeps the RNNoise scale factor finite.
+        let mut out = vec![0.0f32; 2];
+        let frame: Vec<f32> = [f32::NAN, 1e35]
+            .iter()
+            .map(|&s| sanitize_sample(s))
+            .collect();
+        mix_to_mono(&frame, 1, &mut out);
+        assert!(out.iter().all(|s| s.is_finite()), "{out:?}");
+        assert_eq!(out, [0.0, RNNOISE_SCALE_FACTOR]);
     }
 
     #[test]

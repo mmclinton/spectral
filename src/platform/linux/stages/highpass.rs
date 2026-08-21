@@ -50,10 +50,15 @@ impl HighPass {
             self.s2 = self.b2 * x - self.a2 * y;
             *out = y;
         }
-        if self.s1.abs() < STATE_FLOOR {
+        // `!is_finite()` is not redundant with the denormal floor: NaN
+        // compares false against every bound, so without it the recursion
+        // would keep multiplying NaN forever instead of snapping to zero.
+        // The capture path sanitizes its input, but this stage also runs
+        // ahead of RNNoise on buffers it does not own.
+        if !self.s1.is_finite() || self.s1.abs() < STATE_FLOOR {
             self.s1 = 0.0;
         }
-        if self.s2.abs() < STATE_FLOOR {
+        if !self.s2.is_finite() || self.s2.abs() < STATE_FLOOR {
             self.s2 = 0.0;
         }
         &self.buf[..input.len()]
@@ -129,6 +134,33 @@ mod tests {
             last = filter.process(&zeros).to_vec();
         }
         assert!(last.iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn a_non_finite_sample_does_not_latch_the_recursion() {
+        for poison in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let mut filter = HighPass::new(CUTOFF, RATE, FRAME);
+            let mut bad = vec![0.0f32; FRAME];
+            bad[0] = poison;
+            filter.process(&bad);
+
+            // 500 frames is ~5 s at 48 kHz — far past the point where a
+            // latched state would have been noticed as a dead mic.
+            let mut last = Vec::new();
+            for frame_idx in 0..500 {
+                let frame: Vec<f32> = (0..FRAME)
+                    .map(|i| {
+                        let n = (frame_idx * FRAME + i) as f64;
+                        (std::f64::consts::TAU * 1000.0 * n / RATE).sin() as f32
+                    })
+                    .collect();
+                last = filter.process(&frame).to_vec();
+            }
+            assert!(
+                last.iter().all(|s| s.is_finite()),
+                "{poison} latched the recursion"
+            );
+        }
     }
 
     #[test]
