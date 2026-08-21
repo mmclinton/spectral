@@ -169,7 +169,7 @@ mod tests {
         let dump = render(Some(&state()), &[device(47, "EVO4 Mic 1", 1)]);
 
         assert!(dump.contains("last known daemon state:"));
-        assert!(dump.contains("  protocol (daemon): 2"));
+        assert!(dump.contains(&format!("  protocol (daemon): {PROTOCOL_VERSION}")));
         assert!(dump.contains("  status: Active"));
         assert!(dump.contains("  device node: alsa_input.usb-EVO4"));
         assert!(dump.contains("  mic name: Spectral-Mic"));
@@ -247,7 +247,7 @@ mod tests {
             let dump = render(daemon_state.as_ref(), &[]);
 
             assert!(dump.contains(&format!("spectral version: {}", env!("CARGO_PKG_VERSION"))));
-            assert!(dump.contains("protocol (gui): 2"));
+            assert!(dump.contains(&format!("protocol (gui): {PROTOCOL_VERSION}")));
             assert!(dump.contains("daemon log: /run/user/1000/spectral-daemon.log"));
             assert!(dump.contains("config: /home/user/.config/spectral/state.toml"));
             // The modal shows no reporting advice of its own, so the dump has
