@@ -8,12 +8,12 @@
 //! former `pw-record`/`pw-play` shell-out so the daemon no longer depends on
 //! the PipeWire *tools* package at runtime — only the libraries it links.
 //!
-//! WAV encoding/decoding uses `hound` (pure Rust, already transitively in
-//! `Cargo.lock` via `nnnoiseless`); see <https://docs.rs/hound>.
+//! WAV encoding/decoding uses `hound` (pure Rust, so it adds no C
+//! dependency); see <https://docs.rs/hound>.
 //!
 //! Both files are mono 48 kHz 32-bit float (matching `pw-record --channels 1
-//! --format f32`). Recording captures the raw f32 the graph delivers — no
-//! i16 scaling, so the file is bit-identical to what `pw-record` produced.
+//! --format f32`). Recording captures the raw f32 the graph delivers, with
+//! no i16 round-trip.
 
 use super::pipewire::{
     PIPELINE_READY_TIMEOUT, SAMPLE_RATE, build_audio_format_pod, unsupported_encoding,

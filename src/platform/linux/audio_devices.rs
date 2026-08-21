@@ -48,9 +48,9 @@ where
     let pending_clone = pending.clone();
 
     // Quitting only on `done` would hang forever if the connection dies
-    // mid-roundtrip (the daemon calls this while holding the virtual-mic
-    // lock, so a hang here wedges every later command). Any core/proxy
-    // error therefore aborts the query.
+    // mid-roundtrip, and this runs on the thread serving the client, so a
+    // hang here wedges every later command. Any core/proxy error therefore
+    // aborts the query.
     let error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let error_clone = error.clone();
     let error_loop = mainloop.clone();
