@@ -448,7 +448,16 @@ fn process_capture(stream: &pipewire::stream::Stream, data: &mut Rc<RefCell<Capt
         since_flush += 1;
         written += 1;
         if since_flush >= FLUSH_INTERVAL_SAMPLES {
-            let _ = writer.flush();
+            if let Err(e) = writer.flush() {
+                // Not ignorable: hound rewinds to the header, updates it,
+                // flushes, and only then seeks back, so a failure here
+                // leaves the cursor inside the header. Further writes still
+                // report Ok (they only fill the BufWriter) while landing on
+                // top of the audio already captured. Stop at the first
+                // failure — the writer's position is no longer trustworthy.
+                write_error = Some(format!("WAV checkpoint flush failed: {e}"));
+                break;
+            }
             since_flush = 0;
         }
     }
