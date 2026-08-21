@@ -21,15 +21,15 @@ const ISSUE_URL: &str = "https://codeberg.org/mmc/spectral/issues";
 /// reading, so a stale snapshot goes out under a "last known" label rather
 /// than being withheld.
 ///
-/// `log_path` is `None` when the runtime dir could not be resolved, which is
-/// itself the most useful thing the dump can say: naming a path that was
-/// never opened would send the reporter hunting for a file that does not
-/// exist.
+/// `log_path` and `config_path` are `None` when the runtime dir and the
+/// config base respectively could not be resolved, which is itself the most
+/// useful thing the dump can say: naming a path that was never opened would
+/// send the reporter hunting for a file that does not exist.
 pub fn build_diagnostics(
     daemon_state: Option<&DaemonState>,
     devices: &[AudioDevice],
     log_path: Option<&Path>,
-    config_path: &Path,
+    config_path: Option<&Path>,
     flatpak: bool,
 ) -> String {
     let mut lines = vec![
@@ -41,7 +41,10 @@ pub fn build_diagnostics(
             None => "daemon log: unavailable (XDG_RUNTIME_DIR is not set to an absolute path)"
                 .to_string(),
         },
-        format!("config: {}", config_path.display()),
+        match config_path {
+            Some(path) => format!("config: {}", path.display()),
+            None => "config: unavailable (no valid XDG config base or HOME)".to_string(),
+        },
         String::new(),
     ];
 
@@ -148,7 +151,7 @@ mod tests {
             daemon_state,
             devices,
             Some(Path::new("/run/user/1000/spectral-daemon.log")),
-            Path::new("/home/user/.config/spectral/state.toml"),
+            Some(Path::new("/home/user/.config/spectral/state.toml")),
             false,
         )
     }
@@ -212,7 +215,7 @@ mod tests {
                 None,
                 &[],
                 Some(Path::new("/run/user/1000/spectral-daemon.log")),
-                Path::new("/tmp/state.toml"),
+                Some(Path::new("/tmp/state.toml")),
                 flatpak,
             );
 
@@ -263,7 +266,7 @@ mod tests {
             Some(&state()),
             &[],
             None,
-            Path::new("/home/user/.config/spectral/state.toml"),
+            Some(Path::new("/home/user/.config/spectral/state.toml")),
             false,
         );
 
@@ -274,5 +277,23 @@ mod tests {
         );
         assert!(!dump.contains("Attach the daemon log"));
         assert!(dump.ends_with(&format!("Report issues at {ISSUE_URL}")));
+    }
+
+    /// Same reasoning one line down: with no valid config base the daemon
+    /// declines to persist rather than writing somewhere world-writable, so
+    /// there is no config file to name.
+    #[test]
+    fn an_unresolvable_config_path_is_reported_as_unavailable() {
+        let dump = build_diagnostics(
+            Some(&state()),
+            &[],
+            Some(Path::new("/run/user/1000/spectral-daemon.log")),
+            None,
+            false,
+        );
+
+        assert!(dump.contains("config: unavailable (no valid XDG config base or HOME)"));
+        // The log is resolvable here, so the dump still asks for it.
+        assert!(dump.ends_with("Attach the daemon log named above."));
     }
 }

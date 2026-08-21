@@ -904,7 +904,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                     last_daemon_state.borrow().as_ref(),
                     &devices.borrow(),
                     daemon_launch::daemon_log_path().ok().as_deref(),
-                    &persistence::get_config_path(),
+                    persistence::get_config_path().ok().as_deref(),
                     std::env::var_os("FLATPAK_ID").is_some(),
                 )
                 .into(),

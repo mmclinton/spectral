@@ -459,23 +459,30 @@ fn handle_client(
                                     prev.stop();
                                 }
 
-                                let original_path = get_original_recording_path();
-                                let filtered_path = get_filtered_recording_path();
-                                match NativeRecorder::start(
-                                    &source_node,
-                                    &mic_name,
-                                    original_path,
-                                    filtered_path,
-                                ) {
-                                    Ok(r) => {
-                                        *lock_or_recover(&recorder) = Some(r);
-                                        DaemonResponse::Ok
+                                match (get_original_recording_path(), get_filtered_recording_path())
+                                {
+                                    (Ok(original_path), Ok(filtered_path)) => {
+                                        match NativeRecorder::start(
+                                            &source_node,
+                                            &mic_name,
+                                            original_path,
+                                            filtered_path,
+                                        ) {
+                                            Ok(r) => {
+                                                *lock_or_recover(&recorder) = Some(r);
+                                                DaemonResponse::Ok
+                                            }
+                                            Err(e) => {
+                                                eprintln!("[recorder] NativeRecorder::start: {e}");
+                                                DaemonResponse::Error(format!(
+                                                    "Failed to start recording: {e}"
+                                                ))
+                                            }
+                                        }
                                     }
-                                    Err(e) => {
-                                        eprintln!("[recorder] NativeRecorder::start: {e}");
-                                        DaemonResponse::Error(format!(
-                                            "Failed to start recording: {e}"
-                                        ))
+                                    (Err(e), _) | (_, Err(e)) => {
+                                        eprintln!("[recorder] recordings directory: {e}");
+                                        DaemonResponse::Error(format!("Cannot record: {e}"))
                                     }
                                 }
                             } else {
@@ -510,7 +517,16 @@ fn handle_client(
                         stop_player_of_kind(&player, PlaybackKind::Original);
                         stop_player_of_kind(&player, PlaybackKind::Filtered);
 
-                        let original_path = get_original_recording_path();
+                        let original_path = match get_original_recording_path() {
+                            Ok(path) => path,
+                            Err(e) => {
+                                eprintln!("[player] recordings directory: {e}");
+                                conn.send_response(DaemonResponse::Error(format!(
+                                    "Cannot play: {e}"
+                                )))?;
+                                continue;
+                            }
+                        };
                         if !original_path.exists() {
                             DaemonResponse::Error("No recording found".to_string())
                         } else {
@@ -534,7 +550,16 @@ fn handle_client(
                         stop_player_of_kind(&player, PlaybackKind::Original);
                         stop_player_of_kind(&player, PlaybackKind::Filtered);
 
-                        let filtered_path = get_filtered_recording_path();
+                        let filtered_path = match get_filtered_recording_path() {
+                            Ok(path) => path,
+                            Err(e) => {
+                                eprintln!("[player] recordings directory: {e}");
+                                conn.send_response(DaemonResponse::Error(format!(
+                                    "Cannot play: {e}"
+                                )))?;
+                                continue;
+                            }
+                        };
                         if !filtered_path.exists() {
                             DaemonResponse::Error("No recording found".to_string())
                         } else {

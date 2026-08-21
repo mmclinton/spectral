@@ -76,52 +76,46 @@ fn get_safe_state_base() -> Result<PathBuf, io::Error> {
 }
 
 /// Path of the settings file, `$XDG_CONFIG_HOME/spectral/state.toml` (or the
-/// `~/.config` fallback); degrades to `/tmp` when no valid base exists so
-/// the daemon keeps running with ephemeral settings rather than dying.
-pub fn get_config_path() -> PathBuf {
-    get_safe_config_base()
-        .unwrap_or_else(|e| {
-            eprintln!(
-                "Warning: Could not determine config base: {}, using /tmp",
-                e
-            );
-            PathBuf::from("/tmp")
-        })
-        .join("spectral")
-        .join("state.toml")
+/// `~/.config` fallback).
+///
+/// There is deliberately no second location. The obvious fallback is a fixed
+/// path under `/tmp`, and that is a symlink target on a shared system: every
+/// write here either truncates (`state.toml.tmp`) or is read back and trusted
+/// (`state.toml`), and neither `fs::write` nor `fs::read_to_string` refuses to
+/// follow a link another user planted first. `daemon_launch::daemon_log_path`
+/// already refuses `/tmp` for the same reason, and the payload here — the
+/// settings the daemon acts on, and next to them the voice-test captures — is
+/// worth more than the log. A daemon that cannot name a private directory
+/// should decline to persist, not persist somewhere world-writable.
+pub fn get_config_path() -> Result<PathBuf, io::Error> {
+    Ok(get_safe_config_base()?.join("spectral").join("state.toml"))
 }
 
 /// Directory holding the voice-test recordings, under the XDG state dir
 /// (recordings are regenerable audio, not configuration); created on demand.
-pub fn get_recordings_dir() -> PathBuf {
-    let recordings_dir = get_safe_state_base()
-        .unwrap_or_else(|e| {
-            eprintln!("Warning: Could not determine state base: {}, using /tmp", e);
-            PathBuf::from("/tmp")
-        })
-        .join("spectral")
-        .join("recordings");
-
-    if let Err(e) = fs::create_dir_all(&recordings_dir) {
-        eprintln!("Failed to create recordings directory: {}", e);
-    }
-
-    recordings_dir
+///
+/// Refuses to fall back to `/tmp` for the reason given on
+/// [`get_config_path`], which applies with more force here: these are raw
+/// microphone captures.
+pub fn get_recordings_dir() -> Result<PathBuf, io::Error> {
+    let recordings_dir = get_safe_state_base()?.join("spectral").join("recordings");
+    fs::create_dir_all(&recordings_dir)?;
+    Ok(recordings_dir)
 }
 
 /// Location of the raw (pre-processing) voice-test capture.
-pub fn get_original_recording_path() -> PathBuf {
-    get_recordings_dir().join("original_output.wav")
+pub fn get_original_recording_path() -> Result<PathBuf, io::Error> {
+    Ok(get_recordings_dir()?.join("original_output.wav"))
 }
 
 /// Location of the processed voice-test capture.
-pub fn get_filtered_recording_path() -> PathBuf {
-    get_recordings_dir().join("filtered_output.wav")
+pub fn get_filtered_recording_path() -> Result<PathBuf, io::Error> {
+    Ok(get_recordings_dir()?.join("filtered_output.wav"))
 }
 
 /// Loads persisted settings, returning defaults when no file exists yet.
 pub fn load_state() -> Result<PersistedState, io::Error> {
-    let path = get_config_path();
+    let path = get_config_path()?;
 
     if !path.exists() {
         return Ok(PersistedState::default());
@@ -133,7 +127,7 @@ pub fn load_state() -> Result<PersistedState, io::Error> {
 
 /// Writes settings as TOML, creating the config directory if needed.
 pub fn save_state(state: &PersistedState) -> Result<(), io::Error> {
-    let path = get_config_path();
+    let path = get_config_path()?;
 
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
