@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   came through.
 
 ### Changed
+- Reorganized `spectral --help`: the `enable` flags now have their own
+  section instead of nesting under the command list, the header carries
+  the version, and an examples block shows the three invocations most
+  people need. Same commands, flags, and exit codes.
 - Bumped Slint from 1.15.0 to 1.17.1 and fontique from 0.7 to 0.10.
   The MSRV rises to 1.92 as a result. Slint 1.17 reads the default
   font size from system settings on Linux, so typography may shift

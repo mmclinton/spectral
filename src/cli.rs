@@ -51,43 +51,42 @@ pub const EXIT_USAGE_ERROR: u8 = 2;
 /// advertising a constraint the parser no longer applies.
 fn help() -> String {
     let rule = mic_name_rule();
+    let version = env!("CARGO_PKG_VERSION");
     format!(
         "\
-Spectral — real-time noise suppression for PipeWire
+spectral {version} — real-time noise suppression for PipeWire
 
-Usage: spectral [COMMAND]
-
-Running without a command opens the control panel (GUI).
+Usage:  spectral [COMMAND]
+        spectral                  open the control panel (GUI)
 
 Commands:
   enable      Create the virtual microphone and start denoising
-                --device <id>        input device id (see `spectral devices`);
-                                     defaults to the remembered device
-                --threshold <0-100>  voice gate threshold (0 = denoise only);
-                                     defaults to the current setting
-                --mic-name <name>    virtual mic name;
-                                     {rule};
-                                     defaults to the current setting
-                --rumble-filter <on|off>
-                                     cut low-frequency rumble (below ~90 Hz)
-                                     before denoising; defaults to the current
-                                     setting
-                --auto-level <on|off>
-                                     even out voice volume automatically, with
-                                     a peak limiter as the safety ceiling;
-                                     defaults to the current setting
   disable     Tear down the virtual microphone
   status      Show the daemon's state
   devices     List input devices with their current PipeWire ids
   shutdown    Stop the daemon
 
+Flags for `enable` — all optional; an omitted flag keeps its last value, so a
+bare `spectral enable` reuses the whole remembered setup:
+      --device <ID>             Input device to capture; see `spectral devices`
+      --threshold <0-100>       Voice gate threshold; 0 = denoise only
+      --mic-name <NAME>         Virtual mic name;
+                                {rule}
+      --rumble-filter <on|off>  Cut rumble below ~90 Hz before denoising
+      --auto-level <on|off>     Even out volume; peak limiter as the ceiling
+
 Options:
   -h, --help     Show this help
   -V, --version  Show the version
 
-Device ids are scoped to the running PipeWire instance; the daemon
-remembers the selected device by node name, so a flagless `enable`
-works across reboots and PipeWire restarts.
+Examples:
+  spectral devices               find an input device id
+  spectral enable                start with the remembered settings
+  spectral enable --threshold 0  denoise only, no voice gate
+
+Device ids are scoped to the running PipeWire instance; the daemon remembers
+your device by node name, so a flagless `enable` survives reboots and
+PipeWire restarts.
 
 Exit codes:
   {EXIT_SUCCESS}  success (including a no-op disable or shutdown)
