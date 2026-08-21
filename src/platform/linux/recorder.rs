@@ -37,6 +37,23 @@ use std::time::Duration;
 /// PipeWire's mono channel position.
 const MONO: u32 = pipewire::spa::sys::SPA_AUDIO_CHANNEL_MONO;
 
+/// Set while a recorder thread owns the two WAV paths, cleared by that
+/// thread on its way out — after both writers are finalized.
+///
+/// A session whose ready handshake times out is abandoned rather than
+/// joined, because joining a wedged setup would hang the daemon (the same
+/// call the pipeline makes). But it opened both writers before the
+/// handshake, so it still holds them and will finalize them, and finalize
+/// seeks to offset 0 to rewrite the header. The paths are fixed, so
+/// without this gate the next session could truncate and reopen them
+/// first and take that header write into the middle of its own recording.
+static RECORDER_SESSION_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// How long [`NativeRecorder::start`] waits for an abandoned session to
+/// release the WAV paths. Bounded on purpose: a wedged session must fail
+/// the new recording, never block the daemon behind it.
+const SESSION_RELEASE_TIMEOUT: Duration = Duration::from_millis(500);
+
 /// WAV spec shared by recorder and player: mono, 48 kHz, 32-bit float.
 const WAV_SPEC: hound::WavSpec = hound::WavSpec {
     channels: 1,
@@ -126,6 +143,8 @@ impl NativeRecorder {
         original: PathBuf,
         filtered: PathBuf,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        claim_session()?;
+
         let running = Arc::new(AtomicBool::new(true));
         let running_clone = running.clone();
         let failure = Arc::new(Mutex::new(None));
@@ -148,6 +167,9 @@ impl NativeRecorder {
                 let _ = ready_tx.send(Err(e.to_string()));
                 eprintln!("[NativeRecorder] error: {e}");
             }
+            // Last thing this thread does: run_recorder has finalized both
+            // writers by now, so the paths are free for the next session.
+            RECORDER_SESSION_ACTIVE.store(false, Ordering::SeqCst);
         });
 
         match ready_rx.recv_timeout(PIPELINE_READY_TIMEOUT) {
@@ -161,12 +183,14 @@ impl NativeRecorder {
                 Err(format!("Recorder setup failed: {e}").into())
             }
             Err(_) => {
+                // Don't join: a wedged setup thread would hang the daemon.
+                // The session flag stays set until it finishes finalizing,
+                // which is what keeps the next Record off these paths.
                 running.store(false, Ordering::SeqCst);
-                Err(format!(
-                    "Recorder did not become ready within {:?}",
-                    PIPELINE_READY_TIMEOUT
+                Err(
+                    format!("Recorder did not become ready within {PIPELINE_READY_TIMEOUT:?}")
+                        .into(),
                 )
-                .into())
             }
         }
     }
@@ -199,6 +223,28 @@ impl Drop for NativeRecorder {
         if self.thread.is_some() {
             self.stop();
         }
+    }
+}
+
+/// Take ownership of the two WAV paths for a new recorder session, waiting
+/// out an abandoned predecessor that is still finalizing.
+///
+/// The daemon serializes Record requests, so the only contender is a
+/// timed-out session; the wait is short and the failure is explicit rather
+/// than a silently corrupted pair of clips.
+fn claim_session() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let deadline = std::time::Instant::now() + SESSION_RELEASE_TIMEOUT;
+    loop {
+        if RECORDER_SESSION_ACTIVE
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err("a previous voice-test recording is still shutting down".into());
+        }
+        thread::sleep(Duration::from_millis(10));
     }
 }
 
