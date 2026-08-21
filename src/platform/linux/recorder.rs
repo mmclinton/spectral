@@ -15,9 +15,18 @@
 //! --format f32`). Recording captures the raw f32 the graph delivers — no
 //! i16 scaling, so the file is bit-identical to what `pw-record` produced.
 
-use super::pipewire::{PIPELINE_READY_TIMEOUT, SAMPLE_RATE, build_audio_format_pod};
+use super::pipewire::{
+    PIPELINE_READY_TIMEOUT, SAMPLE_RATE, build_audio_format_pod, unsupported_encoding,
+};
 use crate::state::lock_or_recover;
-use pipewire::spa::{param::audio::AudioFormat, pod::Pod, utils::Direction};
+use pipewire::spa::{
+    param::ParamType,
+    param::audio::{AudioFormat, AudioInfoRaw},
+    param::format::{MediaSubtype, MediaType},
+    param::format_utils,
+    pod::Pod,
+    utils::Direction,
+};
 use pipewire::{
     context::ContextBox,
     main_loop::MainLoopBox,
@@ -74,6 +83,52 @@ const FLUSH_INTERVAL_SAMPLES: u64 = SAMPLE_RATE as u64;
 /// the failure slot so the GetState reap tears the recorder down and
 /// reports why.
 const MAX_RECORDING_SAMPLES: u64 = 60 * SAMPLE_RATE as u64;
+
+/// Check a granted Format against the mono/48 kHz/F32LE all three of this
+/// module's streams assume, recording the mismatch in `failure` if any.
+///
+/// Every stream here offers a fixed pod, but an offer is not a guarantee.
+/// Both capture callbacks decode at a hardcoded 4-byte stride into a
+/// `WavWriter` whose header is fixed by [`WAV_SPEC`], and the player writes
+/// at the same fixed stride — so a grant that differs would be
+/// reinterpreted at the wrong width rather than refused, and the voice test
+/// would compare two clips that are silently wrong (a stereo grant plays
+/// back at double speed) with nothing in the failure slot to say so. The
+/// pipeline guards both of its streams for exactly this reason, including
+/// the mono output side; the recorder simply predates that work.
+fn verify_granted_format(
+    id: u32,
+    param: Option<&Pod>,
+    failure: &Arc<Mutex<Option<String>>>,
+    stream: &str,
+) {
+    if id != ParamType::Format.as_raw() {
+        return;
+    }
+    let Some(param) = param else { return };
+    let Ok((media_type, media_subtype)) = format_utils::parse_format(param) else {
+        return;
+    };
+    if media_type != MediaType::Audio || media_subtype != MediaSubtype::Raw {
+        return;
+    }
+    let mut info = AudioInfoRaw::new();
+    let why = if info.parse(param).is_err() {
+        Some("unparsable Format param".to_string())
+    } else if let Some(why) = unsupported_encoding(&info) {
+        Some(why)
+    } else if info.channels() != 1 {
+        Some(format!(
+            "{} channels is not the mono the WAV holds",
+            info.channels()
+        ))
+    } else {
+        None
+    };
+    if let Some(why) = why {
+        record_failure(failure, format!("{stream}: {why}"));
+    }
+}
 
 /// First error wins: later failures are usually cascades of the first.
 fn record_failure(slot: &Mutex<Option<String>>, msg: String) {
@@ -323,6 +378,12 @@ fn run_recorder(
             StreamState::Paused | StreamState::Streaming => raw_ready.raw.set(true),
             _ => {}
         })
+        .param_changed({
+            let failure = failure.clone();
+            move |_stream, _data, id, param| {
+                verify_granted_format(id, param, &failure, "raw stream");
+            }
+        })
         .process(process_capture)
         .register()?;
     // AUTOCONNECT | MAP_BUFFERS only — no RT_PROCESS. The process callback
@@ -364,6 +425,12 @@ fn run_recorder(
             }
             StreamState::Paused | StreamState::Streaming => filtered_ready.filtered.set(true),
             _ => {}
+        })
+        .param_changed({
+            let failure = failure.clone();
+            move |_stream, _data, id, param| {
+                verify_granted_format(id, param, &failure, "filtered stream");
+            }
         })
         .process(process_capture)
         .register()?;
@@ -697,6 +764,12 @@ fn run_player(
             }
             StreamState::Paused | StreamState::Streaming => ready_for_cb.set(true),
             _ => {}
+        })
+        .param_changed({
+            let failure = failure.clone();
+            move |_stream, _data, id, param| {
+                verify_granted_format(id, param, &failure, "playback stream");
+            }
         })
         .process({
             let eof = eof.clone();

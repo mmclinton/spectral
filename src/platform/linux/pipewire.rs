@@ -171,7 +171,7 @@ pub struct NativeAudioPipeline {
 ///
 /// `AudioFormat` has no `Debug`, hence the raw discriminant in the message;
 /// it maps to `SPA_AUDIO_FORMAT_*` in `spa/param/audio/raw.h`.
-fn unsupported_encoding(info: &AudioInfoRaw) -> Option<String> {
+pub(super) fn unsupported_encoding(info: &AudioInfoRaw) -> Option<String> {
     if info.format() != AudioFormat::F32LE {
         return Some(format!("sample format {} is not F32LE", info.format().0));
     }
