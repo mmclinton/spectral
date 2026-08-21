@@ -20,6 +20,7 @@ use spectral_lib::platform::audio_devices::{find_node, get_node_details, get_nod
 use spectral_lib::platform::audio_processor::VirtualMic;
 use spectral_lib::platform::ipc::{
     DaemonCommand, DaemonResponse, DaemonServer, DaemonState, PROTOCOL_VERSION, daemon_log_path,
+    wake_accept_loop,
 };
 use spectral_lib::platform::persistence::{
     PersistedState, get_filtered_recording_path, get_original_recording_path, load_state,
@@ -41,12 +42,18 @@ use std::time::Duration;
 /// cannot start clean is not a reason to refuse to run.
 fn start_log_afresh() {
     let Ok(path) = daemon_log_path() else { return };
-    if let Err(e) = std::fs::OpenOptions::new()
+    match std::fs::OpenOptions::new()
         .write(true)
         .truncate(true)
         .open(&path)
     {
-        eprintln!("[daemon] could not start the log afresh: {e}");
+        Ok(_) => {}
+        // No log file means nobody spawned us through a client — started by
+        // hand or by a service manager, with output already going elsewhere.
+        // Nothing to start afresh, and deliberately not created here: an
+        // empty file nothing writes to would just litter the runtime dir.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => eprintln!("[daemon] could not start the log afresh: {e}"),
     }
 }
 
@@ -71,6 +78,9 @@ fn main() {
     let signal_thread = thread::spawn(move || {
         if signals.forever().next().is_some() {
             r.store(false, Ordering::SeqCst);
+            // The accept loop is blocked on a client that may never come;
+            // clearing the flag alone would leave it there until one does.
+            wake_accept_loop();
         }
     });
 
@@ -129,6 +139,12 @@ fn main() {
 
         match server.accept() {
             Ok(mut conn) => {
+                // A shutdown wake arrives as an ordinary connection; serving
+                // it would only spawn a thread to read an immediate EOF.
+                if !running.load(Ordering::SeqCst) {
+                    break;
+                }
+
                 let state = state.clone();
                 let virtual_mic = virtual_mic.clone();
                 let recorder = recorder.clone();
@@ -145,14 +161,15 @@ fn main() {
 
                 client_threads.push(handle);
             }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                thread::sleep(Duration::from_millis(100));
-            }
+            // Interrupted is the signal arriving mid-accept, which the loop
+            // condition then acts on. Anything else is worth reporting, and
+            // the short pause keeps a persistently failing accept from
+            // spinning the CPU.
             Err(e) => {
                 if e.kind() != std::io::ErrorKind::Interrupted {
                     eprintln!("[daemon] failed to accept connection: {e}");
+                    thread::sleep(Duration::from_millis(100));
                 }
-                thread::sleep(Duration::from_millis(100));
             }
         }
     }

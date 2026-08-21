@@ -202,6 +202,19 @@ pub fn daemon_log_path() -> Result<PathBuf, std::io::Error> {
     Ok(runtime_dir()?.join("spectral-daemon.log"))
 }
 
+/// Unblock a daemon sitting in [`DaemonServer::accept`] so its loop can
+/// notice that its running flag has been cleared.
+///
+/// Connecting and dropping the stream is the whole trick: the accept
+/// returns, the loop re-checks the flag, and the pointless connection is
+/// never served. Best effort — if the socket is already gone the loop has
+/// nothing left to wake from.
+pub fn wake_accept_loop() {
+    if let Ok(path) = get_socket_path() {
+        let _ = UnixStream::connect(path);
+    }
+}
+
 /// Wait for a previously running daemon to exit. Shutdown terminates the
 /// process without running Drop, so the socket file lingers; the pid file's
 /// process going away — the same condition `bind` checks — is the signal.
@@ -324,9 +337,12 @@ impl DaemonServer {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(e),
         }
+        // Left blocking on purpose. Polling accept on a timer costs every
+        // client half the poll interval before its connection is even
+        // picked up, and the GUI's heartbeat runs that wait on its
+        // event-loop thread. `wake_accept_loop` is how shutdown gets the
+        // loop moving again instead.
         let listener = UnixListener::bind(&socket_path)?;
-
-        listener.set_nonblocking(true)?;
 
         Ok(Self {
             listener,
@@ -336,7 +352,8 @@ impl DaemonServer {
         })
     }
 
-    /// Accepts one pending client, if any (the listener is non-blocking).
+    /// Waits for the next client. Blocks until one connects, the process is
+    /// signaled, or [`wake_accept_loop`] pokes the socket.
     pub fn accept(&self) -> Result<DaemonConnection, std::io::Error> {
         let (stream, _) = self.listener.accept()?;
         Ok(DaemonConnection {
