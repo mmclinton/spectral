@@ -171,7 +171,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Audio interfaces whose inputs are split into separate sources (many USB
   interfaces, via the session manager's ALSA splitting) no longer appear
   as several identically named entries in the device list. Each input is
-  now labelled individually — "EVO4 Mic 1 / Line 1 / Instrument" rather
+  now labeled individually — "EVO4 Mic 1 / Line 1 / Instrument" rather
   than five indistinguishable "EVO4" rows.
 
 ## [0.6.2] - 2026-07-28
