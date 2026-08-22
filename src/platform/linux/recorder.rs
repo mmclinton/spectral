@@ -197,7 +197,7 @@ impl NativeRecorder {
         original: PathBuf,
         filtered: PathBuf,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        claim_session()?;
+        let session = SessionGuard::claim()?;
 
         let running = Arc::new(AtomicBool::new(true));
         let running_clone = running.clone();
@@ -208,6 +208,11 @@ impl NativeRecorder {
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
 
         let thread = thread::spawn(move || {
+            // Bound to a name, not to `_`: `_` would drop the guard here and
+            // hand the paths back before this thread has even opened them.
+            // Declared first so it outlives every writer, and released
+            // however this thread ends — return, error, or panic.
+            let _session = session;
             if let Err(e) = run_recorder(
                 &source_node,
                 &mic_name,
@@ -221,10 +226,6 @@ impl NativeRecorder {
                 let _ = ready_tx.send(Err(e.to_string()));
                 eprintln!("[recorder] error: {e}");
             }
-            // Last thing this thread does: run_recorder has finalized or
-            // dropped both writers by now, so the paths are free for the
-            // next session.
-            RECORDER_SESSION_ACTIVE.store(false, Ordering::SeqCst);
         });
 
         match ready_rx.recv_timeout(PIPELINE_READY_TIMEOUT) {
@@ -281,25 +282,43 @@ impl Drop for NativeRecorder {
     }
 }
 
-/// Take ownership of the two WAV paths for a new recorder session, waiting
-/// out an abandoned predecessor that is still finalizing.
+/// Holds [`RECORDER_SESSION_ACTIVE`] for as long as one recorder thread can
+/// still touch the WAV paths.
 ///
-/// The daemon serializes Record requests, so the only contender is a
-/// timed-out session; the wait is short and the failure is explicit rather
-/// than a silently corrupted pair of clips.
-fn claim_session() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let deadline = std::time::Instant::now() + SESSION_RELEASE_TIMEOUT;
-    loop {
-        if RECORDER_SESSION_ACTIVE
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
-        {
-            return Ok(());
+/// A guard rather than a store at the end of the thread body, because the
+/// writers themselves are released by unwinding as well: a panic anywhere
+/// in the thread has to hand the paths back too. Left to a bare statement,
+/// one panic would strand the flag set and every later recording would be
+/// refused for the life of the daemon.
+struct SessionGuard;
+
+impl SessionGuard {
+    /// Take the two WAV paths for a new recorder session, waiting out an
+    /// abandoned predecessor that is still finalizing.
+    ///
+    /// The daemon serializes Record requests, so the only contender is a
+    /// timed-out session; the wait is short and the failure is explicit
+    /// rather than a silently corrupted pair of clips.
+    fn claim() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let deadline = std::time::Instant::now() + SESSION_RELEASE_TIMEOUT;
+        loop {
+            if RECORDER_SESSION_ACTIVE
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                return Ok(Self);
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err("a previous voice-test recording is still shutting down".into());
+            }
+            thread::sleep(Duration::from_millis(10));
         }
-        if std::time::Instant::now() >= deadline {
-            return Err("a previous voice-test recording is still shutting down".into());
-        }
-        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+impl Drop for SessionGuard {
+    fn drop(&mut self) {
+        RECORDER_SESSION_ACTIVE.store(false, Ordering::SeqCst);
     }
 }
 
@@ -897,6 +916,36 @@ fn load_wav(path: &Path) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// One test for the whole session-flag lifecycle: it owns a
+    /// process-global, so splitting it into several would let them race.
+    ///
+    /// The panic case is the one that matters. Clearing the flag from the
+    /// end of the thread body would skip it while unwinding, and the paths
+    /// would then be refused to every later recording until the daemon
+    /// restarted.
+    #[test]
+    fn a_session_releases_the_wav_paths_however_its_thread_ends() {
+        let guard = SessionGuard::claim().expect("the first claim must succeed");
+        assert!(
+            SessionGuard::claim().is_err(),
+            "a second session must not get the paths while the first holds them"
+        );
+        drop(guard);
+
+        let after_return = SessionGuard::claim().expect("a released session must be reclaimable");
+        drop(after_return);
+
+        let panicked = std::panic::catch_unwind(|| {
+            let _guard = SessionGuard::claim().expect("claim before the panic");
+            panic!("recorder thread died");
+        });
+        assert!(panicked.is_err(), "the panic must have propagated");
+        assert!(
+            SessionGuard::claim().is_ok(),
+            "unwinding past the guard must still hand the paths back"
+        );
+    }
 
     fn tmp_wav_path(name: &str) -> PathBuf {
         let mut p = std::env::temp_dir();
