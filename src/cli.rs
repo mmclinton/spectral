@@ -693,7 +693,7 @@ mod tests {
     }
 
     #[test]
-    fn help_and_version_forms() {
+    fn help_and_version_accept_long_and_short_spellings() {
         assert_eq!(p(&["--help"]), Ok(CliCommand::Help));
         assert_eq!(p(&["-h"]), Ok(CliCommand::Help));
         assert_eq!(p(&["--version"]), Ok(CliCommand::Version));
@@ -701,7 +701,7 @@ mod tests {
     }
 
     #[test]
-    fn plain_verbs() {
+    fn plain_subcommand_words_parse_to_their_commands() {
         assert_eq!(p(&["disable"]), Ok(CliCommand::Disable));
         assert_eq!(p(&["status"]), Ok(CliCommand::Status));
         assert_eq!(p(&["devices"]), Ok(CliCommand::Devices));
@@ -723,7 +723,7 @@ mod tests {
     }
 
     #[test]
-    fn enable_flags_in_space_and_equals_forms() {
+    fn enable_flags_parse_identically_in_space_and_equals_forms() {
         let expected = Ok(CliCommand::Enable {
             device_id: Some(5),
             threshold: Some(70),
@@ -786,20 +786,20 @@ mod tests {
     }
 
     #[test]
-    fn invalid_values_rejected() {
+    fn invalid_flag_values_are_rejected() {
         assert!(p(&["enable", "--device", "abc"]).is_err());
         assert!(p(&["enable", "--mic-name", "bad name!"]).is_err());
         assert!(p(&["enable", "--mic-name", &"x".repeat(MIC_NAME_MAX_LEN + 1)]).is_err());
     }
 
     #[test]
-    fn duplicate_and_valueless_flags_rejected() {
+    fn duplicate_and_valueless_flags_are_rejected() {
         assert!(p(&["enable", "--device", "1", "--device", "2"]).is_err());
         assert!(p(&["enable", "--device"]).is_err());
     }
 
     #[test]
-    fn unknown_tokens_rejected() {
+    fn unknown_tokens_are_rejected() {
         assert!(p(&["frobnicate"]).is_err());
         assert!(p(&["Enable"]).is_err());
         assert!(p(&["enable", "--frob"]).is_err());
