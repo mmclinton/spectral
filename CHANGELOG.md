@@ -83,6 +83,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `xdg-open` on the GUI's PATH instead of relying on the host to provide it.
 
 ### Changed
+- The rounded chips and the toggles carry a 2px border instead of 1px: the
+  status pill, the error chip, the unsaved-changes chips, and the switch
+  rail.
 - The GUI feels more responsive: the daemon now waits for connections
   instead of polling for them every 100 ms, which removes up to that much
   delay from every status update the window makes.

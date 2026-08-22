@@ -12,7 +12,7 @@ component StatusPill inherits Rectangle {
     horizontal-stretch: 0;
     background: Theme.inset;
     border-color: root.pill_color;
-    border-width: 1px;
+    border-width: 2px;
     border-radius: self.height / 2;
 
     HorizontalLayout {
@@ -52,7 +52,7 @@ component ErrorChip inherits Rectangle {
     horizontal-stretch: 0;
     background: touch.has-hover ? Theme.border_subtle : Theme.inset;
     border-color: Theme.error;
-    border-width: 1px;
+    border-width: 2px;
     border-radius: self.height / 2;
 
     // Slint's AccessibleRole has no link variant; button is the closest

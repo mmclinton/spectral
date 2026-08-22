@@ -114,7 +114,7 @@ export component AppSwitch {
 
         rail := Rectangle {
             border-radius: self.height / 2;
-            border-width: 1px;
+            border-width: 2px;
             background: !root.enabled ? Theme.border_subtle
                 : root.checked ? (touch.has-hover ? Theme.accent.brighter(0.15) : Theme.accent)
                 : (touch.has-hover ? Theme.border_subtle.brighter(0.6) : Theme.inset);
