@@ -176,6 +176,18 @@ mod tests {
             .sqrt()
     }
 
+    /// Deterministic white noise in the i16 range RNNoise works in. A fixed
+    /// LCG keeps runs comparable without pulling in a PRNG crate.
+    fn noise(amplitude: f32, seed: &mut u32) -> Vec<f32> {
+        (0..RNNOISE_FRAME_SIZE)
+            .map(|_| {
+                *seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let unit = f64::from(*seed >> 8) / f64::from(1u32 << 24) * 2.0 - 1.0;
+                unit as f32 * amplitude
+            })
+            .collect()
+    }
+
     #[test]
     fn threshold_maps_linearly_onto_the_vad_cutoff() {
         let cases = [
@@ -200,21 +212,30 @@ mod tests {
         }
     }
 
-    /// The latency every setting depends on: whatever the input and whether
-    /// the gate is engaged (50) or bypassed (0), the first
-    /// [`LOOKAHEAD_FRAMES`] calls emit exact priming zeros and a marked
-    /// input frame re-emerges exactly [`LOOKAHEAD_FRAMES`] calls later —
-    /// attenuated by the closed gate in the engaged run, never shifted.
+    /// The pipeline's latency, which no setting may shift. A marked input
+    /// frame's leading edge re-emerges exactly [`LOOKAHEAD_FRAMES`] calls
+    /// later — the gate's delay line, whose first [`LOOKAHEAD_FRAMES`]
+    /// outputs are its priming zeros — and the frame's energy peaks one
+    /// call after that, which is RNNoise's own 10 ms algorithmic delay.
+    /// The two together are the 30 ms `docs/ARCHITECTURE.md` documents;
+    /// pinning them apart means a change in either names the stage that
+    /// moved. An engaged threshold and the bypass both run, because the
+    /// delay must not follow the settings.
+    ///
+    /// The impulse is loud enough that RNNoise's VAD calls it voice and the
+    /// lookahead pre-opens the gate, so both runs come out through an open
+    /// gate — the closed gate is
+    /// [`an_engaged_gate_attenuates_noise_the_bypass_lets_through`]'s job.
     #[test]
-    fn output_is_delayed_exactly_lookahead_frames_at_any_threshold() {
+    fn the_chain_delay_is_the_gate_lookahead_plus_the_denoiser_frame_at_any_threshold() {
+        const LEAD_IN: usize = 10;
         for threshold in [50, 0] {
             let state = Arc::new(AppState::new());
             state.threshold_val.store(threshold, Ordering::Relaxed);
             let mut processor = AudioProcessor::new(state);
-            let lead_in = 10;
             let mut outputs = Vec::new();
-            for frame_idx in 0..lead_in + LOOKAHEAD_FRAMES + 3 {
-                let input = if frame_idx == lead_in {
+            for frame_idx in 0..LEAD_IN + LOOKAHEAD_FRAMES + 3 {
+                let input = if frame_idx == LEAD_IN {
                     vec![30_000.0; RNNOISE_FRAME_SIZE]
                 } else {
                     vec![0.0; RNNOISE_FRAME_SIZE]
@@ -224,36 +245,78 @@ mod tests {
                 outputs.push(output);
             }
 
-            for frame in &outputs[..LOOKAHEAD_FRAMES] {
+            for (i, frame) in outputs.iter().take(LOOKAHEAD_FRAMES).enumerate() {
                 assert!(
                     frame.iter().all(|&s| s == 0.0),
-                    "threshold {threshold}: priming frames must be exact zeros"
+                    "threshold {threshold}: priming frame {i} is not exact zeros"
                 );
             }
-            // Emergence, not argmax: once the gate opens, later ring-out
-            // frames can outrank the impulse itself. The silence floor comes
-            // off the pre-impulse frames; digital silence has measured as
-            // exact zeros, so the epsilon only guards a future denoiser that
-            // leaks a little.
-            let floor = outputs[..lead_in]
+            let peaks: Vec<f32> = outputs
                 .iter()
-                .skip(LOOKAHEAD_FRAMES)
-                .fold(0.0f32, |m, f| {
-                    m.max(f.iter().fold(0.0f32, |mm, &s| mm.max(s.abs())))
-                });
-            let above = |peak: f32| peak > floor * 20.0 + 1.0;
-            let emergence = outputs
+                .map(|f| f.iter().fold(0.0f32, |m, &s| m.max(s.abs())))
+                .collect();
+            // The floor comes off the post-priming, pre-impulse frames.
+            // Digital silence has measured as exact zeros through the
+            // denoiser, so the epsilon only guards a future one that leaks.
+            let floor = peaks[LOOKAHEAD_FRAMES..LEAD_IN]
                 .iter()
-                .enumerate()
-                .skip_while(|(i, _)| *i < lead_in)
-                .find(|(_, f)| above(f.iter().fold(0.0f32, |m, &s| m.max(s.abs()))))
-                .map(|(i, _)| i);
+                .fold(0.0f32, |m, &p| m.max(p));
             assert_eq!(
-                emergence,
-                Some(lead_in + LOOKAHEAD_FRAMES),
-                "threshold {threshold}: impulse did not first emerge one lookahead later"
+                peaks.iter().position(|&p| p > floor * 20.0 + 1.0),
+                Some(LEAD_IN + LOOKAHEAD_FRAMES),
+                "threshold {threshold}: the leading edge did not emerge one \
+                 lookahead after the impulse — the gate's delay depth moved"
+            );
+            assert_eq!(
+                peaks
+                    .iter()
+                    .enumerate()
+                    .max_by(|(_, a), (_, b)| a.total_cmp(b))
+                    .map(|(i, _)| i),
+                Some(LEAD_IN + LOOKAHEAD_FRAMES + 1),
+                "threshold {threshold}: the energy did not peak one frame after \
+                 the leading edge — the denoiser's algorithmic delay moved"
             );
         }
+    }
+
+    /// The threshold atomic has to reach the gate in the live chain: the
+    /// same noise comes out far quieter with the gate engaged than with it
+    /// bypassed. Relative, so the claim holds however much RNNoise itself
+    /// attenuates noise; the gate's attenuation floor is pinned in
+    /// `stages::gate` and not restated here.
+    ///
+    /// The amplitude is calibrated. At 100 the VAD stays under the
+    /// threshold-50 cutoff for every frame — the measured ratio is exactly
+    /// the gate's floor across seeds and run lengths — and the VAD does not
+    /// start opening the gate intermittently until around 300.
+    #[test]
+    fn an_engaged_gate_attenuates_noise_the_bypass_lets_through() {
+        let run = |threshold: i32| -> f64 {
+            let state = Arc::new(AppState::new());
+            state.threshold_val.store(threshold, Ordering::Relaxed);
+            let mut processor = AudioProcessor::new(state);
+            let mut seed = 0x5eed_1234_u32;
+            let frames = 200;
+            let (mut sum_squares, mut count) = (0.0f64, 0usize);
+            for frame_idx in 0..frames {
+                let input = noise(100.0, &mut seed);
+                let mut output = vec![0.0; RNNOISE_FRAME_SIZE];
+                processor.process_frame(&input, &mut output);
+                if frame_idx >= frames / 2 {
+                    sum_squares += frame_rms(&output) * frame_rms(&output);
+                    count += 1;
+                }
+            }
+            (sum_squares / count as f64).sqrt()
+        };
+
+        let gated = run(50);
+        let bypassed = run(0);
+        assert!(
+            gated * 5.0 < bypassed,
+            "gated rms {gated} is not far below the bypass's {bypassed}"
+        );
     }
 
     /// Flipping the rumble-filter atomic has to change what comes out — the
@@ -275,7 +338,8 @@ mod tests {
                 let mut output = vec![0.0; RNNOISE_FRAME_SIZE];
                 processor.process_frame(&input, &mut output);
                 if frame_idx >= frames / 2 {
-                    sum_squares += frame_rms(&output) * frame_rms(&output);
+                    let rms = frame_rms(&output);
+                    sum_squares += rms * rms;
                     count += 1;
                 }
             }
