@@ -81,6 +81,24 @@ Everything the GUI does is also available from the terminal — `spectral enable
 `spectral status`, `spectral disable`. The full reference is in
 [docs/CLI.md](docs/CLI.md).
 
+## What 1.0 promises
+
+Four things stay as they are for the whole 1.x series: the command-line surface
+— its subcommands, its `enable` flags, and what exit codes 0, 1 and 2 classify;
+the settings file at `$XDG_CONFIG_HOME/spectral/state.toml`, both its path and
+its keys; the rule for what makes a valid virtual mic name; and the application
+id `page.codeberg.mmc.Spectral`, which is what your desktop and your package
+manager identify Spectral by. New subcommands and new optional flags can arrive
+in a minor release, and new settings keys arrive with defaults, so an older
+Spectral still reads a file a newer one wrote. Removing or renaming any of it
+waits for 2.0.
+
+Two things are deliberately not promised. The library is not a public API — the
+modules under `src/` are free to move. Neither is the daemon's IPC format beyond
+its version handshake: the GUI, the CLI and the daemon are installed together,
+and a client that meets a daemon of a different protocol version restarts it
+rather than negotiating.
+
 ## How it works
 
 A background daemon owns all the audio work: it captures your chosen device,
