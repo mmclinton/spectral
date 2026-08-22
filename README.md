@@ -23,13 +23,6 @@ clatter, fans, and room tone go; your voice stays.
 noise suppressor by Jean-Marc Valin, developed at Mozilla and published through
 Xiph.Org.
 
-## Screenshot
-
-<div align="center">
-  <img src="./assets/screenshot.png" width="820"
-       alt="Spectral's main window: an app bar with the status, a full-width input threshold band, then two columns of cards holding the input device list, the virtual mic name, the voice-processing switches and the voice test, above a footer with Disable and Apply">
-</div>
-
 ## Features
 
 - Real-time RNNoise denoising, with a voice-activity gate you can dial from off
@@ -76,6 +69,11 @@ caveats for each path are in [docs/INSTALLATION.md](docs/INSTALLATION.md).
 4. Optionally flip any of the Voice Processing switches
 5. Click "Enable" — the virtual microphone is created and becomes the system default input
 6. Applications that pin a specific device can select the virtual mic by name (default "Spectral-Mic"); "Rename"/"Reset" stage a new name, applied on the next Enable/Apply
+
+<div align="center">
+  <img src="./assets/screenshot.png" width="820"
+       alt="Spectral's main window: an app bar with the status, a full-width input threshold band, then two columns of cards holding the input device list, the virtual mic name, the voice-processing switches and the voice test, above a footer with Disable and Apply">
+</div>
 
 Everything the GUI does is also available from the terminal — `spectral enable`,
 `spectral status`, `spectral disable`. The full reference is in
