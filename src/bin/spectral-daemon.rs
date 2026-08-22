@@ -161,10 +161,10 @@ fn main() {
 
                 client_threads.push(handle);
             }
-            // Interrupted is the signal arriving mid-accept, which the loop
-            // condition then acts on. Anything else is worth reporting, and
-            // the short pause keeps a persistently failing accept from
-            // spinning the CPU.
+            // EINTR is transient and never how shutdown arrives — that comes
+            // as the wake connection above — so retry it silently. Anything
+            // else is worth reporting, and the short pause keeps a
+            // persistently failing accept from spinning the CPU.
             Err(e) => {
                 if e.kind() != std::io::ErrorKind::Interrupted {
                     eprintln!("[daemon] failed to accept connection: {e}");

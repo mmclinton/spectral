@@ -178,9 +178,9 @@ pub fn save_state(state: &PersistedState) -> Result<(), io::Error> {
 /// cannot, because the writers are threads of the same daemon.
 static WRITE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-/// Serializes `state` to `path` through a private same-directory temp file
-/// and a rename, so a crash or power loss mid-write can never leave a torn
-/// half-file behind (rename is atomic within one filesystem on POSIX).
+/// Serializes `state` to `path` through a single-writer same-directory temp
+/// file and a rename, so a crash or power loss mid-write can never leave a
+/// torn half-file behind (rename is atomic within one filesystem on POSIX).
 ///
 /// The temp name has to be unique per write, not per path. The daemon runs
 /// one handler thread per connection and saves outside any lock, so two

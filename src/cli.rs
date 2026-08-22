@@ -216,13 +216,13 @@ fn parse_toggle(value: &str, flag: &str) -> Result<bool, String> {
 /// otherwise from the next argument.
 ///
 /// A separate value that itself looks like a long flag is refused rather
-/// than consumed. Every value in this grammar is a number, `on`/`off`, or a
-/// mic name, and none of those may start with `--`, so a token that does is
-/// always a forgotten value rather than a real one: `--mic-name
-/// --rumble-filter` would otherwise name the mic `--rumble-filter` — which
-/// passes validation, since the name rule allows `-` — and silently drop
-/// the filter. A single dash is untouched, so a negative `--threshold -1`
-/// still reaches the range check that explains it.
+/// than consumed: a token starting with `--` is far likelier to be a
+/// forgotten value than a real one. `--mic-name --rumble-filter` would
+/// otherwise name the mic `--rumble-filter` — which passes validation,
+/// since the name rule allows `-` — and silently drop the filter. The
+/// inline form stays the escape hatch for a value that really does begin
+/// with two dashes. A single dash is untouched, so a negative
+/// `--threshold -1` still reaches the range check that explains it.
 fn take_value<I>(args: &mut I, inline: Option<String>, flag: &str) -> Result<String, String>
 where
     I: Iterator<Item = Result<String, String>>,
@@ -477,9 +477,9 @@ mod tests {
         assert!(help().contains(&mic_name_rule()));
     }
 
-    /// A forgotten value used to be filled by the next flag. `--mic-name`
-    /// is the one that failed silently — the name rule allows `-`, so the
-    /// mic really was created called `--rumble-filter`.
+    /// `--mic-name` is the flag where a swallowed value fails silently: the
+    /// name rule allows `-`, so `--rumble-filter` is a legal mic name and
+    /// the filter is dropped without a word.
     #[test]
     fn a_flag_never_swallows_the_flag_that_follows_it() {
         for flag in ENABLE_FLAGS {

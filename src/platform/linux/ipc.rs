@@ -15,8 +15,8 @@ const DAEMON_EXIT_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 /// Ceiling on waiting for the other side of a connection, applied by both
-/// ends so neither outlasts the other: a client left waiting on a request
-/// the daemon has already abandoned would hang for the difference.
+/// ends so neither outlasts the other. One constant rather than two
+/// literals, which is how the pair drifted apart.
 ///
 /// A legitimately slow command (Enable's ~5 s pipeline handshake, possibly
 /// queued behind another client's) stays well inside it; only a genuinely
@@ -162,10 +162,6 @@ pub enum DaemonResponse {
 /// control socket in whatever directory the process happens to run from,
 /// outside the 0700 runtime dir and reachable by every other local user.
 /// One `is_absolute` check rejects all three.
-///
-/// Public because the client-side spawn path resolves the daemon's log file
-/// against the same directory; a second resolver there is what let the two
-/// drift apart.
 pub fn runtime_dir() -> Result<PathBuf, std::io::Error> {
     runtime_dir_from(std::env::var("XDG_RUNTIME_DIR").ok().as_deref()).ok_or_else(|| {
         std::io::Error::new(
@@ -200,8 +196,9 @@ fn get_pid_file_path() -> Result<PathBuf, std::io::Error> {
 /// shared system. Failing here is what makes the client report the missing
 /// runtime dir rather than a spawn error downstream of it.
 ///
-/// Clients open this append-only and the winning daemon truncates it once,
-/// so two clients racing to spawn cannot interleave into it.
+/// Clients open this append-only and only the winning daemon truncates it,
+/// so two clients racing to spawn cannot clobber each other's writes or
+/// strand one of them at a stale offset.
 pub fn daemon_log_path() -> Result<PathBuf, std::io::Error> {
     Ok(runtime_dir()?.join("spectral-daemon.log"))
 }
@@ -356,8 +353,9 @@ impl DaemonServer {
         })
     }
 
-    /// Waits for the next client. Blocks until one connects, the process is
-    /// signaled, or [`wake_accept_loop`] pokes the socket.
+    /// Waits for the next client. Blocks until one connects — including the
+    /// throwaway connection [`wake_accept_loop`] makes to release a
+    /// shutting-down daemon.
     pub fn accept(&self) -> Result<DaemonConnection, std::io::Error> {
         let (stream, _) = self.listener.accept()?;
         Ok(DaemonConnection {

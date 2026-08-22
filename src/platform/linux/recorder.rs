@@ -47,15 +47,16 @@ use std::time::Duration;
 const MONO: u32 = pipewire::spa::sys::SPA_AUDIO_CHANNEL_MONO;
 
 /// Set while a recorder thread owns the two WAV paths, cleared by that
-/// thread on its way out — after both writers are finalized.
+/// thread on its way out — once every writer it opened is finalized or
+/// dropped.
 ///
 /// A session whose ready handshake times out is abandoned rather than
 /// joined, because joining a wedged setup would hang the daemon (the same
-/// call the pipeline makes). But it opened both writers before the
-/// handshake, so it still holds them and will finalize them, and finalize
-/// seeks to offset 0 to rewrite the header. The paths are fixed, so
-/// without this gate the next session could truncate and reopen them
-/// first and take that header write into the middle of its own recording.
+/// call the pipeline makes). But it holds at least the raw writer by then
+/// and will finalize what it holds, and finalize seeks to offset 0 to
+/// rewrite the header. The paths are fixed, so without this gate the next
+/// session could truncate and reopen them first and take that header write
+/// into the middle of its own recording.
 static RECORDER_SESSION_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// How long [`NativeRecorder::start`] waits for an abandoned session to
@@ -482,8 +483,9 @@ fn run_recorder(
     }
 
     // The loop above tests `running` before it drains, so a stop landing in
-    // the same 10 ms window as the failing write would leave the cause in the
-    // slot: finalized over, and reported as a clean recording.
+    // the same 10 ms window as a failing write would otherwise leave that
+    // cause in the capture slot's `write_error` — finalized over, and
+    // reported as a clean recording.
     if let Some(msg) = take_write_error(&raw_slot, &filtered_slot) {
         record_failure(failure, msg);
     }
