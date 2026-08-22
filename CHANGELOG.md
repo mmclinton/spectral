@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   next time a recording is made.
 
 ### Fixed
+- The unsaved-changes chips no longer slide under the Disable button at the
+  window's minimum width. Three chips did not fit the footer's left slot; the
+  row now collapses to the count alone from the third change onward, as it
+  already did from the fourth.
 - A single corrupt sample from the capture device no longer silences the
   virtual mic until it is toggled off and on. Non-finite samples poisoned
   both the rumble filter and the denoiser permanently, and because the
