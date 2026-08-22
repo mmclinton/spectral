@@ -947,10 +947,10 @@ mod tests {
         );
     }
 
+    /// Pid-scoped like the persistence tests' directories: two concurrent
+    /// cargo runs must not share one fixed /tmp name.
     fn tmp_wav_path(name: &str) -> PathBuf {
-        let mut p = std::env::temp_dir();
-        p.push(name);
-        p
+        std::env::temp_dir().join(format!("spectral_recorder_{}_{}", std::process::id(), name))
     }
 
     fn slot() -> Rc<RefCell<CaptureSlot>> {
@@ -1007,7 +1007,7 @@ mod tests {
         assert_eq!(WAV_SPEC.bits_per_sample, 32);
         assert_eq!(WAV_SPEC.sample_format, hound::SampleFormat::Float);
 
-        let path = tmp_wav_path("spectral_recorder_roundtrip.wav");
+        let path = tmp_wav_path("roundtrip.wav");
         let samples: Vec<f32> = (0..1000).map(|i| (i as f32) / 1000.0).collect();
 
         {
@@ -1032,7 +1032,7 @@ mod tests {
 
     #[test]
     fn player_loads_truncated_wav_without_panicking() {
-        let path = tmp_wav_path("spectral_recorder_truncated.wav");
+        let path = tmp_wav_path("truncated.wav");
         let samples: Vec<f32> = (0..2000).map(|i| (i as f32) / 2000.0).collect();
 
         // Write a valid WAV, finalize, then chop the tail off the file so
@@ -1065,7 +1065,7 @@ mod tests {
 
     #[test]
     fn player_rejects_wrong_spec() {
-        let path = tmp_wav_path("spectral_recorder_44k.wav");
+        let path = tmp_wav_path("44k.wav");
         let bad_spec = hound::WavSpec {
             channels: 1,
             sample_rate: 44100,
