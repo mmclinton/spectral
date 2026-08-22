@@ -1016,6 +1016,26 @@ mod tests {
         assert!(model.row_data(0).unwrap().meta.is_empty());
     }
 
+    /// The source list must not offer the virtual mic itself: every device
+    /// whose display name matches the mic's is dropped, by name and however
+    /// many times it occurs.
+    #[test]
+    fn filter_devices_hides_every_entry_named_like_the_mic() {
+        let devices = [
+            device(10, "Webcam"),
+            device(11, "Spectral-Mic"),
+            device(12, "Spectral-Mic"),
+        ];
+        let kept =
+            |filtered: &[AudioDevice]| -> Vec<u32> { filtered.iter().map(|d| d.id).collect() };
+
+        assert_eq!(kept(&filter_devices(&devices, "Spectral-Mic")), [10]);
+        // A mic name nothing matches leaves the list untouched.
+        assert_eq!(kept(&filter_devices(&devices, "Not-Built")), [10, 11, 12]);
+        // And an empty input stays empty.
+        assert!(filter_devices(&[], "Spectral-Mic").is_empty());
+    }
+
     #[test]
     fn no_chips_when_staged_settings_match_applied() {
         let devices = [device(10, "A")];
@@ -1070,6 +1090,8 @@ mod tests {
             // Out-of-range means "no device": a chip only when one is applied.
             (-1, &applied_none, false),
             (-1, &applied_some, true),
+            (9, &applied_none, false),
+            (9, &applied_some, true),
         ];
         for (idx, applied, expect_chip) in cases {
             let changes = changed_settings(
