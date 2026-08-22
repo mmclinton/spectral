@@ -55,12 +55,18 @@ work but have not been validated.
 
 ## Installation
 
-**Nix** and the **AUR** are the supported installation methods. A Flatpak manifest is
-included and builds cleanly, but it has not yet been through a Flathub review.
-Manual builds may work but are unsupported.
+Spectral is not in a distribution repository yet. The flake in this repository
+is the path that works today; the rest are in flight.
 
-The installation, build steps, and caveats for each are in
-[docs/INSTALLATION.md](docs/INSTALLATION.md).
+| Path | Status |
+| --- | --- |
+| Nix flake (this repository) | Works today |
+| nixpkgs `spectral-mic` | Submitted, in review |
+| AUR `spectral-mic` | Submission pending — build from the PKGBUILD meanwhile |
+| Flatpak | Builds from the included manifest; not on Flathub |
+
+Manual builds may work but are unsupported. The commands, build steps, and
+caveats for each path are in [docs/INSTALLATION.md](docs/INSTALLATION.md).
 
 ## Usage
 

@@ -1,8 +1,9 @@
 # Installation
 
-Nix and the AUR are the supported installation methods. A Flatpak manifest is
-included and builds cleanly, but it has not yet been through a Flathub review.
-Manual builds may work but are unsupported.
+Spectral is not in a distribution repository yet: the flake below is the path
+that works today, the nixpkgs package is in review, and the AUR submission is
+pending. A Flatpak manifest is included and builds cleanly, but it has not been
+through a Flathub review. Manual builds may work but are unsupported.
 
 Spectral needs Linux with **PipeWire** and its session manager,
 **WirePlumber**, on Wayland or X11, x86_64 or aarch64.
