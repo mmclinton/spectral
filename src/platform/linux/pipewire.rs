@@ -924,7 +924,7 @@ mod tests {
     }
 
     #[test]
-    fn test_audio_format_pod_creation() {
+    fn format_pods_build_with_and_without_channel_positions() {
         let result = build_audio_format_pod(AudioFormat::F32LE, 48000, 2, None);
         assert!(result.is_ok(), "Should be able to create audio format pod");
         let pod_bytes = result.unwrap();
