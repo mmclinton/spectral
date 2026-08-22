@@ -532,11 +532,11 @@ mod tests {
     /// variant cannot be added without authoring its wire form: the match is
     /// exhaustive, and an arm has nothing to return but a `&str`.
     ///
-    /// It does not pin the form: this is only called from the loop over
-    /// `cases`, so a variant with an arm but no `cases` entry is never
-    /// compared, and an arm returning a wrong literal is just as green. The
-    /// guard puts the wire form in front of whoever adds a variant;
-    /// extending `cases` is still on them.
+    /// Each golden is compared against what serde actually produced by the
+    /// loops in the tests above, so a drifted literal or wire form fails
+    /// loudly. What this helper cannot do is force coverage: an arm whose
+    /// variant never joins `cases` is never compared at all. Extending
+    /// `cases` is part of adding the variant.
     ///
     /// `Enable` is split by shape because the table exercises it twice.
     fn command_golden(command: &DaemonCommand) -> &'static str {
