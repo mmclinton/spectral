@@ -1,12 +1,8 @@
 # Installation
 
-Spectral is not in a distribution repository yet: the flake below is the path
-that works today, the nixpkgs package is in review, and the AUR submission is
-pending. A Flatpak manifest is included and builds cleanly, but it has not been
-through a Flathub review. Manual builds may work but are unsupported.
+Spectral is not in a distribution repository yet: the flake below is the path that works today, the nixpkgs package is in review, and the AUR submission is pending. A Flatpak manifest is included and builds cleanly, but it has not been through a Flathub review. Manual builds may work but are unsupported.
 
-Spectral needs Linux with **PipeWire** and its session manager,
-**WirePlumber**, on Wayland or X11, x86_64 or aarch64.
+Spectral needs Linux with **PipeWire** and its session manager, **WirePlumber**, on Wayland or X11, x86_64 or aarch64.
 
 - [NixOS / Nix](#nixos--nix)
 - [Arch Linux (AUR)](#arch-linux-aur)
@@ -14,8 +10,7 @@ Spectral needs Linux with **PipeWire** and its session manager,
 
 ## NixOS / Nix
 
-A nixpkgs package has been submitted and is in review. Until it lands, install
-from this flake.
+A nixpkgs package has been submitted and is in review. Until it lands, install from this flake.
 
 ### Try it, or install into your profile
 
@@ -69,8 +64,7 @@ If you prefer manual control over installation:
 
 ## Arch Linux (AUR)
 
-**Spectral is not on the AUR yet.** Submission of `spectral-mic` is pending;
-once it lands, this becomes the install command:
+**Spectral is not on the AUR yet.** Submission of `spectral-mic` is pending; once it lands, this becomes the install command:
 
 ```bash
 paru -S spectral-mic   # or: yay -S spectral-mic — not available yet
@@ -84,18 +78,13 @@ cd spectral/packaging/aur
 makepkg -si
 ```
 
-The PKGBUILD fetches and builds the pinned latest release tarball (currently
-v0.8.0), not the checkout it sits in, and declares x86_64 only — no aarch64
-Arch system has been tested.
+The PKGBUILD fetches and builds the pinned latest release tarball (currently v0.8.0), not the checkout it sits in, and declares x86_64 only — no aarch64 Arch system has been tested.
 
-The package is named `spectral-mic` rather than `spectral` because the
-unrelated AUR package of that name ships a binary called `spectral` too. The
-PKGBUILD is maintained here under [packaging/aur](../packaging/aur).
+The package is named `spectral-mic` rather than `spectral` because the unrelated AUR package of that name ships a binary called `spectral` too. The PKGBUILD is maintained here under [packaging/aur](../packaging/aur).
 
 ## Flatpak
 
-**Spectral is not on Flathub yet.** Until it is, build the Flatpak yourself —
-it needs only `flatpak` and the Flathub remote:
+**Spectral is not on Flathub yet.** Until it is, build the Flatpak yourself — it needs only `flatpak` and the Flathub remote:
 
 ```bash
 flatpak install -y flathub org.flatpak.Builder
@@ -106,10 +95,7 @@ flatpak run --command=flathub-build org.flatpak.Builder --install \
 flatpak run page.codeberg.mmc.Spectral
 ```
 
-One difference from the native packages is worth knowing before you choose this
-route: Flatpak exports a single command per application, named after the app ID,
-so the [headless CLI](CLI.md) answers to `page.codeberg.mmc.Spectral` rather
-than to `spectral`:
+One difference from the native packages is worth knowing before you choose this route: Flatpak exports a single command per application, named after the app ID, so the [headless CLI](CLI.md) answers to `page.codeberg.mmc.Spectral` rather than to `spectral`:
 
 ```bash
 page.codeberg.mmc.Spectral devices
@@ -117,5 +103,4 @@ page.codeberg.mmc.Spectral devices
 
 Alias it if the full name grates — Flatpak has no way to export a shorter one.
 
-Details, including the full permission set and what a Flathub submission would
-change, are in [packaging/flatpak](../packaging/flatpak).
+Details, including the full permission set and what a Flathub submission would change, are in [packaging/flatpak](../packaging/flatpak).
