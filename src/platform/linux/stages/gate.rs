@@ -175,8 +175,11 @@ mod tests {
                 unity_frames += 1;
             }
         }
-        // 2 queued voice frames + HOLD_FRAMES of hold.
-        assert_eq!(unity_frames, 2 + HOLD_FRAMES as i32);
+        // The LOOKAHEAD_FRAMES queued voice frames + HOLD_FRAMES of hold.
+        assert_eq!(
+            unity_frames,
+            (LOOKAHEAD_FRAMES + HOLD_FRAMES as usize) as i32
+        );
         assert!(last.iter().all(|&s| (s - FLOOR).abs() < 1e-6), "{last:?}");
         // And it stays on the floor, never below.
         let settled = run(&mut gate, 1.0, 0.0, Some(OPEN));
