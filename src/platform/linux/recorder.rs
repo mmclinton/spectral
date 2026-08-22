@@ -962,10 +962,12 @@ mod tests {
         }))
     }
 
-    /// One read drains at most one slot, the raw side wins when both hold a
-    /// cause, and reading clears what it took — the recorder loop calls this
-    /// every iteration, so a cause that survived a read would tear the
-    /// recording down on stale news.
+    /// The raw side wins when both slots hold a cause, and a read takes what
+    /// it reports rather than peeking at it, so the recorder loop — which
+    /// calls this every iteration — cannot tear a recording down twice on
+    /// one cause. The short circuit leaves the losing cause in place, which
+    /// is harmless: the loop stops on the first `Some`, and `record_failure`
+    /// keeps the first error regardless.
     #[test]
     fn a_raw_write_error_wins_and_reading_clears_what_it_took() {
         let raw = slot();

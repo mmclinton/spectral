@@ -532,9 +532,9 @@ mod tests {
     /// variant cannot be added without authoring its wire form: the match is
     /// exhaustive, and an arm has nothing to return but a `&str`.
     ///
-    /// Each golden is compared against what serde actually produced by the
-    /// loops in the tests above, so a drifted literal or wire form fails
-    /// loudly. What this helper cannot do is force coverage: an arm whose
+    /// Each golden is compared against what serde actually produced, by the
+    /// round-trip loop in the test above, so a drifted literal or wire form
+    /// fails loudly. What this helper cannot do is force coverage: an arm whose
     /// variant never joins `cases` is never compared at all. Extending
     /// `cases` is part of adding the variant.
     ///
