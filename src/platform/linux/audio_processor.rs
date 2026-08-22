@@ -150,7 +150,31 @@ impl VirtualMic {
 
 #[cfg(test)]
 mod tests {
-    use super::vad_cutoff;
+    use super::{AudioProcessor, vad_cutoff};
+    use crate::platform::linux::pipewire::{RNNOISE_FRAME_SIZE, SAMPLE_RATE};
+    use crate::platform::linux::stages::gate::LOOKAHEAD_FRAMES;
+    use crate::state::AppState;
+    use std::sync::Arc;
+    use std::sync::atomic::Ordering;
+
+    fn sine(freq_hz: f64, amplitude: f32, frame_idx: usize) -> Vec<f32> {
+        (0..RNNOISE_FRAME_SIZE)
+            .map(|i| {
+                let n = (frame_idx * RNNOISE_FRAME_SIZE + i) as f64;
+                (std::f64::consts::TAU * freq_hz * n / f64::from(SAMPLE_RATE)).sin() as f32
+                    * amplitude
+            })
+            .collect()
+    }
+
+    fn frame_rms(frame: &[f32]) -> f64 {
+        (frame
+            .iter()
+            .map(|&s| f64::from(s) * f64::from(s))
+            .sum::<f64>()
+            / frame.len().max(1) as f64)
+            .sqrt()
+    }
 
     #[test]
     fn threshold_maps_linearly_onto_the_vad_cutoff() {
@@ -174,5 +198,131 @@ mod tests {
                 _ => panic!("threshold {threshold}: got {got:?}, expected {expected:?}"),
             }
         }
+    }
+
+    /// The latency every setting depends on: whatever the input and whether
+    /// the gate is engaged (50) or bypassed (0), the first
+    /// [`LOOKAHEAD_FRAMES`] calls emit exact priming zeros and a marked
+    /// input frame re-emerges exactly [`LOOKAHEAD_FRAMES`] calls later —
+    /// attenuated by the closed gate in the engaged run, never shifted.
+    #[test]
+    fn output_is_delayed_exactly_lookahead_frames_at_any_threshold() {
+        for threshold in [50, 0] {
+            let state = Arc::new(AppState::new());
+            state.threshold_val.store(threshold, Ordering::Relaxed);
+            let mut processor = AudioProcessor::new(state);
+            let lead_in = 10;
+            let mut outputs = Vec::new();
+            for frame_idx in 0..lead_in + LOOKAHEAD_FRAMES + 3 {
+                let input = if frame_idx == lead_in {
+                    vec![30_000.0; RNNOISE_FRAME_SIZE]
+                } else {
+                    vec![0.0; RNNOISE_FRAME_SIZE]
+                };
+                let mut output = vec![0.0; RNNOISE_FRAME_SIZE];
+                processor.process_frame(&input, &mut output);
+                outputs.push(output);
+            }
+
+            for frame in &outputs[..LOOKAHEAD_FRAMES] {
+                assert!(
+                    frame.iter().all(|&s| s == 0.0),
+                    "threshold {threshold}: priming frames must be exact zeros"
+                );
+            }
+            // Emergence, not argmax: once the gate opens, later ring-out
+            // frames can outrank the impulse itself. The silence floor comes
+            // off the pre-impulse frames; digital silence has measured as
+            // exact zeros, so the epsilon only guards a future denoiser that
+            // leaks a little.
+            let floor = outputs[..lead_in]
+                .iter()
+                .skip(LOOKAHEAD_FRAMES)
+                .fold(0.0f32, |m, f| {
+                    m.max(f.iter().fold(0.0f32, |mm, &s| mm.max(s.abs())))
+                });
+            let above = |peak: f32| peak > floor * 20.0 + 1.0;
+            let emergence = outputs
+                .iter()
+                .enumerate()
+                .skip_while(|(i, _)| *i < lead_in)
+                .find(|(_, f)| above(f.iter().fold(0.0f32, |m, &s| m.max(s.abs()))))
+                .map(|(i, _)| i);
+            assert_eq!(
+                emergence,
+                Some(lead_in + LOOKAHEAD_FRAMES),
+                "threshold {threshold}: impulse did not first emerge one lookahead later"
+            );
+        }
+    }
+
+    /// Flipping the rumble-filter atomic has to change what comes out — the
+    /// high-pass sits in the live chain ahead of the denoiser. Two runs of
+    /// identical 20 Hz input differ only in that atomic; asserting their RMS
+    /// ratio keeps the claim independent of how much RNNoise itself
+    /// attenuates rumble. Threshold 0 takes the gate out of both runs.
+    #[test]
+    fn the_rumble_filter_atomic_attenuates_rumble_in_the_live_chain() {
+        let run = |enabled: bool| -> f64 {
+            let state = Arc::new(AppState::new());
+            state.threshold_val.store(0, Ordering::Relaxed);
+            state.rumble_filter.store(enabled, Ordering::Relaxed);
+            let mut processor = AudioProcessor::new(state);
+            let frames = 200;
+            let (mut sum_squares, mut count) = (0.0f64, 0usize);
+            for frame_idx in 0..frames {
+                let input = sine(20.0, 8000.0, frame_idx);
+                let mut output = vec![0.0; RNNOISE_FRAME_SIZE];
+                processor.process_frame(&input, &mut output);
+                if frame_idx >= frames / 2 {
+                    sum_squares += frame_rms(&output) * frame_rms(&output);
+                    count += 1;
+                }
+            }
+            (sum_squares / count as f64).sqrt()
+        };
+
+        let filtered = run(true);
+        let unfiltered = run(false);
+        assert!(
+            filtered * 2.0 < unfiltered,
+            "filtered rms {filtered} is not far below unfiltered {unfiltered}"
+        );
+    }
+
+    /// Flipping the auto-level atomic has to engage the AGC in the live
+    /// chain: repeated quiet input keeps getting louder while it is on and
+    /// comes out level while it is off. A 1 kHz tone keeps the real VAD
+    /// confidently voiced (measured mean ~0.99), so the stage's vad-freeze
+    /// branch stays out of the comparison; threshold 0 bypasses the gate.
+    #[test]
+    fn the_auto_level_atomic_engages_the_agc_in_the_live_chain() {
+        let growth = |enabled: bool| -> f64 {
+            let state = Arc::new(AppState::new());
+            state.threshold_val.store(0, Ordering::Relaxed);
+            state.auto_level.store(enabled, Ordering::Relaxed);
+            let mut processor = AudioProcessor::new(state);
+            let frames = 400;
+            let (mut early_sum, mut late_sum) = (0.0f64, 0.0f64);
+            for frame_idx in 0..frames {
+                let input = sine(1000.0, 2000.0, frame_idx);
+                let mut output = vec![0.0; RNNOISE_FRAME_SIZE];
+                processor.process_frame(&input, &mut output);
+                if frame_idx < 50 {
+                    early_sum += frame_rms(&output);
+                } else {
+                    late_sum += frame_rms(&output);
+                }
+            }
+            (late_sum / (frames - 50) as f64) / (early_sum / 50.0)
+        };
+
+        let growing = growth(true);
+        assert!(
+            growing > 1.5,
+            "agc on: late/early rms ratio {growing} shows no ride"
+        );
+        let flat = growth(false);
+        assert!(flat < 1.15, "agc off: late/early rms ratio {flat} drifted");
     }
 }
