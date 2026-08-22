@@ -37,14 +37,14 @@ Confirmed working on x86_64 NixOS and on aarch64 Asahi Linux (Ubuntu on an M1 Ma
 
 ## Installation
 
-Spectral is not in a distribution repository yet. The flake in this repository is the path that works today; the rest are in flight.
+Spectral is in nixpkgs as `spectral-mic`. The other paths are still in flight.
 
-| Path | Status |
-| --- | --- |
-| Nix flake (this repository) | Works today |
-| nixpkgs `spectral-mic` | Submitted, in review |
-| AUR `spectral-mic` | Submission pending — build from the PKGBUILD meanwhile |
-| Flatpak | Builds from the included manifest; not on Flathub |
+| Path                        | Status                                                        |
+| --------------------------- | ------------------------------------------------------------- |
+| nixpkgs `spectral-mic`      | On the unstable channels; on stable at the next NixOS release |
+| Nix flake (this repository) | Tracks the latest commit, and carries the NixOS module        |
+| AUR `spectral-mic`          | Submission pending — build from the PKGBUILD meanwhile        |
+| Flatpak                     | Builds from the included manifest; not on Flathub             |
 
 Manual builds may work but are unsupported. The commands, build steps, and caveats for each path are in [docs/INSTALLATION.md](docs/INSTALLATION.md).
 

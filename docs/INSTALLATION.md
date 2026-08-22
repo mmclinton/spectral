@@ -1,6 +1,6 @@
 # Installation
 
-Spectral is not in a distribution repository yet: the flake below is the path that works today, the nixpkgs package is in review, and the AUR submission is pending. A Flatpak manifest is included and builds cleanly, but it has not been through a Flathub review. Manual builds may work but are unsupported.
+Spectral is in nixpkgs as `spectral-mic`. The AUR submission is still pending, and a Flatpak manifest is included and builds cleanly but has not been through a Flathub review. Manual builds may work but are unsupported.
 
 Spectral needs Linux with **PipeWire** and its session manager, **WirePlumber**, on Wayland or X11, x86_64 or aarch64.
 
@@ -10,7 +10,18 @@ Spectral needs Linux with **PipeWire** and its session manager, **WirePlumber**,
 
 ## NixOS / Nix
 
-A nixpkgs package has been submitted and is in review. Until it lands, install from this flake.
+Spectral is in nixpkgs as `spectral-mic` — the attribute carries the suffix, the binary it installs is `spectral`. It is on the unstable channels; a stable NixOS release picks it up at its next branch-off.
+
+```nix
+environment.systemPackages = [ pkgs.spectral-mic ];
+```
+
+```bash
+# Or run it once, without installing anything
+nix run nixpkgs#spectral-mic
+```
+
+The flake in this repository is the other Nix path, and it is not redundant: it tracks the latest commit rather than the last release, and it carries a NixOS module that nixpkgs does not ship. Note that its overlay provides `pkgs.spectral`, not `pkgs.spectral-mic`.
 
 ### Try it, or install into your profile
 
