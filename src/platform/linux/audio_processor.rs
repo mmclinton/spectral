@@ -304,7 +304,8 @@ mod tests {
                 let mut output = vec![0.0; RNNOISE_FRAME_SIZE];
                 processor.process_frame(&input, &mut output);
                 if frame_idx >= frames / 2 {
-                    sum_squares += frame_rms(&output) * frame_rms(&output);
+                    let rms = frame_rms(&output);
+                    sum_squares += rms * rms;
                     count += 1;
                 }
             }
