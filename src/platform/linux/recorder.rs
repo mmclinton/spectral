@@ -996,8 +996,17 @@ mod tests {
         );
     }
 
+    /// The WAV contract both ends of the voice test share: mono at
+    /// [`SAMPLE_RATE`], 32-bit float. Pinned field by field, then proven to
+    /// write and read back sample-stable, so a hound upgrade that changed
+    /// float handling fails here instead of quietly corrupting recordings.
     #[test]
-    fn wav_spec_roundtrips() {
+    fn the_wav_spec_is_mono_float_at_the_pipeline_rate_and_roundtrips() {
+        assert_eq!(WAV_SPEC.channels, 1);
+        assert_eq!(WAV_SPEC.sample_rate, SAMPLE_RATE);
+        assert_eq!(WAV_SPEC.bits_per_sample, 32);
+        assert_eq!(WAV_SPEC.sample_format, hound::SampleFormat::Float);
+
         let path = tmp_wav_path("spectral_recorder_roundtrip.wav");
         let samples: Vec<f32> = (0..1000).map(|i| (i as f32) / 1000.0).collect();
 
@@ -1077,17 +1086,6 @@ mod tests {
             "expected a clear spec-rejection error, got: {msg}"
         );
         let _ = std::fs::remove_file(&path);
-    }
-
-    /// Pins the WAV spec the recorder writes and `load_wav` demands, with the
-    /// rate taken from `SAMPLE_RATE` so a rate change cannot desync the two
-    /// ends of the voice test.
-    #[test]
-    fn wav_spec_pins_the_voice_test_contract() {
-        assert_eq!(WAV_SPEC.channels, 1);
-        assert_eq!(WAV_SPEC.sample_rate, SAMPLE_RATE);
-        assert_eq!(WAV_SPEC.bits_per_sample, 32);
-        assert_eq!(WAV_SPEC.sample_format, hound::SampleFormat::Float);
     }
 
     /// The daemon-side cap is a backstop for an orphaned recording, not a
