@@ -953,6 +953,49 @@ mod tests {
         p
     }
 
+    fn slot() -> Rc<RefCell<CaptureSlot>> {
+        Rc::new(RefCell::new(CaptureSlot {
+            writer: None,
+            samples_since_flush: 0,
+            samples_written: 0,
+            write_error: None,
+        }))
+    }
+
+    /// One read drains at most one slot, the raw side wins when both hold a
+    /// cause, and reading clears what it took — the recorder loop calls this
+    /// every iteration, so a cause that survived a read would tear the
+    /// recording down on stale news.
+    #[test]
+    fn a_raw_write_error_wins_and_reading_clears_what_it_took() {
+        let raw = slot();
+        let filtered = slot();
+
+        assert_eq!(take_write_error(&raw, &filtered), None);
+
+        filtered.borrow_mut().write_error = Some("filtered: disk full".to_string());
+        assert_eq!(
+            take_write_error(&raw, &filtered).as_deref(),
+            Some("filtered: disk full")
+        );
+        assert!(
+            take_write_error(&raw, &filtered).is_none(),
+            "the read must clear"
+        );
+
+        raw.borrow_mut().write_error = Some("raw: disk full".to_string());
+        filtered.borrow_mut().write_error = Some("filtered: disk full".to_string());
+        assert_eq!(
+            take_write_error(&raw, &filtered).as_deref(),
+            Some("raw: disk full")
+        );
+        // The raw win short-circuits: the filtered cause is left in place.
+        assert_eq!(
+            filtered.borrow().write_error.as_deref(),
+            Some("filtered: disk full")
+        );
+    }
+
     #[test]
     fn wav_spec_roundtrips() {
         let path = tmp_wav_path("spectral_recorder_roundtrip.wav");
