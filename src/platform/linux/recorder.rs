@@ -817,20 +817,30 @@ fn run_player(
         if lock_or_recover(failure).is_some() {
             break;
         }
-        if eof.load(Ordering::SeqCst) {
-            break;
-        }
+        // Ready before eof: the process callback runs on the RT thread and
+        // can exhaust a very short clip before this loop dispatches the
+        // state change that sets `ready`. Testing eof first would leave
+        // `ready_sent` false and report a clip that simply ended as a setup
+        // failure.
         if !ready_sent && ready.get() {
             ready_sent = true;
             let _ = ready_tx.send(Ok(()));
         }
+        if eof.load(Ordering::SeqCst) {
+            break;
+        }
     }
 
     if !ready_sent {
-        let msg = lock_or_recover(failure)
-            .clone()
-            .unwrap_or_else(|| "player stopped before becoming ready".to_string());
-        let _ = ready_tx.send(Err(msg));
+        // A clip exhausted before the loop ever saw `ready` played fine —
+        // the state change just never got dispatched. Only a recorded
+        // failure makes this a setup error.
+        let failed = lock_or_recover(failure).clone();
+        let _ = match failed {
+            Some(msg) => ready_tx.send(Err(msg)),
+            None if eof.load(Ordering::SeqCst) => ready_tx.send(Ok(())),
+            None => ready_tx.send(Err("player stopped before becoming ready".to_string())),
+        };
     }
 
     mainloop.quit();
