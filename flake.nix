@@ -5,6 +5,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     rust-overlay.url = "github:oxalica/rust-overlay";
     flake-utils.url = "github:numtide/flake-utils";
+    crane.url = "github:ipetkov/crane";
   };
 
   outputs =
@@ -13,11 +14,12 @@
       nixpkgs,
       rust-overlay,
       flake-utils,
+      crane,
       ...
     }:
     let
       systemIndependentOutputs = {
-        overlays.default = import ./nix/overlay.nix;
+        overlays.default = import ./nix/overlay.nix { inherit crane; };
 
         nixosModules.default = import ./nix/module.nix;
         nixosModules.spectral = import ./nix/module.nix;
@@ -28,7 +30,7 @@
         let
           pkgs = import nixpkgs { inherit system; };
 
-          spectral = pkgs.callPackage ./nix/package.nix { };
+          spectral = pkgs.callPackage ./nix/package.nix { craneLib = crane.mkLib pkgs; };
 
           rustPkgs = import nixpkgs {
             inherit system;
@@ -71,46 +73,7 @@
 
           checks = {
             build = spectral;
-
-            clippy = spectral.overrideAttrs (old: {
-              pname = "spectral-clippy";
-              nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.clippy ];
-              buildPhase = ''
-                runHook preBuild
-                cargo clippy --all-targets --locked -- --deny warnings
-                runHook postBuild
-              '';
-              doCheck = false;
-              doInstallCheck = false;
-              installPhase = "touch $out";
-            });
-
-            tests = spectral.overrideAttrs (old: {
-              pname = "spectral-tests";
-              buildPhase = ''
-                runHook preBuild
-                cargo test --locked
-                runHook postBuild
-              '';
-              doCheck = false;
-              doInstallCheck = false;
-              installPhase = "touch $out";
-            });
-
-            fmt =
-              pkgs.runCommand "spectral-fmt"
-                {
-                  nativeBuildInputs = [
-                    pkgs.cargo
-                    pkgs.rustfmt
-                  ];
-                }
-                ''
-                  cd ${self}
-                  export CARGO_HOME="$TMPDIR/cargo"
-                  cargo fmt --check
-                  touch $out
-                '';
+            inherit (spectral.passthru.tests) clippy unit fmt;
           };
 
           apps.default = {
