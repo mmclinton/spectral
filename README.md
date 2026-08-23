@@ -33,7 +33,7 @@ Spectral runs a microphone you choose through the RNNoise neural network and exp
 - Wayland or X11
 - x86_64 or aarch64
 
-Confirmed working on x86_64 NixOS and on aarch64 Asahi Linux (Ubuntu on an M1 MacBook Pro). Other PipeWire distributions on these architectures should work but have not been validated.
+Confirmed working on x86_64 and on aarch64.
 
 ## Installation
 

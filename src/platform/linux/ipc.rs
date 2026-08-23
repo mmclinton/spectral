@@ -15,8 +15,7 @@ const DAEMON_EXIT_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 /// Ceiling on waiting for the other side of a connection, applied by both
-/// ends so neither outlasts the other. One constant rather than two
-/// literals, which is how the pair drifted apart.
+/// ends so neither outlasts the other.
 ///
 /// A legitimately slow command (Enable's ~5 s pipeline handshake, possibly
 /// queued behind another client's) stays well inside it; only a genuinely

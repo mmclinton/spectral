@@ -374,7 +374,6 @@ fn run_pipeline(
 
     let ready = Rc::new(ReadyFlags::default());
 
-    // "target.object" used since NODE_TARGET isn't exposed in the Rust bindings
     let capture_props = properties! {
         *pipewire::keys::MEDIA_TYPE => "Audio",
         *pipewire::keys::MEDIA_CATEGORY => "Capture",

@@ -217,10 +217,10 @@ mod tests {
     /// later — the gate's delay line, whose first [`LOOKAHEAD_FRAMES`]
     /// outputs are its priming zeros — and the frame's energy peaks one
     /// call after that, which is RNNoise's own 10 ms algorithmic delay.
-    /// The two together are the 30 ms `docs/ARCHITECTURE.md` documents;
-    /// pinning them apart means a change in either names the stage that
-    /// moved. An engaged threshold and the bypass both run, because the
-    /// delay must not follow the settings.
+    /// The two together are the 10 ms and the 20 ms `docs/ARCHITECTURE.md`
+    /// documents; pinning them apart means a change in either names the
+    /// stage that moved. An engaged threshold and the bypass both run,
+    /// because the delay must not follow the settings.
     ///
     /// The impulse is loud enough that RNNoise's VAD calls it voice and the
     /// lookahead pre-opens the gate, so both runs come out through an open
