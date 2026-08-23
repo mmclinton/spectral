@@ -7,6 +7,7 @@
 {
   lib,
   craneLib,
+  rustToolchain,
   rustPlatform,
   pkg-config,
   makeWrapper,
@@ -22,6 +23,11 @@
   versionCheckHook,
 }:
 let
+  # rust-overlay ships upstream's optimized rustc, which compiles this crate
+  # in 28 s where nixpkgs's from-source build takes 48. It is also the dev
+  # shell's toolchain, so the checks lint and format with the same versions.
+  craneLib' = craneLib.overrideToolchain rustToolchain;
+
   pname = "spectral";
   version = "0.8.0";
 
@@ -86,9 +92,9 @@ let
     env.NIX_OUTPATH_USED_AS_RANDOM_SEED = "spectral00";
   };
 
-  cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+  cargoArtifacts = craneLib'.buildDepsOnly commonArgs;
 in
-craneLib.buildPackage (
+craneLib'.buildPackage (
   commonArgs
   // {
     inherit cargoArtifacts;
@@ -121,7 +127,7 @@ craneLib.buildPackage (
       inherit linkedLibs dlopenLibs cargoArtifacts;
 
       tests = {
-        clippy = craneLib.cargoClippy (
+        clippy = craneLib'.cargoClippy (
           commonArgs
           // {
             inherit cargoArtifacts;
@@ -129,9 +135,9 @@ craneLib.buildPackage (
           }
         );
 
-        unit = craneLib.cargoTest (commonArgs // { inherit cargoArtifacts; });
+        unit = craneLib'.cargoTest (commonArgs // { inherit cargoArtifacts; });
 
-        fmt = craneLib.cargoFmt {
+        fmt = craneLib'.cargoFmt {
           inherit pname version;
           # rustfmt.toml is not a build input, so it joins the source only
           # here.

@@ -19,7 +19,7 @@
     }:
     let
       systemIndependentOutputs = {
-        overlays.default = import ./nix/overlay.nix { inherit crane; };
+        overlays.default = import ./nix/overlay.nix { inherit crane rust-overlay; };
 
         nixosModules.default = import ./nix/module.nix;
         nixosModules.spectral = import ./nix/module.nix;
@@ -30,20 +30,16 @@
         let
           pkgs = import nixpkgs { inherit system; };
 
-          spectral = pkgs.callPackage ./nix/package.nix { craneLib = crane.mkLib pkgs; };
-
           rustPkgs = import nixpkgs {
             inherit system;
             overlays = [ (import rust-overlay) ];
           };
 
-          rustToolchain = rustPkgs.rust-bin.stable.latest.default.override {
-            extensions = [
-              "rust-analyzer"
-              "rust-src"
-              "rustfmt"
-              "clippy"
-            ];
+          rustToolchain = rustPkgs.rust-bin.stable.latest.default;
+
+          spectral = pkgs.callPackage ./nix/package.nix {
+            craneLib = crane.mkLib pkgs;
+            inherit rustToolchain;
           };
 
         in
@@ -55,7 +51,12 @@
             nativeBuildInputs = [ pkgs.rustPlatform.bindgenHook ];
 
             buildInputs = [
-              rustToolchain
+              (rustToolchain.override {
+                extensions = [
+                  "rust-analyzer"
+                  "rust-src"
+                ];
+              })
               pkgs.pkg-config
               pkgs.gh
               pkgs.pacman
