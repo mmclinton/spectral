@@ -81,6 +81,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   virtual mic is unaffected — it still outlives the window.
 - The Help links now open on minimal systems: the Nix package puts
   `xdg-open` on the GUI's PATH instead of relying on the host to provide it.
+- The close button on the Help and device-troubleshooting views, and the
+  play buttons in the voice test, now center their marks. They were drawn
+  as text characters, which a font places by its own metrics rather than
+  by the button, and the close mark came from whichever fallback font
+  happened to supply it.
 
 ### Changed
 - The threshold band no longer dims while the mic is off. The threshold can
