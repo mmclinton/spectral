@@ -83,6 +83,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `xdg-open` on the GUI's PATH instead of relying on the host to provide it.
 
 ### Changed
+- The threshold band no longer dims while the mic is off. The threshold can
+  be set before Enable, like the device and the mic name, so dimming it
+  mislabeled a live control as inert.
 - The rounded chips and the toggles carry a 2px border instead of 1px: the
   status pill, the error chip, the unsaved-changes chips, and the switch
   rail.
@@ -121,6 +124,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   even when the device list comes back unchanged.
 
 ### Changed
+- The threshold band no longer dims while the mic is off. The threshold can
+  be set before Enable, like the device and the mic name, so dimming it
+  mislabeled a live control as inert.
 - The control panel was redesigned around a resizable layout: an app bar
   (wordmark, status pill, links), a full-width threshold band with the
   gate's meaning and scale anchors inline, two columns of cards that
@@ -204,6 +210,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   speaks PipeWire natively.
 
 ### Changed
+- The threshold band no longer dims while the mic is off. The threshold can
+  be set before Enable, like the device and the mic name, so dimming it
+  mislabeled a live control as inert.
 - The interface now uses whichever monospaced font you have configured
   rather than insisting on JetBrains Mono. Nothing bundles or pins a font
   any more, and the Nix build no longer overrides your fontconfig setup
@@ -268,6 +277,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   field instead of disappearing behind them.
 
 ### Changed
+- The threshold band no longer dims while the mic is off. The threshold can
+  be set before Enable, like the device and the mic name, so dimming it
+  mislabeled a live control as inert.
 - The virtual-mic name limit is 20 characters (was 21), sized so a
   max-length name always fits the name field without scrolling. The CLI
   and daemon error messages now derive from the shared constant. A
@@ -277,6 +289,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.6.0] - 2026-07-17
 
 ### Changed
+- The threshold band no longer dims while the mic is off. The threshold can
+  be set before Enable, like the device and the mic name, so dimming it
+  mislabeled a live control as inert.
 - Voice-test recording and playback are now native PipeWire streams
   inside the daemon instead of spawned `pw-record`/`pw-play` child
   processes. This removes two runtime install dependencies (the
@@ -302,6 +317,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Off by default.
 
 ### Changed
+- The threshold band no longer dims while the mic is off. The threshold can
+  be set before Enable, like the device and the mic name, so dimming it
+  mislabeled a live control as inert.
 - The voice gate is rebuilt around how speech actually behaves: a constant
   20 ms lookahead opens the gain before a word's first syllable plays
   (RNNoise's voice detection lags onsets, which no attack speed could fix),
@@ -356,6 +374,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   profile: thin LTO, one codegen unit, stripped symbols; panic stays `unwind`.
 
 ### Changed
+- The threshold band no longer dims while the mic is off. The threshold can
+  be set before Enable, like the device and the mic name, so dimming it
+  mislabeled a live control as inert.
 - The daemon remembers the selected input device by PipeWire node name and
   re-resolves it when enabling, so re-enabling survives reboots and PipeWire
   restarts (numeric device ids are scoped to one PipeWire instance and go
@@ -405,6 +426,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   explanation instead of exiting before any window appeared.
 
 ### Changed
+- The threshold band no longer dims while the mic is off. The threshold can
+  be set before Enable, like the device and the mic name, so dimming it
+  mislabeled a live control as inert.
 - The virtual microphone is now a native PipeWire source owned by the
   daemon instead of PulseAudio null-sink + remap-source modules. Exactly
   one new device appears — an input; the "Spectral-DoNotUse" output device
@@ -470,6 +494,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.3] - 2026-07-06
 
 ### Changed
+- The threshold band no longer dims while the mic is off. The threshold can
+  be set before Enable, like the device and the mic name, so dimming it
+  mislabeled a live control as inert.
 - Locating the daemon socket now requires `XDG_RUNTIME_DIR` and fails with a clear
   error when it is unset. The previous `/tmp/runtime-$USER` fallback pointed at a
   directory that was never created, so connecting there could never succeed.
@@ -508,6 +535,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.1] - 2026-06-30
 
 ### Changed
+- The threshold band no longer dims while the mic is off. The threshold can
+  be set before Enable, like the device and the mic name, so dimming it
+  mislabeled a live control as inert.
 - Updated the project icon.
 
 ### Internal
@@ -526,6 +556,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mic-name input validation with live keystroke rejection in the GUI.
 
 ### Changed
+- The threshold band no longer dims while the mic is off. The threshold can
+  be set before Enable, like the device and the mic name, so dimming it
+  mislabeled a live control as inert.
 - Enabling now fails with a clear error when the audio pipeline cannot start, instead of
   presenting an active-but-silent virtual microphone.
 - Settings are persisted when you click Enable; the unused active-state restore was removed
