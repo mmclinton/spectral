@@ -23,7 +23,8 @@ export global Theme {
     // definition fastest below ~12px, and it truncates a requested size to
     // whole physical pixels — so the 10.5/11.5/12.5px steps this replaced
     // never rendered distinctly from 10/11/12px in the first place.
-    // Glyphs used as icons (▶ ■ ✕ ⌀) size to their box and stay literal.
+    // Glyphs that sit inline with text (● ■ ↻ ⌀) stay literal; the icons that
+    // have to center inside a button are outlines instead, in icons.slint.
     out property <length> font_caption: 12px;
     out property <length> font_body: 13px;
     out property <length> font_emphasis: 14px;

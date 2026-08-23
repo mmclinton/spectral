@@ -160,9 +160,9 @@ mod tests {
     #[test]
     fn loud_voice_is_cut_four_times_faster_than_boosts() {
         // -6 dBFS RMS input wants ~-12 dB of gain. At 12 dB/s the gain is
-        // already ~3.6 dB down after 30 frames — the old 3 dB/s pace would
-        // only have moved ~0.9 dB — and settles at the desired cut within
-        // ~1.2 s.
+        // already ~3.6 dB down after 30 frames — the boost pace of 3 dB/s
+        // would only have moved ~0.9 dB — and settles at the desired cut
+        // within ~1.2 s.
         let mut leveler = Leveler::new();
         let amplitude = 32768.0 * 0.501_19 * std::f32::consts::SQRT_2; // RMS -6 dBFS
         let after_30 = run_frames(&mut leveler, amplitude, 1.0, 30);

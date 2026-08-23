@@ -1,7 +1,7 @@
-// Hand-rolled controls sharing the app accent. Slint 1.15's std-widgets
-// Palette is read-only and the fluent widgets hardcode their own colors
-// (slint-ui/slint#9568 landed only after 1.15), so owning these controls
-// is the only way their accent can match the rest of the theme.
+// Hand-rolled controls sharing the app accent. std-widgets exposes every
+// Palette brush as `out` and the fluent widgets hardcode their own colors,
+// so owning these controls is the only way their accent can match the rest
+// of the theme.
 
 import { Theme } from "theme.slint";
 
@@ -114,7 +114,7 @@ export component AppSwitch {
 
         rail := Rectangle {
             border-radius: self.height / 2;
-            border-width: 1px;
+            border-width: 2px;
             background: !root.enabled ? Theme.border_subtle
                 : root.checked ? (touch.has-hover ? Theme.accent.brighter(0.15) : Theme.accent)
                 : (touch.has-hover ? Theme.border_subtle.brighter(0.6) : Theme.inset);

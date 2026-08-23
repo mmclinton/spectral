@@ -14,12 +14,15 @@ const DAEMON_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const DAEMON_EXIT_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
-/// Client-side ceiling on waiting for a response, matching the server's
-/// per-connection read timeout. A legitimately slow command (Enable's ~5 s
-/// pipeline handshake, possibly queued behind another client's) stays well
-/// inside it; only a genuinely wedged daemon trips it. Without this the
-/// GUI's event-loop thread would block forever on a dead daemon.
-const CLIENT_READ_TIMEOUT: Duration = Duration::from_secs(30);
+/// Ceiling on waiting for the other side of a connection, applied by both
+/// ends so neither outlasts the other.
+///
+/// A legitimately slow command (Enable's ~5 s pipeline handshake, possibly
+/// queued behind another client's) stays well inside it; only a genuinely
+/// wedged peer trips it. Without it the GUI's event-loop thread would
+/// block forever on a dead daemon, and a silent client would pin its
+/// handler thread just as long.
+const CONNECTION_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 mod pid_file {
     use std::fs;
@@ -37,8 +40,8 @@ mod pid_file {
             .and_then(|s| s.trim().parse().ok())
     }
 
-    /// Rewrites `file` (already opened and locked by the caller) with our
-    /// pid. Opened without truncate so a losing racer can't clobber the
+    /// Rewrites `file` (already opened and locked by the caller) with the
+    /// calling process pid. Opened without truncate so a losing racer can't clobber the
     /// winner's pid before the lock decides ownership; truncation happens
     /// here, under the lock.
     pub fn write_pid_to(mut file: &fs::File) -> io::Result<()> {
@@ -158,10 +161,6 @@ pub enum DaemonResponse {
 /// control socket in whatever directory the process happens to run from,
 /// outside the 0700 runtime dir and reachable by every other local user.
 /// One `is_absolute` check rejects all three.
-///
-/// Public because the client-side spawn path resolves the daemon's log file
-/// against the same directory; a second resolver there is what let the two
-/// drift apart.
 pub fn runtime_dir() -> Result<PathBuf, std::io::Error> {
     runtime_dir_from(std::env::var("XDG_RUNTIME_DIR").ok().as_deref()).ok_or_else(|| {
         std::io::Error::new(
@@ -186,6 +185,34 @@ fn get_socket_path() -> Result<PathBuf, std::io::Error> {
 
 fn get_pid_file_path() -> Result<PathBuf, std::io::Error> {
     Ok(runtime_dir()?.join("spectral-daemon.pid"))
+}
+
+/// Where a spawned daemon's stdout and stderr go, beside the socket and pid
+/// file. There is deliberately no second location: a daemon that cannot
+/// resolve the runtime dir cannot bind its socket either, so a log written
+/// elsewhere would only describe a session that was already lost — and a
+/// predictable `/tmp` path opened with `truncate` is a symlink target on a
+/// shared system. Failing here is what makes the client report the missing
+/// runtime dir rather than a spawn error downstream of it.
+///
+/// Clients open this append-only and only the winning daemon truncates it,
+/// so two clients racing to spawn cannot clobber each other's writes or
+/// strand one of them at a stale offset.
+pub fn daemon_log_path() -> Result<PathBuf, std::io::Error> {
+    Ok(runtime_dir()?.join("spectral-daemon.log"))
+}
+
+/// Unblock a daemon sitting in [`DaemonServer::accept`] so its loop can
+/// notice that its running flag has been cleared.
+///
+/// Connecting and dropping the stream is the whole trick: the accept
+/// returns, the loop re-checks the flag, and the pointless connection is
+/// never served. Best effort — if the socket is already gone the loop has
+/// nothing left to wake from.
+pub fn wake_accept_loop() {
+    if let Ok(path) = get_socket_path() {
+        let _ = UnixStream::connect(path);
+    }
 }
 
 /// Wait for a previously running daemon to exit. Shutdown terminates the
@@ -222,7 +249,7 @@ impl DaemonClient {
     pub fn connect() -> Result<Self, std::io::Error> {
         let socket_path = get_socket_path()?;
         let stream = UnixStream::connect(socket_path)?;
-        stream.set_read_timeout(Some(CLIENT_READ_TIMEOUT))?;
+        stream.set_read_timeout(Some(CONNECTION_READ_TIMEOUT))?;
         Ok(Self {
             reader: BufReader::new(stream),
         })
@@ -310,9 +337,12 @@ impl DaemonServer {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(e),
         }
+        // Left blocking on purpose. Polling accept on a timer costs every
+        // client half the poll interval before its connection is even
+        // picked up, and the GUI's heartbeat runs that wait on its
+        // event-loop thread. `wake_accept_loop` is how shutdown gets the
+        // loop moving again instead.
         let listener = UnixListener::bind(&socket_path)?;
-
-        listener.set_nonblocking(true)?;
 
         Ok(Self {
             listener,
@@ -322,7 +352,9 @@ impl DaemonServer {
         })
     }
 
-    /// Accepts one pending client, if any (the listener is non-blocking).
+    /// Waits for the next client. Blocks until one connects — including the
+    /// throwaway connection [`wake_accept_loop`] makes to release a
+    /// shutting-down daemon.
     pub fn accept(&self) -> Result<DaemonConnection, std::io::Error> {
         let (stream, _) = self.listener.accept()?;
         Ok(DaemonConnection {
@@ -333,8 +365,15 @@ impl DaemonServer {
 
 impl Drop for DaemonServer {
     fn drop(&mut self) {
-        pid_file::cleanup(&self.pid_file_path);
+        // Socket first, pid file last. The lock lives on the pid file's
+        // inode, not its path, so unlinking that path opens the gate while
+        // this daemon is still tearing down: a successor creates a fresh
+        // inode, locks it uncontended, and binds its own socket — which the
+        // socket removal here would then delete out from under it, leaving
+        // a live daemon nothing can connect to. Releasing the gate last
+        // keeps the successor parked on `try_lock` until we are done.
         let _ = std::fs::remove_file(&self.socket_path);
+        pid_file::cleanup(&self.pid_file_path);
     }
 }
 
@@ -346,12 +385,13 @@ pub struct DaemonConnection {
 }
 
 impl DaemonConnection {
-    /// Reads the next command line, timing out after 30 s so a silent
-    /// client cannot pin its handler thread forever.
+    /// Reads the next command line, timing out after
+    /// [`CONNECTION_READ_TIMEOUT`] so a silent client cannot pin its
+    /// handler thread forever.
     pub fn read_command(&mut self) -> Result<DaemonCommand, std::io::Error> {
         self.reader
             .get_ref()
-            .set_read_timeout(Some(Duration::from_secs(30)))?;
+            .set_read_timeout(Some(CONNECTION_READ_TIMEOUT))?;
 
         let mut line = String::new();
         self.reader.read_line(&mut line)?;
@@ -405,7 +445,7 @@ mod tests {
     /// direction. Commands carry no version field, so this tolerance *is*
     /// the compatibility story on that side, and it is what the bump policy
     /// on [`PROTOCOL_VERSION`] means by "adding an `Option` field is
-    /// compatible" — a claim nothing exercised for commands until now.
+    /// compatible" — the only test that exercises that claim for commands.
     #[test]
     fn a_pre_0_5_enable_parses_with_the_added_fields_as_none() {
         let old = r#"{"Enable":{"device_id":5,"mic_name":"My-Mic","threshold":70}}"#;
@@ -491,12 +531,12 @@ mod tests {
     /// variant cannot be added without authoring its wire form: the match is
     /// exhaustive, and an arm has nothing to return but a `&str`.
     ///
-    /// That is not the same as pinning it, which the earlier wording of this
-    /// comment claimed. This function is only ever called from inside the
-    /// loop over `cases`, so a variant with an arm but no `cases` entry is
-    /// never compared — and an arm returning a wrong literal is just as
-    /// green. What the guard buys is putting the wire form in front of
-    /// whoever adds a variant; extending `cases` is still on them.
+    /// Each golden is compared against what serde actually produced, by the
+    /// round-trip loop in the test above, so a drifted literal or wire form
+    /// fails loudly. What this helper cannot do is force coverage: an arm whose
+    /// variant never joins `cases` is never compared at all. Extending
+    /// `cases` is part of adding the variant.
+    ///
     /// `Enable` is split by shape because the table exercises it twice.
     fn command_golden(command: &DaemonCommand) -> &'static str {
         match command {
@@ -559,9 +599,9 @@ mod tests {
             is_playing_filtered: false,
             last_error: None,
         };
-        // The third status. It reaches clients on every enable and disable,
-        // and until now no golden carried its spelling, so renaming it was a
-        // wire break the suite would have passed.
+        // The third status. It reaches clients on every enable and disable, so
+        // its spelling needs a golden of its own; without one, renaming it
+        // would be a wire break the suite passes.
         let pending_state = DaemonState {
             protocol_version: PROTOCOL_VERSION,
             status: Status::Pending,
@@ -591,7 +631,7 @@ mod tests {
     /// that does and does not buy. Two separate things guard [`Status`], which
     /// crosses the wire as a bare string. Matching on `status` instead of
     /// through a wildcard makes these arms exhaustive over it, so a fourth
-    /// variant fails to compile rather than borrowing a neighbour's golden;
+    /// variant fails to compile rather than borrowing a neighbor's golden;
     /// the spelling of the three that exist is pinned by having a golden
     /// each, which is what a `serde` rename would break. `DaemonState`'s
     /// *fields* need neither — a new one lands in the JSON and breaks all

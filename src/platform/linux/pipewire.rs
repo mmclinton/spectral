@@ -1,7 +1,6 @@
-//! Native PipeWire Audio Pipeline
-//!
-//! This module provides a native PipeWire client for audio capture and playback,
-//! using direct stream connections for low-latency noise reduction.
+//! The audio thread: a PipeWire client that captures the selected input,
+//! runs it through the processing chain, and feeds the daemon-owned virtual
+//! source over an explicitly created link.
 
 use super::audio_processor::AudioProcessor;
 use crate::state::lock_or_recover;
@@ -58,9 +57,13 @@ pub(crate) const PIPELINE_READY_TIMEOUT: Duration = Duration::from_secs(5);
 const OUTPUT_BUFFER_CAP: usize = SAMPLE_RATE as usize;
 
 /// Largest per-callback delivery the buffers reserve for, in samples per
-/// channel — PipeWire's default `clock.max-quantum`. A graph configured
-/// beyond it still works (the Vec grows once), but every stock
-/// configuration stays allocation-free on the RT path.
+/// channel — PipeWire's `default.clock.quantum-limit`, not its
+/// `default.clock.max-quantum` (2048). The limit is the ceiling PipeWire
+/// allocates buffers against and clamps max-quantum to, so it is the only
+/// one that bounds what a callback can actually be handed; sizing to 2048
+/// would reintroduce RT-path allocations on any graph tuned above it. A
+/// graph configured beyond the limit still works (the Vec grows once), but
+/// every stock configuration stays allocation-free.
 const MAX_QUANTUM: usize = 8192;
 
 /// Ready = both streams up and the feed link created; the daemon's Enable
@@ -116,6 +119,17 @@ impl FormatState {
     }
 }
 
+/// Shared by both process callbacks through one `Rc<RefCell<..>>`: the
+/// capture side appends to `output_buffer` and the feed side drains it.
+///
+/// That is sound only because a client context runs a single data loop,
+/// which is PipeWire's default (`context.num-data-loops = 1`) and puts both
+/// RT callbacks on the same thread. A user who sets it to -1 (num-cpus)
+/// splits them across threads, where `RefCell`'s borrow flag is a plain
+/// non-atomic `Cell` and the `Vec` mutation is a data race. Anything that
+/// would let the two streams run concurrently — a second data loop, or
+/// moving one stream to its own context — has to replace this with an
+/// SPSC ring first, not just add a lock.
 struct PipelineData {
     processor: AudioProcessor,
     input_buffer: Vec<f32>,
@@ -130,14 +144,19 @@ impl PipelineData {
         // these on the RT thread, so growth there would mean an RT-path
         // malloc at exactly the wrong moment (e.g. a stalled consumer).
         // Input holds at most one leftover partial frame plus one maximal
-        // delivery; output is trimmed to OUTPUT_BUFFER_CAP only after a
-        // whole delivery is processed, so it transiently exceeds the cap
-        // by up to one delivery's worth of mono frames.
+        // delivery. Output is trimmed to OUTPUT_BUFFER_CAP only after the
+        // whole delivery is processed, so it transiently exceeds the cap by
+        // the mono frames one callback can emit — and the leftover partial
+        // frame carried in means that is one frame more than the delivery
+        // itself: with c channels, (480c-1 + 8192c) / 480c rounds down to
+        // 18 frames, not 17, at every c. The bound is
+        // (MAX_QUANTUM + RNNOISE_FRAME_SIZE) - 1/c mono samples, so one
+        // extra frame covers the whole channel range.
         //
         // Sized for the ceiling, not the request: the granted channel
         // count arrives only with the Format param, after allocation.
         let input_capacity = (MAX_QUANTUM + RNNOISE_FRAME_SIZE) * MAX_INPUT_CHANNELS as usize;
-        let output_capacity = OUTPUT_BUFFER_CAP + MAX_QUANTUM;
+        let output_capacity = OUTPUT_BUFFER_CAP + MAX_QUANTUM + RNNOISE_FRAME_SIZE;
         Self {
             processor,
             input_buffer: Vec::with_capacity(input_capacity),
@@ -161,13 +180,13 @@ pub struct NativeAudioPipeline {
 ///
 /// Both process callbacks read 4-byte little-endian samples with a stride
 /// compiled in, and RNNoise's frame is 10 ms only at [`SAMPLE_RATE`] — so an
-/// encoding or rate we did not ask for cannot be reinterpreted, only
+/// encoding or rate other than the requested one cannot be reinterpreted, only
 /// refused. This is the same reasoning the channel check rests on, applied
 /// to the other two fields `AudioInfoRaw` carries.
 ///
 /// `AudioFormat` has no `Debug`, hence the raw discriminant in the message;
 /// it maps to `SPA_AUDIO_FORMAT_*` in `spa/param/audio/raw.h`.
-fn unsupported_encoding(info: &AudioInfoRaw) -> Option<String> {
+pub(super) fn unsupported_encoding(info: &AudioInfoRaw) -> Option<String> {
     if info.format() != AudioFormat::F32LE {
         return Some(format!("sample format {} is not F32LE", info.format().0));
     }
@@ -355,7 +374,6 @@ fn run_pipeline(
 
     let ready = Rc::new(ReadyFlags::default());
 
-    // "target.object" used since NODE_TARGET isn't exposed in the Rust bindings
     let capture_props = properties! {
         *pipewire::keys::MEDIA_TYPE => "Audio",
         *pipewire::keys::MEDIA_CATEGORY => "Capture",
@@ -367,7 +385,7 @@ fn run_pipeline(
         // Two properties covering two halves of one hazard, neither a
         // substitute for the other. Without them a target that goes away —
         // unplugged interface, suspended device, a Bluetooth mic dropping —
-        // makes WirePlumber relink us to whatever the default source now
+        // makes WirePlumber relink the stream to whatever the default source now
         // is, and the virtual mic keeps denoising a microphone the user
         // never chose, with `failure` empty and the pill still Active.
         //
@@ -377,8 +395,9 @@ fn run_pipeline(
         // mic for a silent one. `dont-fallback` is what makes an
         // unresolvable target.object a client error and a destroyed node.
         // Validated by unplugging a live capture device: it arrives as
-        // `StreamState::Error("defined target not found")` on the handler
-        // above — a stream error, not a core one, so the failure slot is
+        // `StreamState::Error("defined target not found")` in the
+        // `state_changed` handler below — a stream error, not a core one,
+        // so the failure slot is
         // reached through state_changed and the pill goes Inactive.
         "node.dont-reconnect" => "true",
         "node.dont-fallback" => "true",
@@ -669,6 +688,25 @@ fn run_pipeline(
     Ok(())
 }
 
+/// Coerces one decoded sample into the nominal PCM range.
+///
+/// `f32::from_le_bytes` accepts every bit pattern, so a driver glitch or a
+/// hostile graph node can deliver NaN or an infinity. Both latch permanently
+/// downstream: the high-pass biquad's denormal snap tests `abs() <
+/// STATE_FLOOR`, which is false for NaN, and RNNoise keeps its own poisoned
+/// history — so a single bad sample silences the virtual mic until the
+/// pipeline is rebuilt. Clamping to ±1.0 additionally closes the path where
+/// a finite but absurd sample becomes infinite under the RNNoise scale
+/// factor. Branch-only, so it stays RT-safe.
+#[inline]
+fn sanitize_sample(sample: f32) -> f32 {
+    if sample.is_finite() {
+        sample.clamp(-1.0, 1.0)
+    } else {
+        0.0
+    }
+}
+
 /// Mix N channels down to mono.
 ///
 /// Mono downmix scaled to the i16 range RNNoise expects. Only the first two
@@ -704,7 +742,6 @@ fn mix_to_mono(input: &[f32], channels: usize, output: &mut [f32]) {
             })
             .sum();
 
-        // Scale to i16 range for RNNoise
         output[i] = (sum / channel_divisor) * RNNOISE_SCALE_FACTOR;
     }
 }
@@ -729,7 +766,7 @@ fn process_capture_buffer(
                 return;
             }
 
-            // A format we can't trust: drop the delivery rather than
+            // An untrusted format: drop the delivery rather than
             // deinterleave it at the wrong stride. The daemon surfaces the
             // recorded failure through its health poll. Checked before the
             // borrow so a halted stream costs two atomic loads and nothing
@@ -756,7 +793,7 @@ fn process_capture_buffer(
                     audio_chunk[2],
                     audio_chunk[3],
                 ]);
-                input_buffer.push(sample);
+                input_buffer.push(sanitize_sample(sample));
             }
 
             // Process complete frames (480 samples per channel) in the
@@ -767,7 +804,6 @@ fn process_capture_buffer(
             let frame_size = RNNOISE_FRAME_SIZE * channels;
             let mut consumed = 0;
             while input_buffer.len() - consumed >= frame_size {
-                // Convert N channels to mono and scale to i16 range for RNNoise
                 mix_to_mono(
                     &input_buffer[consumed..consumed + frame_size],
                     channels,
@@ -775,7 +811,6 @@ fn process_capture_buffer(
                 );
                 processor.process_frame(mono_scratch, processed_scratch);
 
-                // Scale back to f32 PCM range [-1.0, 1.0]
                 for sample in processed_scratch.iter_mut() {
                     *sample /= RNNOISE_SCALE_FACTOR;
                 }
@@ -844,11 +879,12 @@ fn process_source_buffer(
                 samples
             };
 
-            // CRITICAL: Set the chunk size to indicate how many bytes we wrote
+            // PipeWire reads nothing from the buffer until the chunk
+            // describes it.
             let chunk = datas[0].chunk_mut();
             *chunk.offset_mut() = 0;
             *chunk.size_mut() = (samples * 4) as u32;
-            *chunk.stride_mut() = 4; // 4 bytes per sample (f32)
+            *chunk.stride_mut() = 4;
         }
     }
 }
@@ -859,7 +895,7 @@ mod tests {
 
     /// Both process callbacks decode with a compiled-in width and rate, so
     /// the guard has to reject anything else rather than reinterpret it.
-    /// Kept honest in both directions: the format we ask for must pass, or
+    /// Kept honest in both directions: the requested format must pass, or
     /// the guard would halt every working pipeline.
     #[test]
     fn only_f32le_at_the_pipeline_rate_is_decodable() {
@@ -887,7 +923,7 @@ mod tests {
     }
 
     #[test]
-    fn test_audio_format_pod_creation() {
+    fn format_pods_build_with_and_without_channel_positions() {
         let result = build_audio_format_pod(AudioFormat::F32LE, 48000, 2, None);
         assert!(result.is_ok(), "Should be able to create audio format pod");
         let pod_bytes = result.unwrap();
@@ -921,9 +957,33 @@ mod tests {
             "input capacity below the channel ceiling"
         );
         assert!(
-            data.output_buffer.capacity() >= OUTPUT_BUFFER_CAP + MAX_QUANTUM,
-            "output capacity below the cap plus one delivery"
+            data.output_buffer.capacity() >= OUTPUT_BUFFER_CAP + MAX_QUANTUM + RNNOISE_FRAME_SIZE,
+            "output capacity below the cap plus one delivery and its carried frame"
         );
+    }
+
+    /// The reservation has to cover the worst callback at every channel
+    /// count, not just the arithmetic that looks obvious at one. Entry
+    /// length is the cap (the previous callback trimmed to it), the leftover
+    /// is one sample short of a whole frame, and the delivery is maximal.
+    #[test]
+    fn no_channel_count_can_grow_the_output_buffer_on_the_rt_path() {
+        use crate::state::AppState;
+        use std::sync::Arc;
+
+        let reserved = PipelineData::new(AudioProcessor::new(Arc::new(AppState::new())))
+            .output_buffer
+            .capacity();
+
+        for channels in 1..=MAX_INPUT_CHANNELS as usize {
+            let frame_size = RNNOISE_FRAME_SIZE * channels;
+            let buffered = (frame_size - 1) + MAX_QUANTUM * channels;
+            let peak = OUTPUT_BUFFER_CAP + (buffered / frame_size) * RNNOISE_FRAME_SIZE;
+            assert!(
+                peak <= reserved,
+                "at {channels} channels the peak is {peak} samples, past the reserved {reserved}"
+            );
+        }
     }
 
     #[test]
@@ -955,6 +1015,38 @@ mod tests {
         let mut out = vec![0.0f32; 1];
         mix_to_mono(&[1.0, 1.0], 1, &mut out);
         assert_eq!(out, [32768.0]);
+    }
+
+    #[test]
+    fn non_finite_and_out_of_range_samples_are_coerced_into_pcm_range() {
+        let cases = [
+            (f32::NAN, 0.0),
+            (f32::INFINITY, 0.0),
+            (f32::NEG_INFINITY, 0.0),
+            (1e35, 1.0),
+            (-1e35, -1.0),
+            (2.0, 1.0),
+            (0.5, 0.5),
+            (-0.5, -0.5),
+            (0.0, 0.0),
+        ];
+        for (input, want) in cases {
+            let got = sanitize_sample(input);
+            assert_eq!(got, want, "sanitize_sample({input})");
+        }
+    }
+
+    #[test]
+    fn a_sanitized_frame_never_scales_to_infinity() {
+        // The ±1.0 clamp is what keeps the RNNoise scale factor finite.
+        let mut out = vec![0.0f32; 2];
+        let frame: Vec<f32> = [f32::NAN, 1e35]
+            .iter()
+            .map(|&s| sanitize_sample(s))
+            .collect();
+        mix_to_mono(&frame, 1, &mut out);
+        assert!(out.iter().all(|s| s.is_finite()), "{out:?}");
+        assert_eq!(out, [0.0, RNNOISE_SCALE_FACTOR]);
     }
 
     #[test]

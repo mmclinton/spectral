@@ -75,7 +75,7 @@
           configured instead of the one it used to bundle; on every install
           method except Nix it had been falling back to a proportional
           face. Audio interfaces whose inputs are split into separate
-          sources are labelled individually rather than appearing as
+          sources are labeled individually rather than appearing as
           several identical rows. Spectral is also packaged as a Flatpak
           now, and the virtual microphone works inside the sandbox.
         </p>

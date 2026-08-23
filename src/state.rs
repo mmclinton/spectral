@@ -16,21 +16,20 @@ pub fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 /// An audio input source as enumerated from the PipeWire registry.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+///
+/// Deliberately not serializable: no device list crosses the socket. The
+/// GUI enumerates the registry itself, and `DaemonState` carries only the
+/// selected device's id and node name.
+#[derive(Clone, Debug)]
 pub struct AudioDevice {
     /// PipeWire node id — valid only for the current server instance.
     pub id: u32,
     /// Human-readable description shown in device pickers.
     pub name: String,
-    /// Channel count as reported by the node's own info props (1 = mono);
-    /// 2 can also mean "unknown" — the fallback when a node dies before
-    /// reporting or omits `audio.channels`.
-    #[serde(default = "default_channels")]
+    /// Channel count as reported by the node's own info props (1 = mono).
+    /// The enumerator substitutes stereo when a node dies before reporting
+    /// or omits `audio.channels`, so 2 can also mean "unknown".
     pub channels: u32,
-}
-
-fn default_channels() -> u32 {
-    2 // Default to stereo for backwards compatibility
 }
 
 /// The virtual mic's lifecycle state.
@@ -40,7 +39,8 @@ pub enum Status {
     Inactive,
     /// The pipeline is running and the virtual mic is available.
     Active,
-    /// Mid-transition: an enable or disable has started but not settled.
+    /// Staged-but-unapplied settings over a running mic. Set only by the
+    /// GUI; the daemon never reports it.
     Pending,
 }
 

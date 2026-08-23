@@ -4,20 +4,28 @@
 //! lifecycle: a dedicated mainloop thread per subsystem, an `mpsc`
 //! ready-handshake with [`super::pipewire::PIPELINE_READY_TIMEOUT`], a
 //! `running: Arc<AtomicBool>` flag, a `failure: Arc<Mutex<Option<String>>>`
-//! slot (first error wins), and a `Drop` that calls `stop()`. Replaces the
-//! former `pw-record`/`pw-play` shell-out so the daemon no longer depends on
-//! the PipeWire *tools* package at runtime — only the libraries it links.
+//! slot (first error wins), and a `Drop` that calls `stop()`. The daemon
+//! depends only on the PipeWire libraries it links, never on the PipeWire
+//! *tools* package.
 //!
-//! WAV encoding/decoding uses `hound` (pure Rust, already transitively in
-//! `Cargo.lock` via `nnnoiseless`); see <https://docs.rs/hound>.
+//! WAV encoding/decoding uses `hound` (pure Rust, so it adds no C
+//! dependency); see <https://docs.rs/hound>.
 //!
-//! Both files are mono 48 kHz 32-bit float (matching `pw-record --channels 1
-//! --format f32`). Recording captures the raw f32 the graph delivers — no
-//! i16 scaling, so the file is bit-identical to what `pw-record` produced.
+//! Both files are mono 48 kHz 32-bit float. Recording captures the raw f32
+//! the graph delivers, with no i16 round-trip.
 
-use super::pipewire::{PIPELINE_READY_TIMEOUT, SAMPLE_RATE, build_audio_format_pod};
+use super::pipewire::{
+    PIPELINE_READY_TIMEOUT, SAMPLE_RATE, build_audio_format_pod, unsupported_encoding,
+};
 use crate::state::lock_or_recover;
-use pipewire::spa::{param::audio::AudioFormat, pod::Pod, utils::Direction};
+use pipewire::spa::{
+    param::ParamType,
+    param::audio::{AudioFormat, AudioInfoRaw},
+    param::format::{MediaSubtype, MediaType},
+    param::format_utils,
+    pod::Pod,
+    utils::Direction,
+};
 use pipewire::{
     context::ContextBox,
     main_loop::MainLoopBox,
@@ -27,6 +35,7 @@ use pipewire::{
 use std::cell::{Cell, RefCell};
 use std::fs::{File, OpenOptions};
 use std::io::BufWriter;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -36,6 +45,24 @@ use std::time::Duration;
 
 /// PipeWire's mono channel position.
 const MONO: u32 = pipewire::spa::sys::SPA_AUDIO_CHANNEL_MONO;
+
+/// Set while a recorder thread owns the two WAV paths, cleared by that
+/// thread on its way out — once every writer it opened is finalized or
+/// dropped.
+///
+/// A session whose ready handshake times out is abandoned rather than
+/// joined, because joining a wedged setup would hang the daemon (the same
+/// call the pipeline makes). But it holds at least the raw writer by then
+/// and will finalize what it holds, and finalize seeks to offset 0 to
+/// rewrite the header. The paths are fixed, so without this gate the next
+/// session could truncate and reopen them first and take that header write
+/// into the middle of its own recording.
+static RECORDER_SESSION_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// How long [`NativeRecorder::start`] waits for an abandoned session to
+/// release the WAV paths. Bounded on purpose: a wedged session must fail
+/// the new recording, never block the daemon behind it.
+const SESSION_RELEASE_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// WAV spec shared by recorder and player: mono, 48 kHz, 32-bit float.
 const WAV_SPEC: hound::WavSpec = hound::WavSpec {
@@ -57,6 +84,50 @@ const FLUSH_INTERVAL_SAMPLES: u64 = SAMPLE_RATE as u64;
 /// the failure slot so the GetState reap tears the recorder down and
 /// reports why.
 const MAX_RECORDING_SAMPLES: u64 = 60 * SAMPLE_RATE as u64;
+
+/// Check a granted Format against the mono/48 kHz/F32LE all three of this
+/// module's streams assume, recording the mismatch in `failure` if any.
+///
+/// Every stream here offers a fixed pod, but an offer is not a guarantee.
+/// Both capture callbacks decode at a hardcoded 4-byte stride into a
+/// `WavWriter` whose header is fixed by [`WAV_SPEC`], and the player writes
+/// at the same fixed stride — so a grant that differs would be
+/// reinterpreted at the wrong width rather than refused, and the voice test
+/// would compare two clips that are silently wrong (a stereo grant plays
+/// back at double speed) with nothing in the failure slot to say so.
+fn verify_granted_format(
+    id: u32,
+    param: Option<&Pod>,
+    failure: &Arc<Mutex<Option<String>>>,
+    stream: &str,
+) {
+    if id != ParamType::Format.as_raw() {
+        return;
+    }
+    let Some(param) = param else { return };
+    let Ok((media_type, media_subtype)) = format_utils::parse_format(param) else {
+        return;
+    };
+    if media_type != MediaType::Audio || media_subtype != MediaSubtype::Raw {
+        return;
+    }
+    let mut info = AudioInfoRaw::new();
+    let why = if info.parse(param).is_err() {
+        Some("unparsable Format param".to_string())
+    } else if let Some(why) = unsupported_encoding(&info) {
+        Some(why)
+    } else if info.channels() != 1 {
+        Some(format!(
+            "{} channels is not the mono the WAV holds",
+            info.channels()
+        ))
+    } else {
+        None
+    };
+    if let Some(why) = why {
+        record_failure(failure, format!("{stream}: {why}"));
+    }
+}
 
 /// First error wins: later failures are usually cascades of the first.
 fn record_failure(slot: &Mutex<Option<String>>, msg: String) {
@@ -95,9 +166,9 @@ struct CaptureSlot {
     write_error: Option<String>,
 }
 
-/// The first write failure parked by either capture callback, cleared as it
-/// is read. Callbacks only run inside `iterate()`, so the two borrows here
-/// can never conflict with one.
+/// A write failure parked by either capture callback, cleared as it is read;
+/// the raw slot wins when both hold one. Callbacks only run inside
+/// `iterate()`, so the two borrows here can never conflict with one.
 fn take_write_error(
     raw: &Rc<RefCell<CaptureSlot>>,
     filtered: &Rc<RefCell<CaptureSlot>>,
@@ -126,6 +197,8 @@ impl NativeRecorder {
         original: PathBuf,
         filtered: PathBuf,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let session = SessionGuard::claim()?;
+
         let running = Arc::new(AtomicBool::new(true));
         let running_clone = running.clone();
         let failure = Arc::new(Mutex::new(None));
@@ -135,6 +208,11 @@ impl NativeRecorder {
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
 
         let thread = thread::spawn(move || {
+            // Bound to a name, not to `_`: `_` would drop the guard here and
+            // hand the paths back before this thread has even opened them.
+            // Declared first so it outlives every writer, and released
+            // however this thread ends — return, error, or panic.
+            let _session = session;
             if let Err(e) = run_recorder(
                 &source_node,
                 &mic_name,
@@ -146,7 +224,7 @@ impl NativeRecorder {
             ) {
                 record_failure(&failure_clone, format!("recorder error: {e}"));
                 let _ = ready_tx.send(Err(e.to_string()));
-                eprintln!("[NativeRecorder] error: {e}");
+                eprintln!("[recorder] error: {e}");
             }
         });
 
@@ -161,12 +239,14 @@ impl NativeRecorder {
                 Err(format!("Recorder setup failed: {e}").into())
             }
             Err(_) => {
+                // Don't join: a wedged setup thread would hang the daemon.
+                // The session flag stays set until it finishes finalizing,
+                // which is what keeps the next Record off these paths.
                 running.store(false, Ordering::SeqCst);
-                Err(format!(
-                    "Recorder did not become ready within {:?}",
-                    PIPELINE_READY_TIMEOUT
+                Err(
+                    format!("Recorder did not become ready within {PIPELINE_READY_TIMEOUT:?}")
+                        .into(),
                 )
-                .into())
             }
         }
     }
@@ -199,6 +279,46 @@ impl Drop for NativeRecorder {
         if self.thread.is_some() {
             self.stop();
         }
+    }
+}
+
+/// Holds [`RECORDER_SESSION_ACTIVE`] for as long as one recorder thread can
+/// still touch the WAV paths.
+///
+/// A guard rather than a store at the end of the thread body, because the
+/// writers themselves are released by unwinding as well: a panic anywhere
+/// in the thread has to hand the paths back too. Left to a bare statement,
+/// one panic would strand the flag set and every later recording would be
+/// refused for the life of the daemon.
+struct SessionGuard;
+
+impl SessionGuard {
+    /// Take the two WAV paths for a new recorder session, waiting out an
+    /// abandoned predecessor that is still finalizing.
+    ///
+    /// The daemon serializes Record requests, so the only contender is a
+    /// timed-out session; the wait is short and the failure is explicit
+    /// rather than a silently corrupted pair of clips.
+    fn claim() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let deadline = std::time::Instant::now() + SESSION_RELEASE_TIMEOUT;
+        loop {
+            if RECORDER_SESSION_ACTIVE
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                return Ok(Self);
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err("a previous voice-test recording is still shutting down".into());
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+}
+
+impl Drop for SessionGuard {
+    fn drop(&mut self) {
+        RECORDER_SESSION_ACTIVE.store(false, Ordering::SeqCst);
     }
 }
 
@@ -277,6 +397,12 @@ fn run_recorder(
             StreamState::Paused | StreamState::Streaming => raw_ready.raw.set(true),
             _ => {}
         })
+        .param_changed({
+            let failure = failure.clone();
+            move |_stream, _data, id, param| {
+                verify_granted_format(id, param, &failure, "raw stream");
+            }
+        })
         .process(process_capture)
         .register()?;
     // AUTOCONNECT | MAP_BUFFERS only — no RT_PROCESS. The process callback
@@ -318,6 +444,12 @@ fn run_recorder(
             }
             StreamState::Paused | StreamState::Streaming => filtered_ready.filtered.set(true),
             _ => {}
+        })
+        .param_changed({
+            let failure = failure.clone();
+            move |_stream, _data, id, param| {
+                verify_granted_format(id, param, &failure, "filtered stream");
+            }
         })
         .process(process_capture)
         .register()?;
@@ -370,8 +502,9 @@ fn run_recorder(
     }
 
     // The loop above tests `running` before it drains, so a stop landing in
-    // the same 10 ms window as the failing write would leave the cause in the
-    // slot: finalized over, and reported as a clean recording.
+    // the same 10 ms window as a failing write would otherwise leave that
+    // cause in the capture slot's `write_error` — finalized over, and
+    // reported as a clean recording.
     if let Some(msg) = take_write_error(&raw_slot, &filtered_slot) {
         record_failure(failure, msg);
     }
@@ -448,7 +581,16 @@ fn process_capture(stream: &pipewire::stream::Stream, data: &mut Rc<RefCell<Capt
         since_flush += 1;
         written += 1;
         if since_flush >= FLUSH_INTERVAL_SAMPLES {
-            let _ = writer.flush();
+            if let Err(e) = writer.flush() {
+                // Not ignorable: hound rewinds to the header, updates it,
+                // flushes, and only then seeks back, so a failure here
+                // leaves the cursor inside the header. Further writes still
+                // report Ok (they only fill the BufWriter) while landing on
+                // top of the audio already captured. Stop at the first
+                // failure — the writer's position is no longer trustworthy.
+                write_error = Some(format!("WAV checkpoint flush failed: {e}"));
+                break;
+            }
             since_flush = 0;
         }
     }
@@ -465,13 +607,17 @@ fn open_wav_writer(
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    // Truncate any stale file from a previous run; matches the previous
-    // pw-record behavior of overwriting in place.
+    // These are unprocessed recordings of the user's microphone, so they
+    // are owner-only. `mode` covers files this call creates; the explicit
+    // set_permissions also narrows one an earlier version left at 0644,
+    // since the paths are fixed and get reused.
     let file = OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)
+        .mode(0o600)
         .open(path)?;
+    file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
     Ok(hound::WavWriter::new(BufWriter::new(file), WAV_SPEC)?)
 }
 
@@ -512,7 +658,7 @@ impl NativePlayer {
             ) {
                 record_failure(&failure_clone, format!("player error: {e}"));
                 let _ = ready_tx.send(Err(e.to_string()));
-                eprintln!("[NativePlayer] error: {e}");
+                eprintln!("[player] error: {e}");
             }
         });
 
@@ -529,19 +675,14 @@ impl NativePlayer {
             }
             Err(_) => {
                 running.store(false, Ordering::SeqCst);
-                Err(format!(
-                    "Player did not become ready within {:?}",
-                    PIPELINE_READY_TIMEOUT
-                )
-                .into())
+                Err(format!("Player did not become ready within {PIPELINE_READY_TIMEOUT:?}").into())
             }
         }
     }
 
     /// Failure-aware liveness: returns true once the thread has exited for
     /// *any* reason — EOF reached, a stream/core error, or an unexpected
-    /// thread exit while `running` is still set. EOF-only would be a
-    /// liveness regression versus the previous `try_wait` on a child.
+    /// thread exit while `running` is still set.
     pub fn is_finished(&self) -> bool {
         if self.eof.load(Ordering::SeqCst) {
             return true;
@@ -645,6 +786,12 @@ fn run_player(
             StreamState::Paused | StreamState::Streaming => ready_for_cb.set(true),
             _ => {}
         })
+        .param_changed({
+            let failure = failure.clone();
+            move |_stream, _data, id, param| {
+                verify_granted_format(id, param, &failure, "playback stream");
+            }
+        })
         .process({
             let eof = eof.clone();
             move |stream, data| process_playback(stream, data, &eof)
@@ -670,20 +817,30 @@ fn run_player(
         if lock_or_recover(failure).is_some() {
             break;
         }
-        if eof.load(Ordering::SeqCst) {
-            break;
-        }
+        // Ready before eof: the process callback runs on the RT thread and
+        // can exhaust a very short clip before this loop dispatches the
+        // state change that sets `ready`. Testing eof first would leave
+        // `ready_sent` false and report a clip that simply ended as a setup
+        // failure.
         if !ready_sent && ready.get() {
             ready_sent = true;
             let _ = ready_tx.send(Ok(()));
         }
+        if eof.load(Ordering::SeqCst) {
+            break;
+        }
     }
 
     if !ready_sent {
-        let msg = lock_or_recover(failure)
-            .clone()
-            .unwrap_or_else(|| "player stopped before becoming ready".to_string());
-        let _ = ready_tx.send(Err(msg));
+        // A clip exhausted before the loop ever saw `ready` played fine —
+        // the state change just never got dispatched. Only a recorded
+        // failure makes this a setup error.
+        let failed = lock_or_recover(failure).clone();
+        let _ = match failed {
+            Some(msg) => ready_tx.send(Err(msg)),
+            None if eof.load(Ordering::SeqCst) => ready_tx.send(Ok(())),
+            None => ready_tx.send(Err("player stopped before becoming ready".to_string())),
+        };
     }
 
     mainloop.quit();
@@ -770,15 +927,99 @@ fn load_wav(path: &Path) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + 
 mod tests {
     use super::*;
 
-    fn tmp_wav_path(name: &str) -> PathBuf {
-        let mut p = std::env::temp_dir();
-        p.push(name);
-        p
+    /// One test for the whole session-flag lifecycle: it owns a
+    /// process-global, so splitting it into several would let them race.
+    ///
+    /// The panic case is the one that matters. Clearing the flag from the
+    /// end of the thread body would skip it while unwinding, and the paths
+    /// would then be refused to every later recording until the daemon
+    /// restarted.
+    #[test]
+    fn a_session_releases_the_wav_paths_however_its_thread_ends() {
+        let guard = SessionGuard::claim().expect("the first claim must succeed");
+        assert!(
+            SessionGuard::claim().is_err(),
+            "a second session must not get the paths while the first holds them"
+        );
+        drop(guard);
+
+        let after_return = SessionGuard::claim().expect("a released session must be reclaimable");
+        drop(after_return);
+
+        let panicked = std::panic::catch_unwind(|| {
+            let _guard = SessionGuard::claim().expect("claim before the panic");
+            panic!("recorder thread died");
+        });
+        assert!(panicked.is_err(), "the panic must have propagated");
+        assert!(
+            SessionGuard::claim().is_ok(),
+            "unwinding past the guard must still hand the paths back"
+        );
     }
 
+    /// Pid-scoped like the persistence tests' directories: two concurrent
+    /// cargo runs must not share one fixed /tmp name.
+    fn tmp_wav_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("spectral_recorder_{}_{}", std::process::id(), name))
+    }
+
+    fn slot() -> Rc<RefCell<CaptureSlot>> {
+        Rc::new(RefCell::new(CaptureSlot {
+            writer: None,
+            samples_since_flush: 0,
+            samples_written: 0,
+            write_error: None,
+        }))
+    }
+
+    /// The raw side wins when both slots hold a cause, and a read takes what
+    /// it reports rather than peeking at it, so the recorder loop — which
+    /// calls this every iteration — cannot tear a recording down twice on
+    /// one cause. The short circuit leaves the losing cause in place, which
+    /// is harmless: the loop stops on the first `Some`, and `record_failure`
+    /// keeps the first error regardless.
     #[test]
-    fn wav_spec_roundtrips() {
-        let path = tmp_wav_path("spectral_recorder_roundtrip.wav");
+    fn a_raw_write_error_wins_and_reading_clears_what_it_took() {
+        let raw = slot();
+        let filtered = slot();
+
+        assert_eq!(take_write_error(&raw, &filtered), None);
+
+        filtered.borrow_mut().write_error = Some("filtered: disk full".to_string());
+        assert_eq!(
+            take_write_error(&raw, &filtered).as_deref(),
+            Some("filtered: disk full")
+        );
+        assert!(
+            take_write_error(&raw, &filtered).is_none(),
+            "the read must clear"
+        );
+
+        raw.borrow_mut().write_error = Some("raw: disk full".to_string());
+        filtered.borrow_mut().write_error = Some("filtered: disk full".to_string());
+        assert_eq!(
+            take_write_error(&raw, &filtered).as_deref(),
+            Some("raw: disk full")
+        );
+        // The raw win short-circuits: the filtered cause is left in place.
+        assert_eq!(
+            filtered.borrow().write_error.as_deref(),
+            Some("filtered: disk full")
+        );
+    }
+
+    /// The WAV contract both ends of the voice test share: mono at
+    /// [`SAMPLE_RATE`], 32-bit float. Pinned field by field, then proven to
+    /// write and read back sample-stable, so a hound upgrade that changed
+    /// float handling fails here instead of quietly corrupting recordings.
+    #[test]
+    fn the_wav_spec_is_mono_float_at_the_pipeline_rate_and_roundtrips() {
+        assert_eq!(WAV_SPEC.channels, 1);
+        assert_eq!(WAV_SPEC.sample_rate, SAMPLE_RATE);
+        assert_eq!(WAV_SPEC.bits_per_sample, 32);
+        assert_eq!(WAV_SPEC.sample_format, hound::SampleFormat::Float);
+
+        let path = tmp_wav_path("roundtrip.wav");
         let samples: Vec<f32> = (0..1000).map(|i| (i as f32) / 1000.0).collect();
 
         {
@@ -803,7 +1044,7 @@ mod tests {
 
     #[test]
     fn player_loads_truncated_wav_without_panicking() {
-        let path = tmp_wav_path("spectral_recorder_truncated.wav");
+        let path = tmp_wav_path("truncated.wav");
         let samples: Vec<f32> = (0..2000).map(|i| (i as f32) / 2000.0).collect();
 
         // Write a valid WAV, finalize, then chop the tail off the file so
@@ -836,7 +1077,7 @@ mod tests {
 
     #[test]
     fn player_rejects_wrong_spec() {
-        let path = tmp_wav_path("spectral_recorder_44k.wav");
+        let path = tmp_wav_path("44k.wav");
         let bad_spec = hound::WavSpec {
             channels: 1,
             sample_rate: 44100,
@@ -857,16 +1098,6 @@ mod tests {
             "expected a clear spec-rejection error, got: {msg}"
         );
         let _ = std::fs::remove_file(&path);
-    }
-
-    /// Sanity check that our constant matches the same value hound would
-    /// build for the recorder — keeps the two halves from drifting.
-    #[test]
-    fn wav_spec_matches_pw_record_defaults() {
-        assert_eq!(WAV_SPEC.channels, 1);
-        assert_eq!(WAV_SPEC.sample_rate, SAMPLE_RATE);
-        assert_eq!(WAV_SPEC.bits_per_sample, 32);
-        assert_eq!(WAV_SPEC.sample_format, hound::SampleFormat::Float);
     }
 
     /// The daemon-side cap is a backstop for an orphaned recording, not a

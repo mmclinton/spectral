@@ -33,10 +33,11 @@ pub enum CliCommand {
 
 // The three codes documented in `help()` and docs/CLI.md. Only
 // EXIT_USAGE_ERROR is single-sourced in the strict sense: it has no std
-// spelling, so `main` returns it and both tables interpolate it. The other
-// two exist to render those tables — `run` returns std's own
+// spelling, so `main` returns it and `help()` interpolates it. The other
+// two exist to render that table — `run` returns std's own
 // `ExitCode::SUCCESS`/`FAILURE`, which is the idiomatic spelling and worth
-// keeping at 25 call sites. Nothing structural ties the two vocabularies
+// keeping at every call site. Markdown cannot interpolate, so docs/CLI.md
+// spells all three out. Nothing structural ties the two vocabularies
 // together, so a test below pins the equivalence instead.
 
 /// Success; mirrors `ExitCode::SUCCESS`.
@@ -51,43 +52,42 @@ pub const EXIT_USAGE_ERROR: u8 = 2;
 /// advertising a constraint the parser no longer applies.
 fn help() -> String {
     let rule = mic_name_rule();
+    let version = env!("CARGO_PKG_VERSION");
     format!(
         "\
-Spectral — real-time noise suppression for PipeWire
+spectral {version} — real-time noise suppression for PipeWire
 
-Usage: spectral [COMMAND]
-
-Running without a command opens the control panel (GUI).
+Usage:  spectral [COMMAND]
+        spectral                  open the control panel (GUI)
 
 Commands:
   enable      Create the virtual microphone and start denoising
-                --device <id>        input device id (see `spectral devices`);
-                                     defaults to the remembered device
-                --threshold <0-100>  voice gate threshold (0 = denoise only);
-                                     defaults to the current setting
-                --mic-name <name>    virtual mic name;
-                                     {rule};
-                                     defaults to the current setting
-                --rumble-filter <on|off>
-                                     cut low-frequency rumble (below ~90 Hz)
-                                     before denoising; defaults to the current
-                                     setting
-                --auto-level <on|off>
-                                     even out voice volume automatically, with
-                                     a peak limiter as the safety ceiling;
-                                     defaults to the current setting
   disable     Tear down the virtual microphone
   status      Show the daemon's state
   devices     List input devices with their current PipeWire ids
   shutdown    Stop the daemon
 
+Flags for `enable` — all optional; an omitted flag keeps its last value, so a
+bare `spectral enable` reuses the whole remembered setup:
+      --device <ID>             Input device to capture; see `spectral devices`
+      --threshold <0-100>       Voice gate threshold; 0 = denoise only
+      --mic-name <NAME>         Virtual mic name;
+                                {rule}
+      --rumble-filter <on|off>  Cut rumble below ~90 Hz before denoising
+      --auto-level <on|off>     Even out volume; peak limiter as the ceiling
+
 Options:
   -h, --help     Show this help
   -V, --version  Show the version
 
-Device ids are scoped to the running PipeWire instance; the daemon
-remembers the selected device by node name, so a flagless `enable`
-works across reboots and PipeWire restarts.
+Examples:
+  spectral devices               find an input device id
+  spectral enable                start with the remembered settings
+  spectral enable --threshold 0  denoise only, no voice gate
+
+Device ids are scoped to the running PipeWire instance; the daemon remembers
+your device by node name, so a flagless `enable` survives reboots and
+PipeWire restarts.
 
 Exit codes:
   {EXIT_SUCCESS}  success (including a no-op disable or shutdown)
@@ -212,16 +212,28 @@ fn parse_toggle(value: &str, flag: &str) -> Result<bool, String> {
     }
 }
 
+/// The value for `flag`, from `--flag=value` if it was written that way and
+/// otherwise from the next argument.
+///
+/// A separate value that itself looks like a long flag is refused rather
+/// than consumed: a token starting with `--` is far likelier to be a
+/// forgotten value than a real one. `--mic-name --rumble-filter` would
+/// otherwise name the mic `--rumble-filter` — which passes validation,
+/// since the name rule allows `-` — and silently drop the filter. The
+/// inline form stays the escape hatch for a value that really does begin
+/// with two dashes. A single dash is untouched, so a negative
+/// `--threshold -1` still reaches the range check that explains it.
 fn take_value<I>(args: &mut I, inline: Option<String>, flag: &str) -> Result<String, String>
 where
     I: Iterator<Item = Result<String, String>>,
 {
     match inline {
         Some(value) => Ok(value),
-        None => args
-            .next()
-            .transpose()?
-            .ok_or_else(|| format!("{flag} requires a value")),
+        None => match args.next().transpose()? {
+            Some(value) if !value.starts_with("--") => Ok(value),
+            Some(next) => Err(format!("{flag} requires a value, found '{next}'")),
+            None => Err(format!("{flag} requires a value")),
+        },
     }
 }
 
@@ -465,6 +477,55 @@ mod tests {
         assert!(help().contains(&mic_name_rule()));
     }
 
+    /// `--mic-name` is the flag where a swallowed value fails silently: the
+    /// name rule allows `-`, so `--rumble-filter` is a legal mic name and
+    /// the filter is dropped without a word.
+    #[test]
+    fn a_flag_never_swallows_the_flag_that_follows_it() {
+        for flag in ENABLE_FLAGS {
+            assert_eq!(
+                p(&["enable", flag, "--auto-level", "on"]),
+                Err(format!("{flag} requires a value, found '--auto-level'")),
+                "{flag} consumed the following flag as its value"
+            );
+        }
+    }
+
+    /// Only the double-dash form is a flag, so a negative number still
+    /// reaches the check that can explain it.
+    #[test]
+    fn a_negative_number_is_still_read_as_a_value() {
+        assert_eq!(
+            p(&["enable", "--threshold", "-1"]),
+            Err("invalid --threshold '-1': expected 0-100".to_string())
+        );
+    }
+
+    /// The inline form is the deliberate escape hatch for a value that
+    /// really does start with two dashes. The name rule allows `-`, so this
+    /// one is legal and must still go through — the guard is about a
+    /// missing value, not about the characters in a given one.
+    #[test]
+    fn an_inline_value_bypasses_the_lookalike_flag_guard() {
+        assert!(matches!(
+            p(&["enable", "--mic-name=--rumble-filter"]),
+            Ok(CliCommand::Enable { mic_name: Some(name), rumble_filter: None, .. })
+                if name == "--rumble-filter"
+        ));
+    }
+
+    #[test]
+    fn an_empty_inline_value_is_rejected_by_its_own_flag_rule() {
+        assert_eq!(
+            p(&["enable", "--rumble-filter="]),
+            Err("invalid --rumble-filter '': expected on|off".to_string())
+        );
+        assert_eq!(
+            p(&["enable", "--device="]),
+            Err("invalid --device '': expected a numeric id".to_string())
+        );
+    }
+
     /// The tables render these constants, but `run` returns std's codes, so
     /// this is what keeps the two vocabularies in agreement. The literal 2
     /// is the contract: changing it has to be a deliberate edit here.
@@ -499,11 +560,10 @@ mod tests {
         }
     }
 
-    /// docs/CLI.md is the published reference and, per the stability
-    /// analysis, part of the same frozen contract as the parser. Markdown
-    /// cannot interpolate the constants the way [`help`] does, so this test
-    /// is the only thing standing between a code change and a doc that
-    /// silently keeps advertising the old number.
+    /// docs/CLI.md is the published reference and part of the same frozen
+    /// contract as the parser. Markdown cannot interpolate the constants the
+    /// way [`help`] does, so this test is the only thing standing between a
+    /// code change and a doc that silently keeps advertising the old number.
     #[test]
     fn the_cli_reference_documents_the_same_exit_codes() {
         let doc = include_str!("../docs/CLI.md");
@@ -547,7 +607,7 @@ mod tests {
     /// function — never see it. A new subcommand can still ship undocumented
     /// with the suite green. What the compile error buys is putting whoever
     /// adds one in front of this table; closing the gap for real needs
-    /// variant iteration we do not have.
+    /// variant iteration Rust does not offer.
     fn subcommand_word(command: &CliCommand) -> Option<&'static str> {
         match command {
             CliCommand::Enable { .. } => Some("enable"),
@@ -633,7 +693,7 @@ mod tests {
     }
 
     #[test]
-    fn help_and_version_forms() {
+    fn help_and_version_accept_long_and_short_spellings() {
         assert_eq!(p(&["--help"]), Ok(CliCommand::Help));
         assert_eq!(p(&["-h"]), Ok(CliCommand::Help));
         assert_eq!(p(&["--version"]), Ok(CliCommand::Version));
@@ -641,7 +701,7 @@ mod tests {
     }
 
     #[test]
-    fn plain_verbs() {
+    fn plain_subcommand_words_parse_to_their_commands() {
         assert_eq!(p(&["disable"]), Ok(CliCommand::Disable));
         assert_eq!(p(&["status"]), Ok(CliCommand::Status));
         assert_eq!(p(&["devices"]), Ok(CliCommand::Devices));
@@ -663,7 +723,7 @@ mod tests {
     }
 
     #[test]
-    fn enable_flags_in_space_and_equals_forms() {
+    fn enable_flags_parse_identically_in_space_and_equals_forms() {
         let expected = Ok(CliCommand::Enable {
             device_id: Some(5),
             threshold: Some(70),
@@ -726,20 +786,20 @@ mod tests {
     }
 
     #[test]
-    fn invalid_values_rejected() {
+    fn invalid_flag_values_are_rejected() {
         assert!(p(&["enable", "--device", "abc"]).is_err());
         assert!(p(&["enable", "--mic-name", "bad name!"]).is_err());
         assert!(p(&["enable", "--mic-name", &"x".repeat(MIC_NAME_MAX_LEN + 1)]).is_err());
     }
 
     #[test]
-    fn duplicate_and_valueless_flags_rejected() {
+    fn duplicate_and_valueless_flags_are_rejected() {
         assert!(p(&["enable", "--device", "1", "--device", "2"]).is_err());
         assert!(p(&["enable", "--device"]).is_err());
     }
 
     #[test]
-    fn unknown_tokens_rejected() {
+    fn unknown_tokens_are_rejected() {
         assert!(p(&["frobnicate"]).is_err());
         assert!(p(&["Enable"]).is_err());
         assert!(p(&["enable", "--frob"]).is_err());

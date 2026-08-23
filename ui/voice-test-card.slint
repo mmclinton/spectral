@@ -4,6 +4,7 @@
 // the record -> playback -> idle flow causes zero layout shift.
 
 import { AppButton } from "controls.slint";
+import { PlayStopIcon } from "icons.slint";
 import { Theme } from "theme.slint";
 import { ClickableLink } from "links.slint";
 
@@ -196,12 +197,10 @@ export component VoiceTestCard inherits Rectangle {
                     spacing: 4px;
                     alignment: center;
 
-                    // Original output row
                     HorizontalLayout {
                         spacing: 8px;
                         alignment: start;
 
-                        // Play/Stop button for original
                         Rectangle {
                             width: 20px;
                             height: 20px;
@@ -215,14 +214,11 @@ export component VoiceTestCard inherits Rectangle {
                                 root.toggle_original();
                             }
 
-                            Text {
+                            PlayStopIcon {
                                 width: 100%;
                                 height: 100%;
-                                text: root.is_playing_original ? "■" : "▶";
-                                font-size: 12px;
+                                playing: root.is_playing_original;
                                 color: white;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
                             }
 
                             TouchArea {
@@ -243,12 +239,10 @@ export component VoiceTestCard inherits Rectangle {
                         }
                     }
 
-                    // Filtered output row
                     HorizontalLayout {
                         spacing: 8px;
                         alignment: start;
 
-                        // Play/Stop button for filtered
                         Rectangle {
                             width: 20px;
                             height: 20px;
@@ -262,14 +256,11 @@ export component VoiceTestCard inherits Rectangle {
                                 root.toggle_filtered();
                             }
 
-                            Text {
+                            PlayStopIcon {
                                 width: 100%;
                                 height: 100%;
-                                text: root.is_playing_filtered ? "■" : "▶";
-                                font-size: 12px;
+                                playing: root.is_playing_filtered;
                                 color: white;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
                             }
 
                             TouchArea {

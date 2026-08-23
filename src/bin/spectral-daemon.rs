@@ -1,11 +1,26 @@
 //! The long-lived backend: owns the virtual mic and all audio state,
 //! persists settings, and serves GUI/CLI clients on the Unix socket with
 //! one handler thread per connection. SIGTERM/SIGINT tear everything down.
+//!
+//! LOCK ORDERING CONVENTION: to prevent deadlocks, always acquire locks in
+//! this order (`state.threshold_val` is an atomic and exempt):
+//!
+//! 1. `state.mic_name`
+//! 2. `state.selected_device_id`
+//! 3. `state.device_node_name`
+//! 4. `virtual_mic`
+//! 5. `state.status`
+//! 6. `state.last_error`
+//! 7. `recorder`
+//! 8. `player`
+//!
+//! Keep guard scopes minimal; never hold two locks longer than necessary.
 
 use spectral_lib::platform::audio_devices::{find_node, get_node_details, get_node_name};
 use spectral_lib::platform::audio_processor::VirtualMic;
 use spectral_lib::platform::ipc::{
-    DaemonCommand, DaemonResponse, DaemonServer, DaemonState, PROTOCOL_VERSION,
+    DaemonCommand, DaemonResponse, DaemonServer, DaemonState, PROTOCOL_VERSION, daemon_log_path,
+    wake_accept_loop,
 };
 use spectral_lib::platform::persistence::{
     PersistedState, get_filtered_recording_path, get_original_recording_path, load_state,
@@ -17,6 +32,30 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+
+/// Drop whatever a previous session left in the log, now that the pid lock
+/// says this one owns it.
+///
+/// Truncating the inode is safe while our own stdout and stderr still point
+/// at it: clients open it with `O_APPEND`, so every write recomputes its
+/// offset from the end rather than from a stale one. Best effort — a log we
+/// cannot start clean is not a reason to refuse to run.
+fn start_log_afresh() {
+    let Ok(path) = daemon_log_path() else { return };
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(&path)
+    {
+        Ok(_) => {}
+        // No log file means nobody spawned us through a client — started by
+        // hand or by a service manager, with output already going elsewhere.
+        // Nothing to start afresh, and deliberately not created here: an
+        // empty file nothing writes to would just litter the runtime dir.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => eprintln!("[daemon] could not start the log afresh: {e}"),
+    }
+}
 
 fn main() {
     let state = Arc::new(AppState::new());
@@ -39,8 +78,23 @@ fn main() {
     let signal_thread = thread::spawn(move || {
         if signals.forever().next().is_some() {
             r.store(false, Ordering::SeqCst);
+            // The accept loop is blocked on a client that may never come;
+            // clearing the flag alone would leave it there until one does.
+            wake_accept_loop();
         }
     });
+
+    // Claim ownership before doing any work: a daemon that loses the pid
+    // lock has nothing to contribute, and everything below this point wants
+    // to be logged into a file this session owns.
+    let server = match DaemonServer::bind() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[daemon] failed to bind socket: {e}");
+            return;
+        }
+    };
+    start_log_afresh();
 
     let mut persisted = match load_state() {
         Ok(persisted) => persisted,
@@ -74,14 +128,6 @@ fn main() {
         *lock_or_recover(&state.device_node_name) = persisted.device_node_name.clone();
     }
 
-    let server = match DaemonServer::bind() {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("[daemon] failed to bind socket: {e}");
-            return;
-        }
-    };
-
     let mut client_threads: Vec<thread::JoinHandle<()>> = Vec::new();
 
     loop {
@@ -93,6 +139,12 @@ fn main() {
 
         match server.accept() {
             Ok(mut conn) => {
+                // A shutdown wake arrives as an ordinary connection; serving
+                // it would only spawn a thread to read an immediate EOF.
+                if !running.load(Ordering::SeqCst) {
+                    break;
+                }
+
                 let state = state.clone();
                 let virtual_mic = virtual_mic.clone();
                 let recorder = recorder.clone();
@@ -109,14 +161,15 @@ fn main() {
 
                 client_threads.push(handle);
             }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                thread::sleep(Duration::from_millis(100));
-            }
+            // EINTR is transient and never how shutdown arrives — that comes
+            // as the wake connection above — so retry it silently. Anything
+            // else is worth reporting, and the short pause keeps a
+            // persistently failing accept from spinning the CPU.
             Err(e) => {
                 if e.kind() != std::io::ErrorKind::Interrupted {
                     eprintln!("[daemon] failed to accept connection: {e}");
+                    thread::sleep(Duration::from_millis(100));
                 }
-                thread::sleep(Duration::from_millis(100));
             }
         }
     }
@@ -270,21 +323,6 @@ fn handle_client(
     recorder: Arc<Mutex<Option<NativeRecorder>>>,
     player: Arc<Mutex<Option<(PlaybackKind, NativePlayer)>>>,
 ) -> Result<(), std::io::Error> {
-    // LOCK ORDERING CONVENTION:
-    // To prevent deadlocks, always acquire locks in this order
-    // (state.threshold_val is an atomic and exempt):
-    // 1. state.mic_name
-    // 2. state.selected_device_id
-    // 3. state.device_node_name
-    // 4. virtual_mic
-    // 5. state.status
-    // 6. state.last_error
-    // 7. recorder
-    // 8. player
-    //
-    // Important: Release locks as soon as possible by limiting scope.
-    // Never hold multiple locks longer than necessary.
-
     loop {
         match conn.read_command() {
             Ok(command) => {
@@ -369,11 +407,11 @@ fn handle_client(
                         // Reap recorder failures into last_error for
                         // visibility. Recorders are not surfaced in
                         // DaemonState (no recording-active field exists
-                        // today and adding one changes the wire format,
-                        // out of scope), but a failed recording still
-                        // deserves to be torn down and reported. Same
-                        // ordering discipline: record after dropping the
-                        // recorder guard (#7 is held, #6 must not be).
+                        // today, and adding one is a wire-format change),
+                        // but a failed recording still deserves to be torn
+                        // down and reported. Same ordering discipline:
+                        // record after dropping the recorder guard (#7 is
+                        // held, #6 must not be).
                         let recorder_error = {
                             let mut guard = lock_or_recover(&recorder);
                             if let Some(r) = guard.as_ref()
@@ -459,23 +497,30 @@ fn handle_client(
                                     prev.stop();
                                 }
 
-                                let original_path = get_original_recording_path();
-                                let filtered_path = get_filtered_recording_path();
-                                match NativeRecorder::start(
-                                    &source_node,
-                                    &mic_name,
-                                    original_path,
-                                    filtered_path,
-                                ) {
-                                    Ok(r) => {
-                                        *lock_or_recover(&recorder) = Some(r);
-                                        DaemonResponse::Ok
+                                match (get_original_recording_path(), get_filtered_recording_path())
+                                {
+                                    (Ok(original_path), Ok(filtered_path)) => {
+                                        match NativeRecorder::start(
+                                            &source_node,
+                                            &mic_name,
+                                            original_path,
+                                            filtered_path,
+                                        ) {
+                                            Ok(r) => {
+                                                *lock_or_recover(&recorder) = Some(r);
+                                                DaemonResponse::Ok
+                                            }
+                                            Err(e) => {
+                                                eprintln!("[recorder] NativeRecorder::start: {e}");
+                                                DaemonResponse::Error(format!(
+                                                    "Failed to start recording: {e}"
+                                                ))
+                                            }
+                                        }
                                     }
-                                    Err(e) => {
-                                        eprintln!("[recorder] NativeRecorder::start: {e}");
-                                        DaemonResponse::Error(format!(
-                                            "Failed to start recording: {e}"
-                                        ))
+                                    (Err(e), _) | (_, Err(e)) => {
+                                        eprintln!("[recorder] recordings directory: {e}");
+                                        DaemonResponse::Error(format!("Cannot record: {e}"))
                                     }
                                 }
                             } else {
@@ -510,7 +555,16 @@ fn handle_client(
                         stop_player_of_kind(&player, PlaybackKind::Original);
                         stop_player_of_kind(&player, PlaybackKind::Filtered);
 
-                        let original_path = get_original_recording_path();
+                        let original_path = match get_original_recording_path() {
+                            Ok(path) => path,
+                            Err(e) => {
+                                eprintln!("[player] recordings directory: {e}");
+                                conn.send_response(DaemonResponse::Error(format!(
+                                    "Cannot play: {e}"
+                                )))?;
+                                continue;
+                            }
+                        };
                         if !original_path.exists() {
                             DaemonResponse::Error("No recording found".to_string())
                         } else {
@@ -534,7 +588,16 @@ fn handle_client(
                         stop_player_of_kind(&player, PlaybackKind::Original);
                         stop_player_of_kind(&player, PlaybackKind::Filtered);
 
-                        let filtered_path = get_filtered_recording_path();
+                        let filtered_path = match get_filtered_recording_path() {
+                            Ok(path) => path,
+                            Err(e) => {
+                                eprintln!("[player] recordings directory: {e}");
+                                conn.send_response(DaemonResponse::Error(format!(
+                                    "Cannot play: {e}"
+                                )))?;
+                                continue;
+                            }
+                        };
                         if !filtered_path.exists() {
                             DaemonResponse::Error("No recording found".to_string())
                         } else {

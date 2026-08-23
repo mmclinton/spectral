@@ -78,7 +78,10 @@ export component Footer inherits Rectangle {
                     vertical-alignment: center;
                 }
 
-                if root.unsaved_changes.length <= 3: HorizontalLayout {
+                // Two chips is what the 720px minimum width holds: the count text
+                // plus three of the longer labels overruns this slot and slides under
+                // the Disable button. Past two, the count alone carries the message.
+                if root.unsaved_changes.length <= 2: HorizontalLayout {
                     spacing: 6px;
 
                     for label in root.unsaved_changes: VerticalLayout {
@@ -88,7 +91,7 @@ export component Footer inherits Rectangle {
                             height: 20px;
                             background: Theme.warn_bg;
                             border-color: Theme.warn_border;
-                            border-width: 1px;
+                            border-width: 2px;
                             border-radius: self.height / 2;
 
                             HorizontalLayout {

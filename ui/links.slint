@@ -6,7 +6,8 @@ export component ClickableLink {
     in property <bool> italic: false;
     callback clicked();
 
-    // No link role in Slint 1.15; button is the closest behavior match.
+    // Slint's AccessibleRole has no link variant; button is the closest
+    // behavior match.
     accessible-role: button;
     accessible-label: root.text;
     accessible-action-default => {
