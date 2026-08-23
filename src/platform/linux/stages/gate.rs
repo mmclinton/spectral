@@ -65,7 +65,6 @@ impl VoiceGate {
     /// line would otherwise emit [`LOOKAHEAD_FRAMES`] of pre-disconnect audio
     /// at the seam, and a gain left at unity would open the resumed signal on
     /// a decision made about the old one.
-    #[allow(dead_code)]
     pub fn reset(&mut self) {
         for slot in &mut self.delay {
             slot.fill(0.0);

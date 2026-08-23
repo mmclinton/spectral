@@ -79,6 +79,21 @@ impl AudioProcessor {
         self.gate
             .process(output, vad_probability, vad_cutoff(threshold));
     }
+
+    /// Drop the per-stage history that would otherwise splice pre-disconnect
+    /// audio, and a gain decided about it, into the resumed signal after the
+    /// capture stream re-attaches. Allocation-free: it runs on the audio
+    /// thread.
+    ///
+    /// The RNNoise state is deliberately left alone. Replacing it means
+    /// `DenoiseState::new()`, which allocates, and nothing on this path may;
+    /// its stale spectral history settles within a few frames, which is far
+    /// cheaper than a malloc here would be.
+    pub fn reset_for_reattach(&mut self) {
+        self.highpass.reset();
+        self.leveler.reset();
+        self.gate.reset();
+    }
 }
 
 /// The daemon's handle on the virtual microphone; `stop` (or drop) ends the
@@ -137,6 +152,14 @@ impl VirtualMic {
     /// Why the underlying pipeline died, if it has.
     pub fn failure(&self) -> Option<String> {
         self.audio_pipeline.as_ref()?.failure()
+    }
+
+    /// Whether the pipeline is holding the mic open with no capture
+    /// attached; `false` when there is no pipeline at all.
+    pub fn is_detached(&self) -> bool {
+        self.audio_pipeline
+            .as_ref()
+            .is_some_and(NativeAudioPipeline::is_detached)
     }
 
     /// Tear down the mic: stopping the pipeline thread drops the PipeWire

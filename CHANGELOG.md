@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- The virtual microphone now survives its input device being unplugged. It
+  stays available to whatever is using it and goes quiet for up to 30
+  seconds while it waits, then picks the device up again by itself when it
+  is plugged back in — so a call carries on instead of losing the
+  microphone. If the device does not come back within 30 seconds the
+  microphone stops and says so.
+
 ### Security
 - Voice-test recordings are no longer readable by other users on the same
   machine. The recordings directory and the two WAV files took whatever the
