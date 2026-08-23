@@ -1,0 +1,38 @@
+// Button icons drawn as outlines rather than typed as characters.
+//
+// Slint positions a Text by its font's line box, not by the ink the glyph
+// puts on screen, so a character used as an icon lands wherever that face's
+// ascent, descent and side bearings happen to put it — off-center by a
+// pixel or three, in a direction that changes with the resolved monospace
+// family. Worse for a character the family lacks (Berkeley Mono has no
+// U+2715): the fallback face picks the offset, and nothing here can predict
+// which face that is. An outline is measured against the element's own box,
+// so it centers exactly whatever font the user has.
+
+// Playback toggle: the stop square while playing, the play triangle otherwise.
+export component PlayStopIcon inherits Path {
+    in property <bool> playing;
+    in property <brush> color;
+
+    viewbox-width: 100;
+    viewbox-height: 100;
+    fill: root.color;
+    // The triangle straddles the box center rather than centering on it: a
+    // right-pointing triangle carries its area in its left third, so an
+    // outline centered by its bounding box still reads as left-aligned.
+    commands: root.playing
+        ? "M 30 30 L 70 30 L 70 70 L 30 70 Z"
+        : "M 32 24 L 74 50 L 32 76 Z";
+}
+
+// Dismiss control on the modal header.
+export component CloseIcon inherits Path {
+    in property <brush> color;
+
+    viewbox-width: 100;
+    viewbox-height: 100;
+    stroke: root.color;
+    stroke-width: 1.75px;
+    stroke-line-cap: round;
+    commands: "M 34 34 L 66 66 M 66 34 L 34 66";
+}

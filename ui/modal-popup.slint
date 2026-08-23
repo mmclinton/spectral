@@ -4,6 +4,7 @@
 // tracks resizes.
 
 import { ScrollView } from "std-widgets.slint";
+import { CloseIcon } from "icons.slint";
 import { Theme } from "theme.slint";
 
 export component ModalPopup inherits Rectangle {
@@ -77,15 +78,10 @@ export component ModalPopup inherits Rectangle {
                     root.close_clicked();
                 }
 
-                Text {
+                CloseIcon {
                     width: 100%;
                     height: 100%;
-                    text: "✕";
-                    font-size: 14px;
-                    font-weight: 700;
                     color: white;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
                 }
 
                 TouchArea {
