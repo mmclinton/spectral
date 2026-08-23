@@ -303,6 +303,7 @@ fn run_enable(
 
     match client.send_command(DaemonCommand::Enable {
         device_id,
+        device_node_name: None,
         mic_name,
         threshold,
         rumble_filter,

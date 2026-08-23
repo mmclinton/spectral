@@ -63,11 +63,15 @@ mod pid_file {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum DaemonCommand {
     /// Brings the virtual mic up. `None` fields mean "keep the daemon's
-    /// current setting"; the device is then resolved from the remembered
-    /// node name (ids are per-instance).
+    /// current setting"; with no device named at all, the device is
+    /// resolved from the remembered node name (ids are per-instance).
     Enable {
         /// PipeWire id of the capture device to use.
         device_id: Option<u32>,
+        /// The capture device's durable `node.name`. Preferred over
+        /// `device_id` when both are sent: ids do not survive a replug or
+        /// a PipeWire restart.
+        device_node_name: Option<String>,
         /// Display name for the virtual mic node.
         mic_name: Option<String>,
         /// Voice-gate threshold.
@@ -454,12 +458,14 @@ mod tests {
         match command {
             DaemonCommand::Enable {
                 device_id,
+                device_node_name,
                 mic_name,
                 threshold,
                 rumble_filter,
                 auto_level,
             } => {
                 assert_eq!(device_id, Some(5));
+                assert_eq!(device_node_name, None, "a later version added this field");
                 assert_eq!(mic_name.as_deref(), Some("My-Mic"));
                 assert_eq!(threshold, Some(70));
                 assert_eq!(rumble_filter, None, "0.5 added this field");
@@ -500,6 +506,7 @@ mod tests {
         let cases = [
             DaemonCommand::Enable {
                 device_id: None,
+                device_node_name: None,
                 mic_name: None,
                 threshold: None,
                 rumble_filter: None,
@@ -507,6 +514,7 @@ mod tests {
             },
             DaemonCommand::Enable {
                 device_id: Some(5),
+                device_node_name: Some("alsa_input.usb-Blue_Yeti-00.analog-stereo".to_string()),
                 mic_name: Some("My-Mic".to_string()),
                 threshold: Some(70),
                 rumble_filter: Some(true),
@@ -542,15 +550,16 @@ mod tests {
         match command {
             DaemonCommand::Enable {
                 device_id: None,
+                device_node_name: None,
                 mic_name: None,
                 threshold: None,
                 rumble_filter: None,
                 auto_level: None,
             } => {
-                r#"{"Enable":{"device_id":null,"mic_name":null,"threshold":null,"rumble_filter":null,"auto_level":null}}"#
+                r#"{"Enable":{"device_id":null,"device_node_name":null,"mic_name":null,"threshold":null,"rumble_filter":null,"auto_level":null}}"#
             }
             DaemonCommand::Enable { .. } => {
-                r#"{"Enable":{"device_id":5,"mic_name":"My-Mic","threshold":70,"rumble_filter":true,"auto_level":false}}"#
+                r#"{"Enable":{"device_id":5,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"My-Mic","threshold":70,"rumble_filter":true,"auto_level":false}}"#
             }
             DaemonCommand::Disable => r#""Disable""#,
             DaemonCommand::GetState => r#""GetState""#,
@@ -669,6 +678,7 @@ mod tests {
         let name = "caf\u{e9} \u{1f3a4}";
         let (back, _) = round_trip(&DaemonCommand::Enable {
             device_id: None,
+            device_node_name: None,
             mic_name: Some(name.to_string()),
             threshold: None,
             rumble_filter: None,

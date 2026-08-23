@@ -205,10 +205,39 @@ fn stop_player_of_kind(player: &Mutex<Option<(PlaybackKind, NativePlayer)>>, kin
 /// An Enable command's settings; `None` means "keep the current setting".
 struct EnableRequest {
     device_id: Option<u32>,
+    device_node_name: Option<String>,
     mic_name: Option<String>,
     threshold: Option<i32>,
     rumble_filter: Option<bool>,
     auto_level: Option<bool>,
+}
+
+/// Which handle `handle_enable` should resolve the capture device from.
+#[derive(Debug, PartialEq, Eq)]
+enum DeviceLookup {
+    /// A durable `node.name`, from the client or from what we remember.
+    ByName(String),
+    /// A PipeWire id supplied by the client; valid only this instance.
+    ById(u32),
+    /// Nothing to go on.
+    NoDevice,
+}
+
+/// A supplied name wins over a supplied id because ids die on replug and
+/// on a PipeWire restart while names do not, and a client that sends both
+/// is describing one device. The id branch stays for `--device <id>`,
+/// which is the one place a user names a device by id on purpose.
+fn plan_device_lookup(
+    requested_name: Option<String>,
+    requested_id: Option<u32>,
+    remembered_name: Option<String>,
+) -> DeviceLookup {
+    match (requested_name, requested_id, remembered_name) {
+        (Some(name), _, _) => DeviceLookup::ByName(name),
+        (None, Some(id), _) => DeviceLookup::ById(id),
+        (None, None, Some(name)) => DeviceLookup::ByName(name),
+        (None, None, None) => DeviceLookup::NoDevice,
+    }
 }
 
 /// Resolve the effective settings and device for an Enable request, then
@@ -222,6 +251,7 @@ fn handle_enable(
 ) -> DaemonResponse {
     let EnableRequest {
         device_id,
+        device_node_name,
         mic_name,
         threshold,
         rumble_filter,
@@ -244,8 +274,24 @@ fn handle_enable(
     let rumble_filter =
         rumble_filter.unwrap_or_else(|| state.rumble_filter.load(Ordering::Relaxed));
     let auto_level = auto_level.unwrap_or_else(|| state.auto_level.load(Ordering::Relaxed));
-    let (device_id, device_node_name, channels) = match device_id {
-        Some(id) => match get_node_details(id) {
+    let remembered = lock_or_recover(&state.device_node_name).clone();
+    let (device_id, device_node_name, channels) = match plan_device_lookup(
+        device_node_name,
+        device_id,
+        remembered,
+    ) {
+        DeviceLookup::ByName(name) => match find_node(&name) {
+            Ok(Some((id, channels))) => (id, name, channels),
+            Ok(None) => {
+                return DaemonResponse::Error(format!(
+                    "Device \"{name}\" is not present — plug it in, or run `spectral devices` and pass --device"
+                ));
+            }
+            Err(e) => {
+                return DaemonResponse::Error(format!("Failed to query PipeWire: {e}"));
+            }
+        },
+        DeviceLookup::ById(id) => match get_node_details(id) {
             Ok((name, channels)) => (id, name, channels),
             Err(e) => {
                 return DaemonResponse::Error(format!(
@@ -253,27 +299,10 @@ fn handle_enable(
                 ));
             }
         },
-        None => {
-            let remembered = lock_or_recover(&state.device_node_name).clone();
-            match remembered {
-                Some(name) => match find_node(&name) {
-                    Ok(Some((id, channels))) => (id, name, channels),
-                    Ok(None) => {
-                        return DaemonResponse::Error(format!(
-                            "Remembered device \"{name}\" is not present — run `spectral devices` and pass --device"
-                        ));
-                    }
-                    Err(e) => {
-                        return DaemonResponse::Error(format!("Failed to query PipeWire: {e}"));
-                    }
-                },
-                None => {
-                    return DaemonResponse::Error(
-                        "No device selected — pass --device <id> (see `spectral devices`)"
-                            .to_string(),
-                    );
-                }
-            }
+        DeviceLookup::NoDevice => {
+            return DaemonResponse::Error(
+                "No device selected — pass --device <id> (see `spectral devices`)".to_string(),
+            );
         }
     };
 
@@ -329,6 +358,7 @@ fn handle_client(
                 let response = match command {
                     DaemonCommand::Enable {
                         device_id,
+                        device_node_name,
                         mic_name,
                         threshold,
                         rumble_filter,
@@ -338,6 +368,7 @@ fn handle_client(
                         &virtual_mic,
                         EnableRequest {
                             device_id,
+                            device_node_name,
                             mic_name,
                             threshold,
                             rumble_filter,
@@ -653,4 +684,39 @@ fn handle_client(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_supplied_node_name_outranks_a_supplied_id() {
+        let plan = plan_device_lookup(
+            Some("alsa_input.usb-Yeti".to_string()),
+            Some(44),
+            Some("alsa_input.builtin".to_string()),
+        );
+        assert_eq!(
+            plan,
+            DeviceLookup::ByName("alsa_input.usb-Yeti".to_string())
+        );
+    }
+
+    #[test]
+    fn an_id_is_used_when_no_name_is_supplied() {
+        let plan = plan_device_lookup(None, Some(44), Some("alsa_input.builtin".to_string()));
+        assert_eq!(plan, DeviceLookup::ById(44));
+    }
+
+    #[test]
+    fn the_remembered_name_is_the_last_resort() {
+        let plan = plan_device_lookup(None, None, Some("alsa_input.builtin".to_string()));
+        assert_eq!(plan, DeviceLookup::ByName("alsa_input.builtin".to_string()));
+    }
+
+    #[test]
+    fn nothing_supplied_and_nothing_remembered_selects_no_device() {
+        assert_eq!(plan_device_lookup(None, None, None), DeviceLookup::NoDevice);
+    }
 }

@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   next time a recording is made.
 
 ### Fixed
+- Enabling the microphone again after unplugging and replugging it no
+  longer fails with "Cannot use device 44: No Audio/Source node with id
+  44". PipeWire gives a device a new id every time it is plugged in, and
+  the window was still sending the old one; it now sends the device's
+  durable name instead. Refreshing the device list also keeps your
+  selection across a replug rather than clearing it.
 - The unsaved-changes chips no longer slide under the Disable button at the
   window's minimum width. Three chips did not fit the footer's left slot; the
   row now collapses to the count alone from the third change onward, as it

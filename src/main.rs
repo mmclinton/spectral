@@ -197,30 +197,34 @@ fn stop_playback_and_recording_on_exit(ui: &MainWindow) {
     }
 }
 
-/// Whether the device at `idx` in the filtered list equals the applied device,
+/// Whether the device at `idx` in the filtered list is the applied one,
 /// treating an out-of-range index as "no device" (matches only when none is
-/// applied). The settings-change callbacks share this comparison.
+/// applied). Compared by `node.name`, not by id: a replugged device is the
+/// same device to the user and keeps its name, while its id has moved, and
+/// an id comparison would raise a phantom "input source" change.
 fn device_matches_applied(
     idx: i32,
     devices: &[AudioDevice],
-    applied_device_id: &std::cell::Cell<Option<u32>>,
+    applied_node_name: &std::cell::RefCell<Option<String>>,
 ) -> bool {
+    let applied = applied_node_name.borrow();
     if idx >= 0 && (idx as usize) < devices.len() {
-        Some(devices[idx as usize].id) == applied_device_id.get()
+        applied.as_deref() == Some(devices[idx as usize].node_name.as_str())
     } else {
-        applied_device_id.get().is_none()
+        applied.is_none()
     }
 }
 
 /// Where the previously selected device lands in a refreshed list: an index
 /// is only meaningful within one list, so the selection carries across a
-/// refresh by device id, not by position. No previous selection — or a
-/// device that vanished — resolves to -1 (nothing selected).
+/// refresh by `node.name`. Carrying it by id would drop the selection on
+/// every replug, which is the whole reason the old device list read stale.
+/// No previous selection — or a device that really is gone — resolves to -1.
 fn reresolve_selection(old: &[AudioDevice], old_idx: i32, new: &[AudioDevice]) -> i32 {
     usize::try_from(old_idx)
         .ok()
         .and_then(|idx| old.get(idx))
-        .and_then(|device| new.iter().position(|d| d.id == device.id))
+        .and_then(|device| new.iter().position(|d| d.node_name == device.node_name))
         .map_or(-1, |idx| idx as i32)
 }
 
@@ -228,6 +232,7 @@ fn reresolve_selection(old: &[AudioDevice], old_idx: i32, new: &[AudioDevice]) -
 /// against these to drive the Active↔Pending display.
 struct AppliedSettings {
     device_id: std::cell::Cell<Option<u32>>,
+    device_node_name: std::cell::RefCell<Option<String>>,
     threshold: std::cell::Cell<i32>,
     mic_name: std::cell::RefCell<String>,
     rumble_filter: std::cell::Cell<bool>,
@@ -275,7 +280,7 @@ fn changed_settings(
     if staged.mic_name.as_str() != applied.mic_name.borrow().as_str() {
         changed.push("mic name");
     }
-    if !device_matches_applied(staged.device_index, devices, &applied.device_id) {
+    if !device_matches_applied(staged.device_index, devices, &applied.device_node_name) {
         changed.push("input source");
     }
     if staged.auto_level != applied.auto_level.get() {
@@ -442,6 +447,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
 
     let applied = Rc::new(AppliedSettings {
         device_id: std::cell::Cell::new(daemon_state.device_id),
+        device_node_name: std::cell::RefCell::new(daemon_state.device_node_name.clone()),
         threshold: std::cell::Cell::new(daemon_state.threshold),
         mic_name: std::cell::RefCell::new(daemon_state.mic_name.clone()),
         rumble_filter: std::cell::Cell::new(daemon_state.rumble_filter),
@@ -591,9 +597,12 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                 if idx >= 0 && (idx as usize) < devices.len() {
                     match DaemonClient::connect() {
                         Ok(mut c) => {
-                            let device_id = devices[idx as usize].id;
+                            let device = &devices[idx as usize];
+                            let device_id = device.id;
+                            let device_node_name = device.node_name.clone();
                             match c.send_command(DaemonCommand::Enable {
                                 device_id: Some(device_id),
+                                device_node_name: Some(device_node_name.clone()),
                                 mic_name: Some(mic_name.clone()),
                                 threshold: Some(threshold),
                                 rumble_filter: Some(rumble_filter),
@@ -602,6 +611,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                                 Ok(DaemonResponse::Ok) => {
                                     applied.threshold.set(threshold);
                                     applied.device_id.set(Some(device_id));
+                                    *applied.device_node_name.borrow_mut() = Some(device_node_name);
                                     applied.rumble_filter.set(rumble_filter);
                                     applied.auto_level.set(auto_level);
                                     *applied.mic_name.borrow_mut() = mic_name;
@@ -860,6 +870,9 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         // client's change. Staged UI properties are never
                         // written from here — the chips carry the drift.
                         applied.device_id.set(state.device_id);
+                        if *applied.device_node_name.borrow() != state.device_node_name {
+                            *applied.device_node_name.borrow_mut() = state.device_node_name.clone();
+                        }
                         applied.threshold.set(state.threshold);
                         applied.rumble_filter.set(state.rumble_filter);
                         applied.auto_level.set(state.auto_level);
@@ -977,6 +990,7 @@ mod tests {
 
     fn applied(
         device_id: Option<u32>,
+        device_node_name: Option<&str>,
         threshold: i32,
         mic_name: &str,
         rumble_filter: bool,
@@ -984,6 +998,7 @@ mod tests {
     ) -> AppliedSettings {
         AppliedSettings {
             device_id: std::cell::Cell::new(device_id),
+            device_node_name: std::cell::RefCell::new(device_node_name.map(str::to_string)),
             threshold: std::cell::Cell::new(threshold),
             mic_name: std::cell::RefCell::new(mic_name.to_string()),
             rumble_filter: std::cell::Cell::new(rumble_filter),
@@ -1040,7 +1055,7 @@ mod tests {
     #[test]
     fn no_chips_when_staged_settings_match_applied() {
         let devices = [device(10, "A")];
-        let applied = applied(Some(10), 50, "Spectral-Mic", false, false);
+        let applied = applied(Some(10), Some("node.A"), 50, "Spectral-Mic", false, false);
         let staged = staged(0, 50, "Spectral-Mic", false, false);
         assert!(changed_settings(&staged, &devices, &applied).is_empty());
     }
@@ -1048,7 +1063,7 @@ mod tests {
     #[test]
     fn each_divergent_setting_yields_its_chip_label() {
         let devices = [device(10, "A"), device(20, "B")];
-        let applied = applied(Some(10), 50, "Spectral-Mic", false, false);
+        let applied = applied(Some(10), Some("node.A"), 50, "Spectral-Mic", false, false);
         let cases = [
             (staged(0, 80, "Spectral-Mic", false, false), "threshold"),
             (staged(0, 50, "Spectral-Mic", true, false), "rumble filter"),
@@ -1064,7 +1079,7 @@ mod tests {
     #[test]
     fn chip_labels_follow_the_footer_canonical_order() {
         let devices = [device(10, "A"), device(20, "B")];
-        let applied = applied(Some(10), 50, "Spectral-Mic", false, false);
+        let applied = applied(Some(10), Some("node.A"), 50, "Spectral-Mic", false, false);
         let staged = staged(1, 80, "Denoised", true, true);
         assert_eq!(
             changed_settings(&staged, &devices, &applied),
@@ -1079,12 +1094,12 @@ mod tests {
     }
 
     #[test]
-    fn the_input_source_chip_follows_the_device_id_not_the_index() {
-        // The list was reordered since Enable: the id at the staged index is
-        // what decides, not the position.
+    fn the_input_source_chip_follows_the_device_name_not_the_index() {
+        // The list was reordered since Enable: the name at the staged index
+        // is what decides, not the position.
         let reordered = [device(20, "B"), device(10, "A")];
-        let applied_some = applied(Some(10), 50, "Spectral-Mic", false, false);
-        let applied_none = applied(None, 50, "Spectral-Mic", false, false);
+        let applied_some = applied(Some(10), Some("node.A"), 50, "Spectral-Mic", false, false);
+        let applied_none = applied(None, None, 50, "Spectral-Mic", false, false);
         let cases = [
             (1, &applied_some, false),
             (0, &applied_some, true),
@@ -1106,7 +1121,7 @@ mod tests {
     }
 
     #[test]
-    fn refresh_carries_the_selection_by_device_id_not_by_index() {
+    fn refresh_carries_the_selection_by_node_name_not_by_index() {
         let dev = |id: u32, name: &str| AudioDevice {
             id,
             name: name.to_string(),
@@ -1117,8 +1132,9 @@ mod tests {
         let cases = [
             // Unchanged list: selection stays put.
             (1, vec![dev(10, "A"), dev(20, "B"), dev(30, "C")], 1),
-            // Reordered list: follow the id, not the position.
-            (1, vec![dev(20, "B"), dev(10, "A")], 0),
+            // Reordered list, new ids (a replug): follow the name, not the
+            // id or the position.
+            (1, vec![dev(21, "B"), dev(11, "A")], 0),
             // The selected device vanished: clear the selection.
             (2, vec![dev(10, "A"), dev(20, "B")], -1),
             // Nothing was selected: nothing to carry over.
@@ -1133,6 +1149,38 @@ mod tests {
                 "old_idx {old_idx}"
             );
         }
+    }
+
+    #[test]
+    fn a_refresh_carries_the_selection_when_only_the_id_changed() {
+        let old = vec![device(44, "Yeti"), device(45, "Webcam")];
+        let new = vec![device(57, "Webcam"), device(58, "Yeti")];
+        // Same device, new PipeWire id after a replug: it must be found at
+        // its new position, not dropped.
+        assert_eq!(reresolve_selection(&old, 0, &new), 1);
+    }
+
+    #[test]
+    fn a_refresh_drops_a_selection_whose_device_really_went_away() {
+        let old = vec![device(44, "Yeti")];
+        let new = vec![device(57, "Webcam")];
+        assert_eq!(reresolve_selection(&old, 0, &new), -1);
+    }
+
+    #[test]
+    fn the_applied_device_matches_by_name_across_a_new_id() {
+        let devices = vec![device(57, "Yeti")];
+        let applied = std::cell::RefCell::new(Some("node.Yeti".to_string()));
+        assert!(device_matches_applied(0, &devices, &applied));
+    }
+
+    #[test]
+    fn an_out_of_range_index_matches_only_when_nothing_is_applied() {
+        let devices = vec![device(57, "Yeti")];
+        let none = std::cell::RefCell::new(None);
+        let some = std::cell::RefCell::new(Some("node.Yeti".to_string()));
+        assert!(device_matches_applied(-1, &devices, &none));
+        assert!(!device_matches_applied(-1, &devices, &some));
     }
 
     #[test]
