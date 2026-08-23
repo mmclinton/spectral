@@ -126,6 +126,7 @@ mod tests {
         AudioDevice {
             id,
             name: name.to_string(),
+            node_name: format!("node.{name}"),
             channels,
         }
     }

@@ -954,6 +954,7 @@ mod tests {
         AudioDevice {
             id,
             name: name.to_string(),
+            node_name: format!("node.{name}"),
             channels: 2,
         }
     }
@@ -1109,6 +1110,7 @@ mod tests {
         let dev = |id: u32, name: &str| AudioDevice {
             id,
             name: name.to_string(),
+            node_name: format!("node.{name}"),
             channels: 2,
         };
         let old = [dev(10, "A"), dev(20, "B"), dev(30, "C")];

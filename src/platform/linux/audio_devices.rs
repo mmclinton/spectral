@@ -280,6 +280,7 @@ pub fn get_input_devices() -> Result<Vec<AudioDevice>, Box<dyn Error>> {
         .map(|node| AudioDevice {
             id: node.id,
             name: node.display_name,
+            node_name: node.node_name,
             channels: node.channels,
         })
         .collect())

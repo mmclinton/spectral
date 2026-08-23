@@ -26,6 +26,9 @@ pub struct AudioDevice {
     pub id: u32,
     /// Human-readable description shown in device pickers.
     pub name: String,
+    /// The device's PipeWire `node.name` — the durable handle. Ids are
+    /// scoped to one server instance and change on replug; this does not.
+    pub node_name: String,
     /// Channel count as reported by the node's own info props (1 = mono).
     /// The enumerator substitutes stereo when a node dies before reporting
     /// or omits `audio.channels`, so 2 can also mean "unknown".
