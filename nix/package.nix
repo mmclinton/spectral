@@ -44,7 +44,24 @@ rustPlatform.buildRustPackage {
 
   __structuredAttrs = true;
 
-  src = ./..;
+  # Only what the build reads. A docs, packaging, or CI commit must not
+  # change the derivation hash and force a full recompile.
+  src = lib.fileset.toSource {
+    root = ./..;
+    fileset = lib.fileset.unions [
+      ./../src
+      ./../ui
+      ./../build.rs
+      ./../Cargo.toml
+      ./../Cargo.lock
+      ./../assets/page.codeberg.mmc.Spectral.desktop
+      ./../assets/page.codeberg.mmc.Spectral.metainfo.xml
+      ./../assets/spectral.png
+      ./../THIRD-PARTY.md
+      # The CLI tests include_str! this.
+      ./../docs/CLI.md
+    ];
+  };
 
   cargoLock = {
     lockFile = ./../Cargo.lock;
