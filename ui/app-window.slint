@@ -106,7 +106,6 @@ export component MainWindow inherits Window {
 
         ThresholdBand {
             value <=> root.slider_value;
-            mic_enabled: root.mic_enabled;
             threshold_changed(value) => {
                 root.threshold_changed(value);
             }

@@ -1,17 +1,16 @@
-// Full-width band for the app's main tuning control. The caption and scale
-// anchors render in every state — only opacity communicates inactive — so
-// the control's meaning never disappears with state.
+// Full-width band for the app's main tuning control. It looks the same in
+// every state: the threshold is editable before the mic comes up, so dimming
+// it would mislabel a live control as inert.
 
 import { AppSlider } from "controls.slint";
 import { Theme } from "theme.slint";
 
 export component ThresholdBand inherits Rectangle {
     in-out property <int> value;
-    in property <bool> mic_enabled;
 
     callback threshold_changed(int);
 
-    // Fixed so the band never resizes with state. 84px against 79px of
+    // Fixed so the band never reflows. 84px against 79px of
     // content (10 + 21 heading + 2 + 20 slider + 2 + 14 anchors + 10) - the
     // remainder is the slider's own breathing room.
     height: 84px;
@@ -33,7 +32,6 @@ export component ThresholdBand inherits Rectangle {
 
         HorizontalLayout {
             spacing: 10px;
-            opacity: root.mic_enabled ? 1 : 0.55;
 
             Text {
                 text: "Input Threshold";
@@ -56,14 +54,13 @@ export component ThresholdBand inherits Rectangle {
                 text: "\{root.value}%";
                 font-size: Theme.font_display;
                 font-weight: 700;
-                color: root.mic_enabled ? Theme.accent_bright : Theme.text_muted;
+                color: Theme.accent_bright;
                 vertical-alignment: center;
             }
         }
 
         AppSlider {
             label: "Input Threshold";
-            opacity: root.mic_enabled ? 1 : 0.55;
             value <=> root.value;
             minimum: 0;
             maximum: 100;
