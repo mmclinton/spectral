@@ -57,6 +57,26 @@ impl VoiceGate {
         }
     }
 
+    /// Return the gate to its post-[`VoiceGate::new`] state. Allocation-free,
+    /// because the audio path calls it: the delay slots are refilled in place
+    /// rather than reallocated.
+    ///
+    /// Used when the capture stream re-attaches after a disconnect. The delay
+    /// line would otherwise emit [`LOOKAHEAD_FRAMES`] of pre-disconnect audio
+    /// at the seam, and a gain left at unity would open the resumed signal on
+    /// a decision made about the old one.
+    #[allow(dead_code)]
+    pub fn reset(&mut self) {
+        for slot in &mut self.delay {
+            slot.fill(0.0);
+        }
+        self.queued_voice = [false; LOOKAHEAD_FRAMES];
+        self.head = 0;
+        self.voice_state = false;
+        self.hold_remaining = 0;
+        self.gain = FLOOR;
+    }
+
     /// Feed one frame and its VAD confidence; `frame` is replaced with the
     /// audio from [`LOOKAHEAD_FRAMES`] calls ago, gated. `open_cutoff` of
     /// `None` bypasses the gate (gain ramps to unity; the delay remains).
@@ -229,6 +249,25 @@ mod tests {
                 (sample - expected).abs() < 1e-6,
                 "sample {i}: got {sample}, expected {expected}"
             );
+        }
+    }
+
+    #[test]
+    fn reset_returns_the_gate_to_its_initial_state() {
+        let mut gate = VoiceGate::new(FRAME);
+        for _ in 0..10 {
+            run(&mut gate, 9.0, 0.9, Some(OPEN));
+        }
+        gate.reset();
+
+        // A fresh gate emits LOOKAHEAD_FRAMES of priming silence and opens
+        // from the floor. Anything carried over from before the reset would
+        // show up here as the old 9.0 audio or as a gain above the floor.
+        let mut fresh = VoiceGate::new(FRAME);
+        for value in [1.0_f32, 2.0, 3.0, 4.0] {
+            let after_reset = run(&mut gate, value, 0.0, Some(OPEN));
+            let from_new = run(&mut fresh, value, 0.0, Some(OPEN));
+            assert_eq!(after_reset, from_new, "reset gate diverged at {value}");
         }
     }
 }
