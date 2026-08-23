@@ -16,7 +16,7 @@
 //!
 //! Keep guard scopes minimal; never hold two locks longer than necessary.
 
-use spectral_lib::platform::audio_devices::{find_node, get_node_details, get_node_name};
+use spectral_lib::platform::audio_devices::{find_node, get_node_details};
 use spectral_lib::platform::audio_processor::VirtualMic;
 use spectral_lib::platform::ipc::{
     DaemonCommand, DaemonResponse, DaemonServer, DaemonState, PROTOCOL_VERSION, daemon_log_path,
@@ -483,24 +483,13 @@ fn handle_client(
                         DaemonResponse::State(daemon_state)
                     }
                     DaemonCommand::StartRecording => {
-                        let device_id = *lock_or_recover(&state.selected_device_id);
+                        let source_node = lock_or_recover(&state.device_node_name).clone();
 
-                        let Some(device_id) = device_id else {
+                        let Some(source_node) = source_node else {
                             conn.send_response(DaemonResponse::Error(
                                 "No device selected".to_string(),
                             ))?;
                             continue;
-                        };
-
-                        let source_node = match get_node_name(device_id) {
-                            Ok(name) => name,
-                            Err(e) => {
-                                eprintln!("[recorder] failed to get source name: {e}");
-                                conn.send_response(DaemonResponse::Error(format!(
-                                    "Failed to get source: {e}"
-                                )))?;
-                                continue;
-                            }
                         };
 
                         // The filtered side captures the virtual mic node,
