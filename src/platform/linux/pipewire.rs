@@ -82,6 +82,25 @@ const RECONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 /// attempts have to be cheap to repeat without becoming a spin.
 const REATTACH_RETRY_INTERVAL: Duration = Duration::from_millis(500);
 
+/// `-ENOENT`, which PipeWire reports for a `target.object` that is not there.
+const TARGET_MISSING: i32 = -2;
+
+/// Whether a core error is the proxy half of a capture target going away,
+/// rather than a failure of the connection itself.
+///
+/// One unplug is reported twice, in the same loop iteration: on the capture
+/// stream as `StreamState::Error`, and again on that stream's proxy as a core
+/// error. The crate exposes no proxy id on a `Stream`, so the two cannot be
+/// tied together by identity — but `-ENOENT` says exactly "the thing you
+/// named is not there", which no failure of the connection reports.
+///
+/// `already_detached` is load-bearing on its own: a retry against a target
+/// that has not come back yet raises the same error, and calling that fatal
+/// would end the reconnect window at its first attempt.
+fn core_error_is_lost_target(res: i32, capture_lost: bool, already_detached: bool) -> bool {
+    res == TARGET_MISSING && (capture_lost || already_detached)
+}
+
 /// What the pipeline loop should do about the capture stream this tick.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum Reattach {
@@ -680,6 +699,7 @@ fn run_pipeline(
     )?;
 
     let ready = Rc::new(ReadyFlags::default());
+    let core_error: Rc<RefCell<Option<(u32, i32, String)>>> = Rc::new(RefCell::new(None));
 
     let wiring = CaptureWiring {
         pipeline_data: pipeline_data.clone(),
@@ -774,17 +794,18 @@ fn run_pipeline(
         &mut [feed_pod],
     )?;
 
-    // Any proxy error is fatal: every object this connection owns (core,
-    // streams, mic node, feed link) is load-bearing, and create_object
-    // reports failures asynchronously as proxy errors.
-    let core_failure = failure.clone();
+    // Parked rather than judged here: whether a proxy error is fatal depends
+    // on what the capture stream reported in the same iteration, which this
+    // callback cannot see. The loop classifies it. First error wins, matching
+    // `record_failure` — later ones are usually cascades of the first.
+    let core_error_slot = core_error.clone();
     let _core_listener = core
         .add_listener_local()
         .error(move |id, _seq, res, message| {
-            record_failure(
-                &core_failure,
-                format!("PipeWire error on object {id}: {res} {message}"),
-            );
+            let mut slot = core_error_slot.borrow_mut();
+            if slot.is_none() {
+                *slot = Some((id, res, message.to_string()));
+            }
         })
         .register();
 
@@ -851,6 +872,20 @@ fn run_pipeline(
             record_failure(failure, format!("main loop iterate failed: errno {errno}"));
             break;
         }
+        // Classified here rather than in the callback, which cannot see what
+        // the capture stream reported in the same iteration. Read `lost`
+        // without consuming it — the teardown below owns that.
+        if let Some((id, res, message)) = core_error.borrow_mut().take() {
+            if core_error_is_lost_target(res, wiring.lost.get(), reattach.is_detached()) {
+                eprintln!("[pipeline] capture target gone (proxy reported {res} on object {id})");
+            } else {
+                record_failure(
+                    failure,
+                    format!("PipeWire error on object {id}: {res} {message}"),
+                );
+            }
+        }
+
         if lock_or_recover(failure).is_some() {
             break;
         }
@@ -1184,6 +1219,29 @@ mod tests {
 
     fn at(base: Instant, secs: u64) -> Instant {
         base + Duration::from_secs(secs)
+    }
+
+    #[test]
+    fn a_missing_target_the_capture_stream_also_reported_is_not_fatal() {
+        assert!(core_error_is_lost_target(TARGET_MISSING, true, false));
+    }
+
+    #[test]
+    fn a_missing_target_during_an_open_window_is_not_fatal() {
+        // A retry against a device that has not come back yet raises the same
+        // error; calling it fatal would end the window at the first attempt.
+        assert!(core_error_is_lost_target(TARGET_MISSING, false, true));
+    }
+
+    #[test]
+    fn a_missing_target_nobody_else_reported_stays_fatal() {
+        assert!(!core_error_is_lost_target(TARGET_MISSING, false, false));
+    }
+
+    #[test]
+    fn a_connection_failure_stays_fatal_even_mid_window() {
+        // -EPIPE: the connection itself is gone, which no re-attach repairs.
+        assert!(!core_error_is_lost_target(-32, true, true));
     }
 
     #[test]
