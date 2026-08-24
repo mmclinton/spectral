@@ -401,6 +401,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                     rumble_filter: false,
                     auto_level: false,
                     capture_detached: false,
+                    is_recording: false,
                     is_playing_original: false,
                     is_playing_filtered: false,
                     last_error: None,
@@ -872,6 +873,11 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         // since that is the one worth reporting.
                         *last_daemon_state.borrow_mut() = Some(state.clone());
 
+                        // The card drives its own recording display and
+                        // counts itself down, so a capture the daemon has
+                        // already reaped — an unplugged device mid-test —
+                        // would otherwise keep animating to the end.
+                        ui.set_is_recording(state.is_recording);
                         ui.set_is_playing_original(state.is_playing_original);
                         ui.set_is_playing_filtered(state.is_playing_filtered);
 
@@ -933,6 +939,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         // open, and the pill would otherwise stay latched on
                         // Reconnecting under an unrelated message.
                         ui.set_reconnecting(false);
+                        ui.set_is_recording(false);
                     }
                     Err(_) => {
                         show_error(&ui_weak, DAEMON_UNREACHABLE);
@@ -942,6 +949,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         ui.set_is_playing_original(false);
                         ui.set_is_playing_filtered(false);
                         ui.set_reconnecting(false);
+                        ui.set_is_recording(false);
                     }
                 },
                 Err(_) => {
@@ -953,6 +961,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                     ui.set_is_playing_original(false);
                     ui.set_is_playing_filtered(false);
                     ui.set_reconnecting(false);
+                    ui.set_is_recording(false);
                     if current_status.get() != Status::Inactive {
                         current_status.set(Status::Inactive);
                         update_ui_status(&ui_weak, Status::Inactive);

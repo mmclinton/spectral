@@ -70,7 +70,8 @@ pub struct AppState {
     /// Display name for the virtual mic node.
     pub mic_name: Mutex<String>,
     /// Why the mic is not active: set on pipeline death or a failed
-    /// enable/disable, cleared when an enable or disable succeeds.
+    /// enable/disable, and cleared by whatever succeeds next — an enable, a
+    /// disable, or a voice test that starts.
     pub last_error: Mutex<Option<String>>,
 }
 

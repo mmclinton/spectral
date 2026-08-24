@@ -509,6 +509,7 @@ mod tests {
             rumble_filter: true,
             auto_level: false,
             capture_detached: false,
+            is_recording: false,
             is_playing_original: false,
             is_playing_filtered: false,
             last_error: None,

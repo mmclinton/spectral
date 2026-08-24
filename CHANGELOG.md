@@ -27,6 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   next time a recording is made.
 
 ### Fixed
+- The voice test no longer keeps showing a recording in progress after the
+  input device has been unplugged. The capture stops when the device goes,
+  as it always did, but the countdown and the level meter ran on to the end
+  as though nothing had happened.
+- A voice test that failed no longer leaves its error on screen until you
+  toggle the microphone off and on. Recording or playing back again clears
+  it, the way enabling already did.
 - Enabling the microphone again after unplugging and replugging it no
   longer fails with "Cannot use device 44: No Audio/Source node with id
   44". PipeWire gives a device a new id every time it is plugged in, and

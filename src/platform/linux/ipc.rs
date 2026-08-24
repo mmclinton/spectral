@@ -139,17 +139,26 @@ pub struct DaemonState {
     /// mic as active, which it is.
     #[serde(default)]
     pub capture_detached: bool,
+    /// Whether a voice-test recording is running. The GUI drives its own
+    /// recording display optimistically, so without this it keeps showing a
+    /// capture that the daemon has already reaped — which is what an
+    /// unplugged device mid-recording produces. Defaulted for the same
+    /// reason as `capture_detached`.
+    #[serde(default)]
+    pub is_recording: bool,
     /// Whether the raw voice-test capture is currently playing.
     pub is_playing_original: bool,
     /// Whether the processed voice-test capture is currently playing.
     pub is_playing_filtered: bool,
-    /// Why the mic is down, if it is; cleared on a successful
-    /// enable/disable. Overloaded for recorder/player failures too: a
-    /// crashed `NativeRecorder` or `NativePlayer` surfaces its reason here
-    /// on the next `GetState` poll (those subsystems are not represented
-    /// elsewhere in this struct). Stretches the field's "why the mic is
-    /// down" contract intentionally, and persists until the next
-    /// enable/disable.
+    /// Why the mic is down, if it is. Overloaded for recorder/player
+    /// failures too: a crashed `NativeRecorder` or `NativePlayer` surfaces
+    /// its reason here on the next `GetState` poll. Stretches the field's
+    /// "why the mic is down" contract intentionally.
+    ///
+    /// Cleared by whatever succeeds next — an enable, a disable, or a voice
+    /// test that starts. Anything less leaves a dead recording's reason on
+    /// screen through every later success, with only an enable able to
+    /// retire it.
     pub last_error: Option<String>,
 }
 
@@ -594,6 +603,7 @@ mod tests {
             rumble_filter: true,
             auto_level: false,
             capture_detached: false,
+            is_recording: false,
             is_playing_original: false,
             is_playing_filtered: true,
             last_error: Some("pipeline died".to_string()),
@@ -613,6 +623,7 @@ mod tests {
             rumble_filter: false,
             auto_level: false,
             capture_detached: false,
+            is_recording: false,
             is_playing_original: false,
             is_playing_filtered: false,
             last_error: None,
@@ -630,6 +641,7 @@ mod tests {
             rumble_filter: true,
             auto_level: false,
             capture_detached: false,
+            is_recording: false,
             is_playing_original: false,
             is_playing_filtered: false,
             last_error: None,
@@ -662,19 +674,19 @@ mod tests {
                 status: Status::Active,
                 ..
             }) => {
-                r#"{"State":{"protocol_version":2,"status":"Active","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"capture_detached":false,"is_playing_original":false,"is_playing_filtered":true,"last_error":"pipeline died"}}"#
+                r#"{"State":{"protocol_version":2,"status":"Active","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"capture_detached":false,"is_recording":false,"is_playing_original":false,"is_playing_filtered":true,"last_error":"pipeline died"}}"#
             }
             DaemonResponse::State(DaemonState {
                 status: Status::Pending,
                 ..
             }) => {
-                r#"{"State":{"protocol_version":2,"status":"Pending","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"capture_detached":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}}"#
+                r#"{"State":{"protocol_version":2,"status":"Pending","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"capture_detached":false,"is_recording":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}}"#
             }
             DaemonResponse::State(DaemonState {
                 status: Status::Inactive,
                 ..
             }) => {
-                r#"{"State":{"protocol_version":2,"status":"Inactive","device_id":null,"device_node_name":null,"mic_name":"Spectral-Mic","threshold":50,"rumble_filter":false,"auto_level":false,"capture_detached":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}}"#
+                r#"{"State":{"protocol_version":2,"status":"Inactive","device_id":null,"device_node_name":null,"mic_name":"Spectral-Mic","threshold":50,"rumble_filter":false,"auto_level":false,"capture_detached":false,"is_recording":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}}"#
             }
             DaemonResponse::Error(_) => r#"{"Error":"no such device"}"#,
         }

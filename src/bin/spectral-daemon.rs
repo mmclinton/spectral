@@ -446,7 +446,7 @@ fn handle_client(
                         // down and reported. Same ordering discipline:
                         // record after dropping the recorder guard (#7 is
                         // held, #6 must not be).
-                        let recorder_error = {
+                        let (recorder_error, is_recording) = {
                             let mut guard = lock_or_recover(&recorder);
                             if let Some(r) = guard.as_ref()
                                 && let Some(msg) = r.failure()
@@ -454,9 +454,9 @@ fn handle_client(
                                 if let Some(mut finished) = guard.take() {
                                     finished.stop();
                                 }
-                                Some(format!("Recording stopped: {msg}"))
+                                (Some(format!("Recording stopped: {msg}")), false)
                             } else {
-                                None
+                                (None, guard.is_some())
                             }
                         };
                         if let Some(msg) = recorder_error {
@@ -480,6 +480,7 @@ fn handle_client(
                             rumble_filter,
                             auto_level,
                             capture_detached,
+                            is_recording,
                             is_playing_original,
                             is_playing_filtered,
                             last_error,
@@ -544,6 +545,15 @@ fn handle_client(
                                         ) {
                                             Ok(r) => {
                                                 *lock_or_recover(&recorder) = Some(r);
+                                                // A voice test that starts
+                                                // retires the record of one
+                                                // that failed, the same way
+                                                // enable and disable do.
+                                                // Otherwise the reason a
+                                                // recording died outlives
+                                                // every later success and
+                                                // only an enable clears it.
+                                                state.set_last_error(None);
                                                 DaemonResponse::Ok
                                             }
                                             Err(e) => {
@@ -607,6 +617,7 @@ fn handle_client(
                             match NativePlayer::start(&original_path) {
                                 Ok(p) => {
                                     *lock_or_recover(&player) = Some((PlaybackKind::Original, p));
+                                    state.set_last_error(None);
                                     DaemonResponse::Ok
                                 }
                                 Err(e) => {
@@ -640,6 +651,7 @@ fn handle_client(
                             match NativePlayer::start(&filtered_path) {
                                 Ok(p) => {
                                     *lock_or_recover(&player) = Some((PlaybackKind::Filtered, p));
+                                    state.set_last_error(None);
                                     DaemonResponse::Ok
                                 }
                                 Err(e) => {

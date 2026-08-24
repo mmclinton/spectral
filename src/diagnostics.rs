@@ -69,6 +69,7 @@ pub fn build_diagnostics(
             lines.push(format!("  threshold: {}%", state.threshold));
             lines.push(format!("  rumble filter: {}", on_off(state.rumble_filter)));
             lines.push(format!("  auto level: {}", on_off(state.auto_level)));
+            lines.push(format!("  recording: {}", yes_no(state.is_recording)));
             lines.push(format!(
                 "  playing original: {}",
                 yes_no(state.is_playing_original)
@@ -164,6 +165,7 @@ mod tests {
             rumble_filter: true,
             auto_level: false,
             capture_detached: false,
+            is_recording: false,
             is_playing_original: false,
             is_playing_filtered: true,
             last_error: None,
@@ -200,6 +202,7 @@ mod tests {
         assert!(dump.contains("  threshold: 65%"));
         assert!(dump.contains("  rumble filter: on"));
         assert!(dump.contains("  auto level: off"));
+        assert!(dump.contains("  recording: no"));
         assert!(dump.contains("  playing original: no"));
         assert!(dump.contains("  playing filtered: yes"));
     }
