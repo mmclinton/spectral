@@ -24,7 +24,6 @@ export component DeviceHelpPopup inherits ModalPopup {
             horizontal-alignment: left;
         }
 
-        // Scenario 1: PipeWire or WirePlumber not running
         Rectangle {
             background: Theme.inset;
             border-color: Theme.border;
@@ -51,7 +50,6 @@ export component DeviceHelpPopup inherits ModalPopup {
             }
         }
 
-        // Scenario 2: Device not connected
         Rectangle {
             background: Theme.inset;
             border-color: Theme.border;
@@ -78,7 +76,6 @@ export component DeviceHelpPopup inherits ModalPopup {
             }
         }
 
-        // Scenario 3: Bluetooth headset in the wrong profile
         Rectangle {
             background: Theme.inset;
             border-color: Theme.border;
@@ -105,7 +102,6 @@ export component DeviceHelpPopup inherits ModalPopup {
             }
         }
 
-        // Scenario 4: Device disabled or muted
         Rectangle {
             background: Theme.inset;
             border-color: Theme.border;
@@ -132,7 +128,6 @@ export component DeviceHelpPopup inherits ModalPopup {
             }
         }
 
-        // Scenario 5: Stale devices after a PipeWire restart
         Rectangle {
             background: Theme.inset;
             border-color: Theme.border;

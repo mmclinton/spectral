@@ -44,8 +44,8 @@ pub const RNNOISE_FRAME_SIZE: usize = 480;
 /// Format check in the capture listener.
 pub const MAX_INPUT_CHANNELS: u32 = 8;
 
-/// Scaling factor for converting f32 PCM [-1.0, 1.0] to RNNoise's expected i16 range.
-/// RNNoise expects samples in the range [-32768.0, 32767.0] as f32 values.
+/// Scales f32 PCM [-1.0, 1.0] into the i16-range floats [-32768.0, 32767.0]
+/// RNNoise expects.
 pub const RNNOISE_SCALE_FACTOR: f32 = 32768.0;
 
 /// Maximum time to wait for the pipeline thread to finish its PipeWire setup.
@@ -669,7 +669,6 @@ fn run_pipeline(
 
     let channels = input_channels.clamp(1, MAX_INPUT_CHANNELS);
 
-    // Must use Rc because PipeWire callbacks are !Send
     let pipeline_data = Rc::new(RefCell::new(PipelineData::new(processor)));
     let format_state = Arc::new(FormatState::new(channels));
 
@@ -1023,8 +1022,6 @@ fn sanitize_sample(sample: f32) -> f32 {
     }
 }
 
-/// Mix N channels down to mono.
-///
 /// Mono downmix scaled to the i16 range RNNoise expects. Only the first two
 /// channels are averaged: on USB interfaces exposing more (the EVO4's
 /// surround-4.0 profile is FL FR RL RR), the front pair is the physical

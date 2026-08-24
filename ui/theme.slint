@@ -21,8 +21,8 @@ export global Theme {
     // Type scale. 12px is a floor, not a preference: the software renderer
     // rasterizes glyphs unhinted into a grayscale alpha map, which loses stem
     // definition fastest below ~12px, and it truncates a requested size to
-    // whole physical pixels — so the 10.5/11.5/12.5px steps this replaced
-    // never rendered distinctly from 10/11/12px in the first place.
+    // whole physical pixels — so fractional px sizes never render distinctly
+    // from their integer neighbors.
     // Glyphs that sit inline with text (● ■ ↻ ⌀) stay literal; the icons that
     // have to center inside a button are outlines instead, in icons.slint.
     out property <length> font_caption: 12px;
