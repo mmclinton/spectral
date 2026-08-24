@@ -204,8 +204,10 @@ struct FormatState {
     halted: AtomicBool,
     /// Set when a rebuilt capture stream needs the buffered input dropped:
     /// a partial frame captured at the old stride must not be decoded at
-    /// the new one. Consumed by the capture callback, which is the only
-    /// place `PipelineData` may be touched once the pipeline is running.
+    /// the new one. Consumed on the data thread, inside the capture
+    /// callback's existing borrow — both process callbacks hold that
+    /// `RefCell` every cycle, so the main loop must never reach into
+    /// `PipelineData` and has to hand this across as an atomic instead.
     reset_input: AtomicBool,
 }
 

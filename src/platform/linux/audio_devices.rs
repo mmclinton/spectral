@@ -10,7 +10,6 @@ use pw::node::{Node, NodeListener};
 use pw::properties::PropertiesBox;
 use pw::proxy::ProxyT;
 use pw::registry::GlobalObject;
-use pw::spa::utils::dict::DictRef;
 use pw::spa::utils::result::AsyncSeq;
 use pw::{context::ContextRc, main_loop::MainLoopRc, types::ObjectType};
 use std::cell::RefCell;
@@ -18,77 +17,6 @@ use std::collections::HashSet;
 use std::error::Error;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-
-/// Connect, enumerate every registry global once, and collect whatever
-/// `visit` extracts. One transient PipeWire connection per call.
-fn collect_globals<T, F>(visit: F) -> Result<Vec<T>, Box<dyn Error>>
-where
-    T: 'static,
-    F: Fn(&GlobalObject<&DictRef>) -> Option<T> + 'static,
-{
-    let mainloop = MainLoopRc::new(None)?;
-    let context = ContextRc::new(&mainloop, None)?;
-    let core = context.connect(None)?;
-    let registry = core.get_registry()?;
-
-    let found = Arc::new(Mutex::new(Vec::<T>::new()));
-    let found_clone = found.clone();
-
-    let _reg_listener = registry
-        .add_listener_local()
-        .global(move |global| {
-            if let Some(item) = visit(global) {
-                lock_or_recover(&found_clone).push(item);
-            }
-        })
-        .register();
-
-    let pending = Arc::new(Mutex::new(None::<AsyncSeq>));
-    let loop_clone = mainloop.clone();
-    let pending_clone = pending.clone();
-
-    // Quitting only on `done` would hang forever if the connection dies
-    // mid-roundtrip, and this runs on the thread serving the client, so a
-    // hang here wedges every later command. Any core/proxy error therefore
-    // aborts the query.
-    let error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-    let error_clone = error.clone();
-    let error_loop = mainloop.clone();
-
-    let _core_listener = core
-        .add_listener_local()
-        .done(move |id, seq| {
-            if id == PW_ID_CORE {
-                let mut p = lock_or_recover(&pending_clone);
-                if let Some(val) = *p
-                    && val == seq
-                {
-                    *p = None;
-                    loop_clone.quit();
-                }
-            }
-        })
-        .error(move |id, _seq, res, message| {
-            let mut slot = lock_or_recover(&error_clone);
-            if slot.is_none() {
-                *slot = Some(format!("PipeWire error on object {id}: {res} {message}"));
-            }
-            error_loop.quit();
-        })
-        .register();
-
-    let seq = core.sync(0)?;
-    *lock_or_recover(&pending) = Some(seq);
-
-    mainloop.run();
-
-    if let Some(msg) = lock_or_recover(&error).take() {
-        return Err(msg.into());
-    }
-
-    let items = std::mem::take(&mut *lock_or_recover(&found));
-    Ok(items)
-}
 
 /// Channel count when the node doesn't say: stereo, matching PipeWire's
 /// own default for unconfigured audio.
@@ -121,8 +49,7 @@ struct SourceNode {
 /// A node that dies between its global event and the bind keeps the
 /// fallback count instead of failing the whole enumeration; any error on
 /// the core or registry still aborts, because a wedged query here would
-/// wedge the thread serving that client (same rationale as
-/// `collect_globals`).
+/// wedge the thread serving that client.
 fn collect_source_nodes() -> Result<Vec<SourceNode>, Box<dyn Error>> {
     let mainloop = MainLoopRc::new(None)?;
     let context = ContextRc::new(&mainloop, None)?;
@@ -327,8 +254,8 @@ pub fn set_default_source(node_name: &str) -> Result<(), Box<dyn Error>> {
     let loop_clone = mainloop.clone();
     let pending_clone = pending.clone();
 
-    // Same rationale as collect_globals: without an error path out of the
-    // loop, a connection that dies mid-roundtrip hangs this thread forever.
+    // Without an error path out of the loop, a connection that dies
+    // mid-roundtrip hangs this thread forever.
     let error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let error_clone = error.clone();
     let error_loop = mainloop.clone();
@@ -396,23 +323,6 @@ pub fn find_node(node_name: &str) -> Result<Option<(u32, u32)>, Box<dyn Error>> 
         .into_iter()
         .find(|node| node.node_name == node_name)
         .map(|node| (node.id, node.channels)))
-}
-
-/// Get the PipeWire node name for a device by its ID, straight from the
-/// registry — `node.name` is what streams and recorders target. Errors if
-/// the connection fails or no node with that id exposes one.
-pub fn get_node_name(node_id: u32) -> Result<String, Box<dyn Error>> {
-    let names = collect_globals(move |global| {
-        if global.type_ != ObjectType::Node || global.id != node_id {
-            return None;
-        }
-        global.props.as_ref()?.get("node.name").map(str::to_string)
-    })?;
-
-    names
-        .into_iter()
-        .next()
-        .ok_or_else(|| format!("Could not find node.name for node {node_id}").into())
 }
 
 #[cfg(test)]

@@ -487,19 +487,10 @@ fn handle_client(
                         DaemonResponse::State(daemon_state)
                     }
                     DaemonCommand::StartRecording => {
-                        {
-                            let detached = lock_or_recover(&virtual_mic)
-                                .as_ref()
-                                .is_some_and(VirtualMic::is_detached);
-                            if detached {
-                                conn.send_response(DaemonResponse::Error(
-                                    "The input device is disconnected — the voice test would record silence"
-                                        .to_string(),
-                                ))?;
-                                continue;
-                            }
-                        }
-
+                        // #3 before #4, and #4 exactly once: both mic checks
+                        // read the same guard, so another client's Enable
+                        // cannot swap the mic between the detached check and
+                        // the liveness check.
                         let source_node = lock_or_recover(&state.device_node_name).clone();
 
                         let Some(source_node) = source_node else {
@@ -520,6 +511,14 @@ fn handle_client(
                         // recording against that name would miss the node.
                         {
                             let mic_guard = lock_or_recover(&virtual_mic);
+                            if mic_guard.as_ref().is_some_and(VirtualMic::is_detached) {
+                                drop(mic_guard);
+                                conn.send_response(DaemonResponse::Error(
+                                    "The input device is disconnected — the voice test would record silence"
+                                        .to_string(),
+                                ))?;
+                                continue;
+                            }
                             let live_mic_name = mic_guard
                                 .as_ref()
                                 .filter(|mic| mic.failure().is_none())

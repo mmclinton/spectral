@@ -927,7 +927,13 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                             clear_error(&ui_weak);
                         }
                     }
-                    Ok(_) => show_error(&ui_weak, "Unexpected response from daemon"),
+                    Ok(_) => {
+                        show_error(&ui_weak, "Unexpected response from daemon");
+                        // No snapshot means no evidence the window is still
+                        // open, and the pill would otherwise stay latched on
+                        // Reconnecting under an unrelated message.
+                        ui.set_reconnecting(false);
+                    }
                     Err(_) => {
                         show_error(&ui_weak, DAEMON_UNREACHABLE);
                         // An unreachable daemon is not playing anything; a
