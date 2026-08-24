@@ -859,9 +859,11 @@ fn run_pipeline(
 
         // Tear the stream down here rather than in the callback, which must
         // not drop the object it was invoked from. Unconditionally, even
-        // while already detached: a stream that reports Paused and then
-        // Error inside one iterate would otherwise be left in `capture` for
-        // the attach below to mistake for a working one.
+        // while already detached: a retry whose stream errors would
+        // otherwise stay in `capture`, where `step` reads it as an attempt
+        // still in flight and withholds every further retry — so the window
+        // would run out with the device present and nothing trying to reach
+        // it.
         if wiring.lost.replace(false) {
             capture = None;
             wiring.live.set(false);
