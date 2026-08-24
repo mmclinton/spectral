@@ -232,7 +232,6 @@ fn reresolve_selection(old: &[AudioDevice], old_idx: i32, new: &[AudioDevice]) -
 /// The last settings the daemon acknowledged; staged UI edits are compared
 /// against these to drive the Active↔Pending display.
 struct AppliedSettings {
-    device_id: std::cell::Cell<Option<u32>>,
     device_node_name: std::cell::RefCell<Option<String>>,
     threshold: std::cell::Cell<i32>,
     mic_name: std::cell::RefCell<String>,
@@ -448,7 +447,6 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     }
 
     let applied = Rc::new(AppliedSettings {
-        device_id: std::cell::Cell::new(daemon_state.device_id),
         device_node_name: std::cell::RefCell::new(daemon_state.device_node_name.clone()),
         threshold: std::cell::Cell::new(daemon_state.threshold),
         mic_name: std::cell::RefCell::new(daemon_state.mic_name.clone()),
@@ -615,7 +613,6 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                             }) {
                                 Ok(DaemonResponse::Ok) => {
                                     applied.threshold.set(threshold);
-                                    applied.device_id.set(Some(device_id));
                                     *applied.device_node_name.borrow_mut() = Some(device_node_name);
                                     applied.rumble_filter.set(rumble_filter);
                                     applied.auto_level.set(auto_level);
@@ -875,7 +872,6 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         // values and Apply silently reverts the other
                         // client's change. Staged UI properties are never
                         // written from here — the chips carry the drift.
-                        applied.device_id.set(state.device_id);
                         if *applied.device_node_name.borrow() != state.device_node_name {
                             *applied.device_node_name.borrow_mut() = state.device_node_name.clone();
                         }
@@ -1013,7 +1009,6 @@ mod tests {
     }
 
     fn applied(
-        device_id: Option<u32>,
         device_node_name: Option<&str>,
         threshold: i32,
         mic_name: &str,
@@ -1021,7 +1016,6 @@ mod tests {
         auto_level: bool,
     ) -> AppliedSettings {
         AppliedSettings {
-            device_id: std::cell::Cell::new(device_id),
             device_node_name: std::cell::RefCell::new(device_node_name.map(str::to_string)),
             threshold: std::cell::Cell::new(threshold),
             mic_name: std::cell::RefCell::new(mic_name.to_string()),
@@ -1079,7 +1073,7 @@ mod tests {
     #[test]
     fn no_chips_when_staged_settings_match_applied() {
         let devices = [device(10, "A")];
-        let applied = applied(Some(10), Some("node.A"), 50, "Spectral-Mic", false, false);
+        let applied = applied(Some("node.A"), 50, "Spectral-Mic", false, false);
         let staged = staged(0, 50, "Spectral-Mic", false, false);
         assert!(changed_settings(&staged, &devices, &applied).is_empty());
     }
@@ -1087,7 +1081,7 @@ mod tests {
     #[test]
     fn each_divergent_setting_yields_its_chip_label() {
         let devices = [device(10, "A"), device(20, "B")];
-        let applied = applied(Some(10), Some("node.A"), 50, "Spectral-Mic", false, false);
+        let applied = applied(Some("node.A"), 50, "Spectral-Mic", false, false);
         let cases = [
             (staged(0, 80, "Spectral-Mic", false, false), "threshold"),
             (staged(0, 50, "Spectral-Mic", true, false), "rumble filter"),
@@ -1103,7 +1097,7 @@ mod tests {
     #[test]
     fn chip_labels_follow_the_footer_canonical_order() {
         let devices = [device(10, "A"), device(20, "B")];
-        let applied = applied(Some(10), Some("node.A"), 50, "Spectral-Mic", false, false);
+        let applied = applied(Some("node.A"), 50, "Spectral-Mic", false, false);
         let staged = staged(1, 80, "Denoised", true, true);
         assert_eq!(
             changed_settings(&staged, &devices, &applied),
@@ -1122,8 +1116,8 @@ mod tests {
         // The list was reordered since Enable: the name at the staged index
         // is what decides, not the position.
         let reordered = [device(20, "B"), device(10, "A")];
-        let applied_some = applied(Some(10), Some("node.A"), 50, "Spectral-Mic", false, false);
-        let applied_none = applied(None, None, 50, "Spectral-Mic", false, false);
+        let applied_some = applied(Some("node.A"), 50, "Spectral-Mic", false, false);
+        let applied_none = applied(None, 50, "Spectral-Mic", false, false);
         let cases = [
             (1, &applied_some, false),
             (0, &applied_some, true),
