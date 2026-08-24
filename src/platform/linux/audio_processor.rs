@@ -23,6 +23,12 @@ fn vad_cutoff(threshold: i32) -> Option<f32> {
 /// region; deep rumble goes, voices keep their body.
 const RUMBLE_CUTOFF_HZ: f64 = 90.0;
 
+/// Silent frames pushed through RNNoise to clear it on a re-attach. It is a
+/// 50 % overlap-add analysis/synthesis, so one frame flushes the synthesis
+/// tail and a second clears the analysis window that the first one still
+/// spanned.
+const DENOISER_FLUSH_FRAMES: usize = 2;
+
 /// The complete per-frame DSP chain, owned by the pipeline thread. Reads
 /// its settings from [`AppState`] atomics each frame, so toggles apply live
 /// without locking the audio path.
@@ -32,6 +38,10 @@ pub struct AudioProcessor {
     highpass: HighPass,
     leveler: Leveler,
     gate: VoiceGate,
+    /// The re-attach flush's input and discarded output, held so that
+    /// running it costs no allocation on the audio thread.
+    flush_silence: Vec<f32>,
+    flush_sink: Vec<f32>,
 }
 
 impl AudioProcessor {
@@ -44,6 +54,8 @@ impl AudioProcessor {
             highpass: HighPass::new(RUMBLE_CUTOFF_HZ, SAMPLE_RATE as f64, RNNOISE_FRAME_SIZE),
             leveler: Leveler::new(),
             gate: VoiceGate::new(RNNOISE_FRAME_SIZE),
+            flush_silence: vec![0.0; RNNOISE_FRAME_SIZE],
+            flush_sink: vec![0.0; RNNOISE_FRAME_SIZE],
         }
     }
 
@@ -85,13 +97,25 @@ impl AudioProcessor {
     /// capture stream re-attaches. Allocation-free: it runs on the audio
     /// thread.
     ///
-    /// The RNNoise state is deliberately left alone. Replacing it means
-    /// `DenoiseState::new()`, which allocates, and nothing on this path may;
-    /// its stale spectral history settles within a few frames, which is far
-    /// cheaper than a malloc here would be.
+    /// The denoiser is flushed rather than replaced. What its overlap-add
+    /// carries is not diffuse spectral history: `synthesis_mem` is 10 ms of
+    /// pre-disconnect samples that would be summed into the first resumed
+    /// frame, and `analysis_mem` puts another 10 ms of them into that
+    /// frame's transform window, so its gains and its VAD probability would
+    /// be decided about audio from before the outage. Silent frames push
+    /// both through, where `DenoiseState::new()` would allocate and nothing
+    /// on this path may. What survives is the recurrent net's own state,
+    /// which is a bias on the next few frames' gains and not audio.
+    ///
+    /// Costs roughly 100 µs once per re-attach, against a 10 ms frame
+    /// budget.
     pub fn reset_for_reattach(&mut self) {
         self.highpass.reset();
         self.leveler.reset();
+        for _ in 0..DENOISER_FLUSH_FRAMES {
+            self.denoiser
+                .process_frame(&mut self.flush_sink, &self.flush_silence);
+        }
         self.gate.reset();
     }
 }
@@ -209,6 +233,52 @@ mod tests {
                 unit as f32 * amplitude
             })
             .collect()
+    }
+
+    /// The seam a re-attach leaves. RNNoise's overlap-add holds 10 ms of
+    /// input in `analysis_mem` and 10 ms of output in `synthesis_mem`, so
+    /// without the flush the first frame the resumed stream produces is a
+    /// windowed fade-out of the syllable that was being spoken when the
+    /// device was unplugged — measured at the full pre-outage level, not a
+    /// residue. Silence in after the reset therefore has to come out an
+    /// order of magnitude down at once and keep decaying, which is the
+    /// denoiser's own filter settling and not audio from before the gap.
+    ///
+    /// Threshold 0 takes the gate's attenuation out of the measurement; its
+    /// constant delay stays, so the first frames are the delay line's
+    /// priming zeros either way.
+    #[test]
+    fn a_reattach_leaves_no_pre_disconnect_audio_at_the_seam() {
+        let state = Arc::new(AppState::new());
+        state.threshold_val.store(0, Ordering::Relaxed);
+        let mut processor = AudioProcessor::new(state);
+        let mut output = vec![0.0; RNNOISE_FRAME_SIZE];
+        for frame_idx in 0..20 {
+            processor.process_frame(&sine(220.0, 20_000.0, frame_idx), &mut output);
+        }
+        let before_the_gap = output.iter().fold(0.0f32, |m, &s| m.max(s.abs()));
+
+        processor.reset_for_reattach();
+
+        let silence = vec![0.0; RNNOISE_FRAME_SIZE];
+        let peaks: Vec<f32> = (0..LOOKAHEAD_FRAMES + 4)
+            .map(|_| {
+                processor.process_frame(&silence, &mut output);
+                output.iter().fold(0.0f32, |m, &s| m.max(s.abs()))
+            })
+            .collect();
+
+        let first = peaks[LOOKAHEAD_FRAMES];
+        assert!(
+            first * 10.0 < before_the_gap,
+            "the first resumed frame peaks at {first} against {before_the_gap} before the \
+             gap — the overlap-add tail was spliced in"
+        );
+        let settled = peaks[LOOKAHEAD_FRAMES + 3];
+        assert!(
+            settled * 500.0 < before_the_gap,
+            "the seam still peaks at {settled} four frames in; it is not decaying"
+        );
     }
 
     #[test]
