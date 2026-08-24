@@ -3,7 +3,8 @@
 //! one handler thread per connection. SIGTERM/SIGINT tear everything down.
 //!
 //! LOCK ORDERING CONVENTION: to prevent deadlocks, always acquire locks in
-//! this order (`state.threshold_val` is an atomic and exempt):
+//! this order (the atomics — `state.threshold_val`, `state.rumble_filter`,
+//! `state.auto_level` — are exempt):
 //!
 //! 1. `state.mic_name`
 //! 2. `state.selected_device_id`
