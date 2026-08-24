@@ -26,7 +26,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Audio sample rate in Hz (48kHz is standard for PipeWire)
 pub const SAMPLE_RATE: u32 = 48000;
@@ -65,6 +65,120 @@ const OUTPUT_BUFFER_CAP: usize = SAMPLE_RATE as usize;
 /// graph configured beyond the limit still works (the Vec grows once), but
 /// every stock configuration stays allocation-free.
 const MAX_QUANTUM: usize = 8192;
+
+/// How long the virtual mic keeps running with no capture stream attached
+/// before the pipeline reports and exits.
+///
+/// Thirty rather than twenty seconds because the two failure modes are not
+/// symmetric: overshooting leaves a silent mic the user can end with
+/// Disable and which the error chip is already explaining, while
+/// undershooting is exactly the friction this window exists to remove. A
+/// Bluetooth microphone re-pairing routinely takes longer than twenty
+/// seconds, and so does a laptop resume.
+const RECONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Minimum spacing between rebuild attempts while detached. A node can
+/// appear in the registry a moment before it can actually be connected, so
+/// attempts have to be cheap to repeat without becoming a spin.
+const REATTACH_RETRY_INTERVAL: Duration = Duration::from_millis(500);
+
+/// `-ENOENT`, which PipeWire reports for a `target.object` that is not there.
+const TARGET_MISSING: i32 = -2;
+
+/// Whether a core error is the proxy half of a capture target going away,
+/// rather than a failure of the connection itself.
+///
+/// One unplug is reported twice, in the same loop iteration: on the capture
+/// stream as `StreamState::Error`, and again on that stream's proxy as a core
+/// error. The crate exposes no proxy id on a `Stream`, so the two cannot be
+/// tied together by identity — but `-ENOENT` says exactly "the thing you
+/// named is not there", which no failure of the connection reports.
+///
+/// `already_detached` is load-bearing on its own: a retry against a target
+/// that has not come back yet raises the same error, and calling that fatal
+/// would end the reconnect window at its first attempt.
+fn core_error_is_lost_target(res: i32, capture_lost: bool, already_detached: bool) -> bool {
+    res == TARGET_MISSING && (capture_lost || already_detached)
+}
+
+/// What the pipeline loop should do about the capture stream this tick.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum Reattach {
+    /// The capture stream is live; nothing to do.
+    Attached,
+    /// Detached, but the target is absent or the retry interval has not
+    /// elapsed.
+    Waiting,
+    /// Detached, the target is back, and it is time to rebuild.
+    Retry,
+    /// Detached past [`RECONNECT_TIMEOUT`]; report and exit.
+    GiveUp,
+}
+
+/// The reconnect window's bookkeeping.
+///
+/// `now` is passed in rather than read here so the whole policy — the
+/// deadline, the retry spacing, and what a repeated detach does to both —
+/// is testable without a clock or a PipeWire graph.
+#[derive(Default)]
+struct ReattachState {
+    detached_since: Option<Instant>,
+    last_attempt: Option<Instant>,
+}
+
+impl ReattachState {
+    /// The capture stream has gone away. A detach while already detached
+    /// leaves the deadline alone: it runs from when audio stopped, or a
+    /// device that flaps just under the timeout would never expire.
+    fn detach(&mut self, now: Instant) {
+        if self.detached_since.is_none() {
+            self.detached_since = Some(now);
+        }
+        self.last_attempt = None;
+    }
+
+    /// A rebuilt capture stream is live. The window closes, and the next
+    /// outage gets a full one.
+    fn attach(&mut self) {
+        self.detached_since = None;
+        self.last_attempt = None;
+    }
+
+    fn is_detached(&self) -> bool {
+        self.detached_since.is_some()
+    }
+
+    /// Records the attempt when it returns [`Reattach::Retry`], so callers
+    /// cannot forget to.
+    ///
+    /// `attempt_in_flight` means a stream exists but has not reported live
+    /// yet. Rebuilding over one destroys a connection that is merely slow:
+    /// a Bluetooth headset's SCO transport is acquired lazily *because* a
+    /// capture stream wants it and routinely takes seconds, so a retry every
+    /// interval restarts that work from zero and the device never arrives.
+    /// The deadline is checked ahead of it, so a stream that never leaves
+    /// Connecting still expires on time instead of holding the window open.
+    fn step(&mut self, now: Instant, target_present: bool, attempt_in_flight: bool) -> Reattach {
+        let Some(since) = self.detached_since else {
+            return Reattach::Attached;
+        };
+        if now.duration_since(since) >= RECONNECT_TIMEOUT {
+            return Reattach::GiveUp;
+        }
+        if !target_present || attempt_in_flight {
+            return Reattach::Waiting;
+        }
+        let due = self
+            .last_attempt
+            .is_none_or(|last| now.duration_since(last) >= REATTACH_RETRY_INTERVAL);
+        if due {
+            self.last_attempt = Some(now);
+            Reattach::Retry
+        } else {
+            Reattach::Waiting
+        }
+    }
+}
 
 /// Ready = both streams up and the feed link created; the daemon's Enable
 /// blocks on this inside PIPELINE_READY_TIMEOUT.
@@ -107,6 +221,13 @@ struct FormatState {
     /// Poisoned by an unusable or renegotiated format: the process callback
     /// drops deliveries rather than deinterleave with a wrong stride.
     halted: AtomicBool,
+    /// Set when a rebuilt capture stream needs the buffered input dropped:
+    /// a partial frame captured at the old stride must not be decoded at
+    /// the new one. Consumed on the data thread, inside the capture
+    /// callback's existing borrow — both process callbacks hold that
+    /// `RefCell` every cycle, so the main loop must never reach into
+    /// `PipelineData` and has to hand this across as an atomic instead.
+    reset_input: AtomicBool,
 }
 
 impl FormatState {
@@ -115,7 +236,20 @@ impl FormatState {
             channels: AtomicU32::new(channels),
             locked: AtomicBool::new(false),
             halted: AtomicBool::new(false),
+            reset_input: AtomicBool::new(false),
         }
+    }
+
+    /// Let a rebuilt capture stream settle on its own channel count — a
+    /// replugged device is free to offer a different one, and the granted
+    /// count is what the deinterleave uses.
+    ///
+    /// `halted` is deliberately not cleared: every path that sets it also
+    /// records into the fatal failure slot, so a halted pipeline is already
+    /// on its way out and never reaches a re-attach.
+    fn reset_for_reattach(&self) {
+        self.locked.store(false, Ordering::SeqCst);
+        self.reset_input.store(true, Ordering::SeqCst);
     }
 }
 
@@ -173,7 +307,17 @@ impl PipelineData {
 pub struct NativeAudioPipeline {
     running: Arc<AtomicBool>,
     failure: Arc<Mutex<Option<String>>>,
+    detached: Arc<AtomicBool>,
     pipeline_thread: Option<JoinHandle<()>>,
+}
+
+/// The three signals shared between [`NativeAudioPipeline`] and its thread
+/// body: the stop flag, the fatal failure slot, and whether the mic is
+/// currently running on silence with no capture attached.
+struct PipelineHandles {
+    running: Arc<AtomicBool>,
+    failure: Arc<Mutex<Option<String>>>,
+    detached: Arc<AtomicBool>,
 }
 
 /// Why a granted format cannot be decoded, or `None` if it can.
@@ -215,9 +359,13 @@ impl NativeAudioPipeline {
         input_channels: u32,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let running = Arc::new(AtomicBool::new(true));
-        let running_clone = running.clone();
         let failure = Arc::new(Mutex::new(None));
-        let failure_clone = failure.clone();
+        let detached = Arc::new(AtomicBool::new(false));
+        let handles = PipelineHandles {
+            running: running.clone(),
+            failure: failure.clone(),
+            detached: detached.clone(),
+        };
         let source_node = source_node.to_string();
         let virtual_name = virtual_name.to_string();
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
@@ -227,12 +375,11 @@ impl NativeAudioPipeline {
                 processor,
                 &source_node,
                 &virtual_name,
-                running_clone,
                 input_channels,
                 &ready_tx,
-                &failure_clone,
+                &handles,
             ) {
-                record_failure(&failure_clone, format!("pipeline error: {e}"));
+                record_failure(&handles.failure, format!("pipeline error: {e}"));
                 let _ = ready_tx.send(Err(e.to_string()));
                 eprintln!("[pipeline] pipeline error: {e}");
             }
@@ -242,6 +389,7 @@ impl NativeAudioPipeline {
             Ok(Ok(())) => Ok(Self {
                 running,
                 failure,
+                detached,
                 pipeline_thread: Some(pipeline_thread),
             }),
             Ok(Err(e)) => {
@@ -284,6 +432,12 @@ impl NativeAudioPipeline {
         (self.running.load(Ordering::SeqCst) && thread_exited)
             .then(|| "pipeline thread exited unexpectedly".to_string())
     }
+
+    /// Whether the capture stream is currently detached and the mic is
+    /// running on silence while it waits for its device to return.
+    pub fn is_detached(&self) -> bool {
+        self.detached.load(Ordering::SeqCst)
+    }
 }
 
 impl Drop for NativeAudioPipeline {
@@ -325,54 +479,44 @@ pub(crate) fn build_audio_format_pod(
     Ok(values)
 }
 
-fn run_pipeline(
-    processor: AudioProcessor,
+/// A live capture stream and its listener. Tuple order is the drop order:
+/// the listener unregisters its hook from a list that destroying the stream
+/// would already have freed.
+type CaptureStream<'c> = (
+    pipewire::stream::StreamListener<Rc<RefCell<PipelineData>>>,
+    StreamBox<'c>,
+);
+
+/// Everything a capture stream's callbacks hold on to, gathered so that
+/// rebuilding one is a single call rather than a long argument list.
+struct CaptureWiring {
+    pipeline_data: Rc<RefCell<PipelineData>>,
+    format_state: Arc<FormatState>,
+    failure: Arc<Mutex<Option<String>>>,
+    /// Set by `state_changed` when the stream errors; the loop, not the
+    /// callback, tears the stream down and starts the window.
+    lost: Rc<Cell<bool>>,
+    /// Set when the stream reaches Paused or Streaming. Only this closes
+    /// the reconnect window — a connect that returns Ok has not yet
+    /// produced a working stream.
+    live: Rc<Cell<bool>>,
+    /// The last error the capture stream reported, for the give-up message.
+    error: Rc<RefCell<Option<String>>>,
+    ready: Rc<ReadyFlags>,
+}
+
+/// Build, wire and connect the capture stream against `source_node`.
+///
+/// Separate from [`run_pipeline`] because the reconnect window rebuilds it:
+/// the virtual mic node, the feed stream and the link outlive any number of
+/// these.
+fn connect_capture_stream<'c>(
+    core: &'c pipewire::core::Core,
     source_node: &str,
-    virtual_name: &str,
-    running: Arc<AtomicBool>,
-    input_channels: u32,
-    ready_tx: &mpsc::Sender<Result<(), String>>,
-    failure: &Arc<Mutex<Option<String>>>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    pipewire::init();
-
-    let mainloop = MainLoopBox::new(None)?;
-    let context = ContextBox::new(mainloop.loop_(), None)?;
-    let core = context.connect(Some(super::manager_client_properties()))?;
-
-    let channels = input_channels.clamp(1, MAX_INPUT_CHANNELS);
-
-    // Must use Rc because PipeWire callbacks are !Send
-    let pipeline_data = Rc::new(RefCell::new(PipelineData::new(processor)));
-    let format_state = Arc::new(FormatState::new(channels));
-
+    channels: u32,
+    wiring: &CaptureWiring,
+) -> Result<CaptureStream<'c>, Box<dyn std::error::Error + Send + Sync>> {
     let capture_format = build_audio_format_pod(AudioFormat::F32LE, SAMPLE_RATE, channels, None)?;
-    let feed_format = build_audio_format_pod(
-        AudioFormat::F32LE,
-        SAMPLE_RATE,
-        OUTPUT_CHANNELS,
-        Some(&[pipewire::spa::sys::SPA_AUDIO_CHANNEL_MONO]),
-    )?;
-
-    // The mic itself: an adapter node classified as a virtual source. It
-    // lists as an input device only — no sink, no monitor — and dies with
-    // this connection. WirePlumber refuses to route playback into a
-    // source-classed node, so the feed stream below connects unrouted and
-    // the link is created explicitly once both ports exist.
-    let _virtual_mic_node = core.create_object::<Node>(
-        "adapter",
-        &properties! {
-            "factory.name" => "support.null-audio-sink",
-            *pipewire::keys::NODE_NAME => virtual_name,
-            *pipewire::keys::NODE_DESCRIPTION => virtual_name,
-            *pipewire::keys::MEDIA_CLASS => "Audio/Source/Virtual",
-            *pipewire::keys::NODE_VIRTUAL => "true",
-            "audio.position" => "[ MONO ]",
-            "device.icon-name" => "audio-input-microphone",
-        },
-    )?;
-
-    let ready = Rc::new(ReadyFlags::default());
 
     let capture_props = properties! {
         *pipewire::keys::MEDIA_TYPE => "Audio",
@@ -397,30 +541,39 @@ fn run_pipeline(
         // Validated by unplugging a live capture device: it arrives as
         // `StreamState::Error("defined target not found")` in the
         // `state_changed` handler below — a stream error, not a core one,
-        // so the failure slot is
-        // reached through state_changed and the pill goes Inactive.
+        // so the reconnect window opens and the mic node stays up.
         "node.dont-reconnect" => "true",
         "node.dont-fallback" => "true",
     };
 
-    let capture_stream = StreamBox::new(&core, "spectral-capture", capture_props)?;
+    let capture_stream = StreamBox::new(core, "spectral-capture", capture_props)?;
 
-    let capture_data = pipeline_data.clone();
-    let capture_failure = failure.clone();
-    let param_failure = failure.clone();
-    let capture_ready = ready.clone();
+    let capture_data = wiring.pipeline_data.clone();
+    let param_failure = wiring.failure.clone();
+    let capture_lost = wiring.lost.clone();
+    let capture_live = wiring.live.clone();
+    let capture_error = wiring.error.clone();
+    let capture_ready = wiring.ready.clone();
     // Each callback carries its own handle rather than reaching through the
     // listener's user data, which is what keeps the main-loop handler off
     // the RT callback's `RefCell`. See [`FormatState`].
-    let param_format = format_state.clone();
-    let capture_format_state = format_state.clone();
-    let _capture_listener = capture_stream
+    let param_format = wiring.format_state.clone();
+    let capture_format_state = wiring.format_state.clone();
+    let capture_listener = capture_stream
         .add_local_listener_with_user_data(capture_data)
         .state_changed(move |_stream, _data, _old, new| match new {
+            // The one recoverable failure this pipeline has: the capture
+            // stream is the only object it can rebuild in place, so the
+            // loop owns the deadline and the give-up message rather than
+            // this being written straight into the fatal slot.
             StreamState::Error(msg) => {
-                record_failure(&capture_failure, format!("capture stream error: {msg}"));
+                *capture_error.borrow_mut() = Some(msg);
+                capture_lost.set(true);
             }
-            StreamState::Paused | StreamState::Streaming => capture_ready.capture.set(true),
+            StreamState::Paused | StreamState::Streaming => {
+                capture_ready.capture.set(true);
+                capture_live.set(true);
+            }
             _ => {}
         })
         // The granted format, not the offered one: PipeWire's adapter is
@@ -490,6 +643,80 @@ fn run_pipeline(
         StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS | StreamFlags::RT_PROCESS,
         &mut [capture_pod],
     )?;
+
+    Ok((capture_listener, capture_stream))
+}
+
+fn run_pipeline(
+    processor: AudioProcessor,
+    source_node: &str,
+    virtual_name: &str,
+    input_channels: u32,
+    ready_tx: &mpsc::Sender<Result<(), String>>,
+    handles: &PipelineHandles,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let PipelineHandles {
+        running,
+        failure,
+        detached,
+    } = handles;
+
+    pipewire::init();
+
+    let mainloop = MainLoopBox::new(None)?;
+    let context = ContextBox::new(mainloop.loop_(), None)?;
+    let core = context.connect(Some(super::manager_client_properties()))?;
+
+    let channels = input_channels.clamp(1, MAX_INPUT_CHANNELS);
+
+    // Must use Rc because PipeWire callbacks are !Send
+    let pipeline_data = Rc::new(RefCell::new(PipelineData::new(processor)));
+    let format_state = Arc::new(FormatState::new(channels));
+
+    let feed_format = build_audio_format_pod(
+        AudioFormat::F32LE,
+        SAMPLE_RATE,
+        OUTPUT_CHANNELS,
+        Some(&[pipewire::spa::sys::SPA_AUDIO_CHANNEL_MONO]),
+    )?;
+
+    // The mic itself: an adapter node classified as a virtual source. It
+    // lists as an input device only — no sink, no monitor — and dies with
+    // this connection. WirePlumber refuses to route playback into a
+    // source-classed node, so the feed stream below connects unrouted and
+    // the link is created explicitly once both ports exist.
+    let _virtual_mic_node = core.create_object::<Node>(
+        "adapter",
+        &properties! {
+            "factory.name" => "support.null-audio-sink",
+            *pipewire::keys::NODE_NAME => virtual_name,
+            *pipewire::keys::NODE_DESCRIPTION => virtual_name,
+            *pipewire::keys::MEDIA_CLASS => "Audio/Source/Virtual",
+            *pipewire::keys::NODE_VIRTUAL => "true",
+            "audio.position" => "[ MONO ]",
+            "device.icon-name" => "audio-input-microphone",
+        },
+    )?;
+
+    let ready = Rc::new(ReadyFlags::default());
+    let core_error: Rc<RefCell<Option<(u32, i32, String)>>> = Rc::new(RefCell::new(None));
+
+    let wiring = CaptureWiring {
+        pipeline_data: pipeline_data.clone(),
+        format_state: format_state.clone(),
+        failure: failure.clone(),
+        lost: Rc::new(Cell::new(false)),
+        live: Rc::new(Cell::new(false)),
+        error: Rc::new(RefCell::new(None)),
+        ready: ready.clone(),
+    };
+    let mut reattach = ReattachState::default();
+    let mut capture = Some(connect_capture_stream(
+        &core,
+        source_node,
+        channels,
+        &wiring,
+    )?);
 
     // No AUTOCONNECT: the session manager would route this to the default
     // sink (audible!) since it refuses source-classed targets.
@@ -567,17 +794,18 @@ fn run_pipeline(
         &mut [feed_pod],
     )?;
 
-    // Any proxy error is fatal: every object this connection owns (core,
-    // streams, mic node, feed link) is load-bearing, and create_object
-    // reports failures asynchronously as proxy errors.
-    let core_failure = failure.clone();
+    // Parked rather than judged here: whether a proxy error is fatal depends
+    // on what the capture stream reported in the same iteration, which this
+    // callback cannot see. The loop classifies it. First error wins, matching
+    // `record_failure` — later ones are usually cascades of the first.
+    let core_error_slot = core_error.clone();
     let _core_listener = core
         .add_listener_local()
         .error(move |id, _seq, res, message| {
-            record_failure(
-                &core_failure,
-                format!("PipeWire error on object {id}: {res} {message}"),
-            );
+            let mut slot = core_error_slot.borrow_mut();
+            if slot.is_none() {
+                *slot = Some((id, res, message.to_string()));
+            }
         })
         .register();
 
@@ -587,14 +815,20 @@ fn run_pipeline(
     // collection stops and the list is dropped — otherwise it would grow
     // for the pipeline's lifetime as devices hot-plug.
     let mic_node_id: Rc<Cell<Option<u32>>> = Rc::new(Cell::new(None));
+    // The capture target's own global. Tracked by id so its removal can be
+    // seen: a name match alone could only ever say "it appeared once".
+    let target_node_id: Rc<Cell<Option<u32>>> = Rc::new(Cell::new(None));
     let ports: Rc<RefCell<Vec<(u32, u32, String)>>> = Rc::new(RefCell::new(Vec::new()));
     let link_established = Rc::new(Cell::new(false));
 
     let registry = core.get_registry()?;
     let mic_node_slot = mic_node_id.clone();
+    let target_slot = target_node_id.clone();
+    let target_removed_slot = target_node_id.clone();
     let ports_slot = ports.clone();
     let link_established_slot = link_established.clone();
     let mic_node_name = virtual_name.to_string();
+    let target_name = source_node.to_string();
     let _registry_listener = registry
         .add_listener_local()
         .global(move |global| {
@@ -602,6 +836,9 @@ fn run_pipeline(
             match global.type_ {
                 ObjectType::Node if props.get("node.name") == Some(mic_node_name.as_str()) => {
                     mic_node_slot.set(Some(global.id));
+                }
+                ObjectType::Node if props.get("node.name") == Some(target_name.as_str()) => {
+                    target_slot.set(Some(global.id));
                 }
                 ObjectType::Port if !link_established_slot.get() => {
                     if let (Some(node), Some(direction)) =
@@ -614,6 +851,11 @@ fn run_pipeline(
                     }
                 }
                 _ => {}
+            }
+        })
+        .global_remove(move |id| {
+            if target_removed_slot.get() == Some(id) {
+                target_removed_slot.set(None);
             }
         })
         .register();
@@ -630,8 +872,82 @@ fn run_pipeline(
             record_failure(failure, format!("main loop iterate failed: errno {errno}"));
             break;
         }
+        // Classified here rather than in the callback, which cannot see what
+        // the capture stream reported in the same iteration. Read `lost`
+        // without consuming it — the teardown below owns that.
+        if let Some((id, res, message)) = core_error.borrow_mut().take() {
+            if core_error_is_lost_target(res, wiring.lost.get(), reattach.is_detached()) {
+                eprintln!("[pipeline] capture target gone (proxy reported {res} on object {id})");
+            } else {
+                record_failure(
+                    failure,
+                    format!("PipeWire error on object {id}: {res} {message}"),
+                );
+            }
+        }
+
         if lock_or_recover(failure).is_some() {
             break;
+        }
+
+        let now = Instant::now();
+
+        // Tear the stream down here rather than in the callback, which must
+        // not drop the object it was invoked from. Unconditionally, even
+        // while already detached: a retry whose stream errors would
+        // otherwise stay in `capture`, where `step` reads it as an attempt
+        // still in flight and withholds every further retry — so the window
+        // would run out with the device present and nothing trying to reach
+        // it.
+        if wiring.lost.replace(false) {
+            capture = None;
+            wiring.live.set(false);
+            let why = wiring.error.borrow().clone().unwrap_or_default();
+            if !ready_sent {
+                // Nothing is holding the mic yet — Enable is still blocked on
+                // the ready handshake — so a window here protects no audio and
+                // costs the caller the whole ready timeout, after which it
+                // reports a generic timeout instead of this reason.
+                record_failure(failure, format!("capture stream error: {why}"));
+                break;
+            }
+            if !reattach.is_detached() {
+                reattach.detach(now);
+                detached.store(true, Ordering::SeqCst);
+                eprintln!("[pipeline] capture target lost, holding the mic open: {why}");
+            }
+        }
+
+        // Only an observed-live stream closes the window. Treating a
+        // successful connect as success would give a device that errors
+        // immediately after connecting an unlimited number of full windows.
+        if reattach.is_detached() && capture.is_some() && wiring.live.get() {
+            reattach.attach();
+            detached.store(false, Ordering::SeqCst);
+            eprintln!("[pipeline] capture target re-attached");
+        }
+
+        match reattach.step(now, target_node_id.get().is_some(), capture.is_some()) {
+            Reattach::Attached | Reattach::Waiting => {}
+            Reattach::Retry => {
+                // No stream to drop: `step` withholds Retry while one is in
+                // flight, and the teardown above is what cleared this slot.
+                wiring.format_state.reset_for_reattach();
+                match connect_capture_stream(&core, source_node, channels, &wiring) {
+                    Ok(stream) => capture = Some(stream),
+                    Err(e) => eprintln!("[pipeline] capture re-attach failed: {e}"),
+                }
+            }
+            Reattach::GiveUp => {
+                let secs = RECONNECT_TIMEOUT.as_secs();
+                let why = wiring.error.borrow().clone().unwrap_or_default();
+                eprintln!("[pipeline] giving up on the capture target after {secs}s: {why}");
+                record_failure(
+                    failure,
+                    format!("the input device did not return within {secs} seconds"),
+                );
+                break;
+            }
         }
 
         if feed_link.is_none()
@@ -786,6 +1102,14 @@ fn process_capture_buffer(
                 processed_scratch,
             } = &mut *pipeline_data;
 
+            // The rebuilt stream's first delivery. Done here rather than on
+            // the main loop because the feed callback holds this `RefCell`
+            // every cycle, and a main-loop `borrow_mut` would race it.
+            if format.reset_input.swap(false, Ordering::SeqCst) {
+                input_buffer.clear();
+                processor.reset_for_reattach();
+            }
+
             for audio_chunk in valid_data.chunks_exact(4) {
                 let sample = f32::from_le_bytes([
                     audio_chunk[0],
@@ -892,6 +1216,152 @@ fn process_source_buffer(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn at(base: Instant, secs: u64) -> Instant {
+        base + Duration::from_secs(secs)
+    }
+
+    #[test]
+    fn a_missing_target_the_capture_stream_also_reported_is_not_fatal() {
+        assert!(core_error_is_lost_target(TARGET_MISSING, true, false));
+    }
+
+    #[test]
+    fn a_missing_target_during_an_open_window_is_not_fatal() {
+        // A retry against a device that has not come back yet raises the same
+        // error; calling it fatal would end the window at the first attempt.
+        assert!(core_error_is_lost_target(TARGET_MISSING, false, true));
+    }
+
+    #[test]
+    fn a_missing_target_nobody_else_reported_stays_fatal() {
+        assert!(!core_error_is_lost_target(TARGET_MISSING, false, false));
+    }
+
+    #[test]
+    fn a_connection_failure_stays_fatal_even_mid_window() {
+        // -EPIPE: the connection itself is gone, which no re-attach repairs.
+        assert!(!core_error_is_lost_target(-32, true, true));
+    }
+
+    #[test]
+    fn a_state_that_never_detached_reports_attached() {
+        let mut state = ReattachState::default();
+        assert_eq!(state.step(Instant::now(), true, false), Reattach::Attached);
+        assert!(!state.is_detached());
+    }
+
+    #[test]
+    fn a_detached_state_waits_while_the_target_is_absent() {
+        let base = Instant::now();
+        let mut state = ReattachState::default();
+        state.detach(base);
+        assert_eq!(state.step(at(base, 1), false, false), Reattach::Waiting);
+        assert_eq!(state.step(at(base, 5), false, false), Reattach::Waiting);
+    }
+
+    #[test]
+    fn a_present_target_is_retried_once_per_interval() {
+        let base = Instant::now();
+        let mut state = ReattachState::default();
+        state.detach(base);
+        assert_eq!(state.step(base, true, false), Reattach::Retry);
+        // Too soon: one attempt per interval, so a target that appears
+        // before it can be connected costs retries and not a spin.
+        assert_eq!(
+            state.step(base + Duration::from_millis(100), true, false),
+            Reattach::Waiting
+        );
+        assert_eq!(
+            state.step(base + REATTACH_RETRY_INTERVAL, true, false),
+            Reattach::Retry
+        );
+    }
+
+    /// The retry is for a target with no stream on it. A stream that is
+    /// still negotiating gets the interval back rather than being replaced,
+    /// or a device whose transport takes longer than one interval to come up
+    /// is restarted from zero every time and never finishes.
+    #[test]
+    fn an_attempt_still_in_flight_is_left_alone_rather_than_replaced() {
+        let base = Instant::now();
+        let mut state = ReattachState::default();
+        state.detach(base);
+        assert_eq!(state.step(base, true, false), Reattach::Retry);
+        for elapsed in [1, 2, 5, 10] {
+            assert_eq!(
+                state.step(at(base, elapsed), true, true),
+                Reattach::Waiting,
+                "an in-flight attempt was preempted after {elapsed}s"
+            );
+        }
+        // The attempt died without ever going live: the slot is free, and
+        // the throttle is the only thing left holding the next rebuild.
+        assert_eq!(state.step(at(base, 10), true, false), Reattach::Retry);
+    }
+
+    /// The other direction of the same guard: waiting on an attempt must not
+    /// become waiting forever, so the deadline is checked ahead of it.
+    #[test]
+    fn a_stream_stuck_negotiating_still_gives_up_at_the_deadline() {
+        let base = Instant::now();
+        let mut state = ReattachState::default();
+        state.detach(base);
+        assert_eq!(
+            state.step(
+                base + RECONNECT_TIMEOUT - Duration::from_millis(1),
+                true,
+                true
+            ),
+            Reattach::Waiting
+        );
+        assert_eq!(
+            state.step(base + RECONNECT_TIMEOUT, true, true),
+            Reattach::GiveUp
+        );
+    }
+
+    #[test]
+    fn the_window_expires_at_the_timeout() {
+        let base = Instant::now();
+        let mut state = ReattachState::default();
+        state.detach(base);
+        assert_eq!(
+            state.step(
+                base + RECONNECT_TIMEOUT - Duration::from_millis(1),
+                false,
+                false
+            ),
+            Reattach::Waiting
+        );
+        assert_eq!(
+            state.step(base + RECONNECT_TIMEOUT, false, false),
+            Reattach::GiveUp
+        );
+    }
+
+    #[test]
+    fn a_second_detach_does_not_extend_the_window() {
+        let base = Instant::now();
+        let mut state = ReattachState::default();
+        state.detach(base);
+        // A failed re-attach detaches again. The deadline runs from when
+        // audio actually stopped, or a flapping device would never expire.
+        state.detach(at(base, 20));
+        assert_eq!(state.step(at(base, 31), false, false), Reattach::GiveUp);
+    }
+
+    #[test]
+    fn a_successful_attach_gives_the_next_outage_a_full_window() {
+        let base = Instant::now();
+        let mut state = ReattachState::default();
+        state.detach(base);
+        state.attach();
+        assert!(!state.is_detached());
+        state.detach(at(base, 100));
+        assert_eq!(state.step(at(base, 120), false, false), Reattach::Waiting);
+        assert_eq!(state.step(at(base, 130), false, false), Reattach::GiveUp);
+    }
 
     /// Both process callbacks decode with a compiled-in width and rate, so
     /// the guard has to reject anything else rather than reinterpret it.

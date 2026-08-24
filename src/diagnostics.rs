@@ -55,8 +55,12 @@ pub fn build_diagnostics(
             lines.push(format!("  protocol (daemon): {}", state.protocol_version));
             lines.push(format!("  status: {}", describe_status(state.status)));
             lines.push(format!(
+                "  capture detached: {}",
+                yes_no(state.capture_detached)
+            ));
+            lines.push(format!(
                 "  device: {}",
-                describe_device(state.device_id, devices)
+                describe_device(state.device_node_name.as_deref(), state.device_id, devices)
             ));
             if let Some(node_name) = &state.device_node_name {
                 lines.push(format!("  device node: {node_name}"));
@@ -65,6 +69,7 @@ pub fn build_diagnostics(
             lines.push(format!("  threshold: {}%", state.threshold));
             lines.push(format!("  rumble filter: {}", on_off(state.rumble_filter)));
             lines.push(format!("  auto level: {}", on_off(state.auto_level)));
+            lines.push(format!("  recording: {}", yes_no(state.is_recording)));
             lines.push(format!(
                 "  playing original: {}",
                 yes_no(state.is_playing_original)
@@ -104,10 +109,28 @@ fn yes_no(value: bool) -> &'static str {
     if value { "yes" } else { "no" }
 }
 
-/// A bare PipeWire id means nothing to a reader, so it is resolved against
-/// the list the window is currently showing. An id that resolves to nothing
-/// is not a failure to report — it is the report.
-fn describe_device(device_id: Option<u32>, devices: &[AudioDevice]) -> String {
+/// A bare handle means nothing to a reader, so it is resolved against the
+/// list the window is currently showing. One that resolves to nothing is not
+/// a failure to report — it is the report.
+///
+/// The `node.name` is tried first and, when there is one, alone. The
+/// reported id goes stale as soon as the pipeline recovers a device by
+/// itself, and PipeWire hands freed ids out again, so resolving it can
+/// name a device the mic is not capturing — in a dump that is worse than
+/// naming nothing, because a bug report filed from it points at the wrong
+/// hardware. The id path remains for a daemon too old to send a name.
+fn describe_device(
+    node_name: Option<&str>,
+    device_id: Option<u32>,
+    devices: &[AudioDevice],
+) -> String {
+    if let Some(name) = node_name {
+        return match devices.iter().find(|device| device.node_name == name) {
+            Some(device) => format!("{} — {} ({}ch)", device.id, device.name, device.channels),
+            None => format!("{name} (not in the current device list)"),
+        };
+    }
+
     let Some(id) = device_id else {
         return "none selected".to_string();
     };
@@ -126,6 +149,7 @@ mod tests {
         AudioDevice {
             id,
             name: name.to_string(),
+            node_name: format!("node.{name}"),
             channels,
         }
     }
@@ -135,11 +159,13 @@ mod tests {
             protocol_version: PROTOCOL_VERSION,
             status: Status::Active,
             device_id: Some(47),
-            device_node_name: Some("alsa_input.usb-EVO4".to_string()),
+            device_node_name: Some("node.EVO4 Mic 1".to_string()),
             mic_name: "Spectral-Mic".to_string(),
             threshold: 65,
             rumble_filter: true,
             auto_level: false,
+            capture_detached: false,
+            is_recording: false,
             is_playing_original: false,
             is_playing_filtered: true,
             last_error: None,
@@ -171,11 +197,12 @@ mod tests {
         assert!(dump.contains("last known daemon state:"));
         assert!(dump.contains(&format!("  protocol (daemon): {PROTOCOL_VERSION}")));
         assert!(dump.contains("  status: Active"));
-        assert!(dump.contains("  device node: alsa_input.usb-EVO4"));
+        assert!(dump.contains("  device node: node.EVO4 Mic 1"));
         assert!(dump.contains("  mic name: Spectral-Mic"));
         assert!(dump.contains("  threshold: 65%"));
         assert!(dump.contains("  rumble filter: on"));
         assert!(dump.contains("  auto level: off"));
+        assert!(dump.contains("  recording: no"));
         assert!(dump.contains("  playing original: no"));
         assert!(dump.contains("  playing filtered: yes"));
     }
@@ -193,7 +220,35 @@ mod tests {
     fn device_absent_from_the_list_is_marked_stale() {
         let dump = render(Some(&state()), &[device(12, "Other", 2)]);
 
-        assert!(dump.contains("  device: 47 (not in the current device list)"));
+        assert!(dump.contains("  device: node.EVO4 Mic 1 (not in the current device list)"));
+    }
+
+    /// The dump has to name the device the mic is actually capturing. The
+    /// reported id is left stale on purpose once the pipeline recovers a
+    /// device by itself, and PipeWire reissues freed ids — so a dump that
+    /// resolved the id would name whatever inherited it, one line above the
+    /// node name that says otherwise, and a bug report filed from it would
+    /// point at the wrong hardware.
+    #[test]
+    fn the_device_line_follows_the_node_name_when_the_id_has_been_reissued() {
+        let devices = [device(47, "HD Webcam Mic", 1), device(71, "EVO4 Mic 1", 1)];
+
+        let dump = render(Some(&state()), &devices);
+
+        assert!(dump.contains("  device: 71 — EVO4 Mic 1 (1ch)"));
+        assert!(!dump.contains("HD Webcam Mic"));
+    }
+
+    /// A daemon too old to report a node name still gets its id resolved:
+    /// that is all the identity such a daemon has.
+    #[test]
+    fn a_snapshot_without_a_node_name_still_resolves_its_id() {
+        let mut snapshot = state();
+        snapshot.device_node_name = None;
+
+        let dump = render(Some(&snapshot), &[device(47, "EVO4 Mic 1", 1)]);
+
+        assert!(dump.contains("  device: 47 — EVO4 Mic 1 (1ch)"));
     }
 
     #[test]
@@ -295,5 +350,15 @@ mod tests {
         assert!(dump.contains("config: unavailable (no valid XDG config base or HOME)"));
         // The log is resolvable here, so the dump still asks for it.
         assert!(dump.ends_with("Attach the daemon log named above."));
+    }
+
+    #[test]
+    fn a_detached_capture_is_named_in_the_dump() {
+        let detached = DaemonState {
+            capture_detached: true,
+            ..state()
+        };
+        assert!(render(Some(&detached), &[]).contains("  capture detached: yes"));
+        assert!(render(Some(&state()), &[]).contains("  capture detached: no"));
     }
 }

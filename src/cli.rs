@@ -8,7 +8,7 @@ use spectral_lib::platform::ipc::{
     DaemonClient, DaemonCommand, DaemonResponse, DaemonState, PROTOCOL_VERSION,
     wait_for_daemon_exit,
 };
-use spectral_lib::state::{Status, is_valid_mic_name, mic_name_rule};
+use spectral_lib::state::{AudioDevice, Status, is_valid_mic_name, mic_name_rule};
 use std::ffi::OsString;
 use std::process::ExitCode;
 
@@ -303,6 +303,7 @@ fn run_enable(
 
     match client.send_command(DaemonCommand::Enable {
         device_id,
+        device_node_name: None,
         mic_name,
         threshold,
         rumble_filter,
@@ -393,7 +394,11 @@ fn print_status(state: &DaemonState) {
         Status::Pending => "Pending",
         Status::Inactive => "Inactive",
     };
-    println!("status:           {status}");
+    if state.capture_detached {
+        println!("status:           {status} (reconnecting)");
+    } else {
+        println!("status:           {status}");
+    }
     println!("device:           {}", describe_device(state));
     println!("mic name:         {}", state.mic_name);
     println!("threshold:        {}%", state.threshold);
@@ -414,17 +419,29 @@ fn print_status(state: &DaemonState) {
 /// failures degrade the label rather than failing `status`.
 fn describe_device(state: &DaemonState) -> String {
     let devices = audio_devices::get_input_devices().unwrap_or_default();
-    if let Some(id) = state.device_id
-        && let Some(device) = devices.iter().find(|device| device.id == id)
-    {
-        return format!("{} (id {id})", device.name);
+    resolve_device_label(state, &devices)
+}
+
+/// Name the device from the durable handle, falling back to the id only
+/// when there is no handle to use.
+///
+/// The remembered id can be stale while the device is still present under a
+/// new one — and worse, PipeWire reissues freed ids, so a stale one can
+/// resolve to a device the mic is not capturing. `status` naming the wrong
+/// microphone is a worse answer than naming one it cannot find, so a
+/// reported node name is used on its own; the id path is what a daemon too
+/// old to send a name gets.
+fn resolve_device_label(state: &DaemonState, devices: &[AudioDevice]) -> String {
+    if let Some(name) = &state.device_node_name {
+        return match devices.iter().find(|device| &device.node_name == name) {
+            Some(device) => format!("{} (id {})", device.name, device.id),
+            None => format!("{name} (not currently present)"),
+        };
     }
-    match &state.device_node_name {
-        // The remembered id can be stale while the device is still present
-        // under a new one; the node name is the durable handle.
-        Some(name) => match audio_devices::find_node_id(name) {
-            Ok(Some(id)) => format!("{name} (id {id})"),
-            _ => format!("{name} (not currently present)"),
+    match state.device_id {
+        Some(id) => match devices.iter().find(|device| device.id == id) {
+            Some(device) => format!("{} (id {id})", device.name),
+            None => format!("id {id} (not currently present)"),
         },
         None => "none".to_string(),
     }
@@ -470,6 +487,59 @@ mod tests {
 
     fn p(args: &[&str]) -> Result<CliCommand, String> {
         parse(args.iter().map(OsString::from))
+    }
+
+    fn device(id: u32, name: &str) -> AudioDevice {
+        AudioDevice {
+            id,
+            name: name.to_string(),
+            node_name: format!("node.{name}"),
+            channels: 2,
+        }
+    }
+
+    fn state(device_id: Option<u32>, device_node_name: Option<&str>) -> DaemonState {
+        DaemonState {
+            protocol_version: PROTOCOL_VERSION,
+            status: Status::Active,
+            device_id,
+            device_node_name: device_node_name.map(str::to_string),
+            mic_name: "Spectral-Mic".to_string(),
+            threshold: 50,
+            rumble_filter: true,
+            auto_level: false,
+            capture_detached: false,
+            is_recording: false,
+            is_playing_original: false,
+            is_playing_filtered: false,
+            last_error: None,
+        }
+    }
+
+    /// `spectral status` has to name the device the mic is capturing. The
+    /// daemon keeps reporting the id the device was enabled with even after
+    /// the pipeline has recovered it under a new one, and PipeWire reissues
+    /// freed ids — so resolving the id would confidently name whichever
+    /// device inherited it.
+    #[test]
+    fn the_status_device_is_named_from_the_node_name_not_the_remembered_id() {
+        let devices = [device(44, "HD Webcam Mic"), device(71, "Yeti")];
+
+        assert_eq!(
+            resolve_device_label(&state(Some(44), Some("node.Yeti")), &devices),
+            "Yeti (id 71)"
+        );
+        assert_eq!(
+            resolve_device_label(&state(Some(44), Some("node.Gone")), &devices),
+            "node.Gone (not currently present)"
+        );
+        // No name to go on: a daemon older than the field, where the id is
+        // the only identity there is.
+        assert_eq!(
+            resolve_device_label(&state(Some(44), None), &devices),
+            "HD Webcam Mic (id 44)"
+        );
+        assert_eq!(resolve_device_label(&state(None, None), &devices), "none");
     }
 
     #[test]

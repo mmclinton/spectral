@@ -26,6 +26,9 @@ pub struct AudioDevice {
     pub id: u32,
     /// Human-readable description shown in device pickers.
     pub name: String,
+    /// The device's PipeWire `node.name` — the durable handle. Ids are
+    /// scoped to one server instance and change on replug; this does not.
+    pub node_name: String,
     /// Channel count as reported by the node's own info props (1 = mono).
     /// The enumerator substitutes stereo when a node dies before reporting
     /// or omits `audio.channels`, so 2 can also mean "unknown".
@@ -67,7 +70,8 @@ pub struct AppState {
     /// Display name for the virtual mic node.
     pub mic_name: Mutex<String>,
     /// Why the mic is not active: set on pipeline death or a failed
-    /// enable/disable, cleared when an enable or disable succeeds.
+    /// enable/disable, and cleared by whatever succeeds next — an enable, a
+    /// disable, or a voice test that starts.
     pub last_error: Mutex<Option<String>>,
 }
 

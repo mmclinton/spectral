@@ -70,6 +70,7 @@ fn update_ui_status(ui_weak: &Weak<MainWindow>, status: Status) {
 }
 
 const DAEMON_UNREACHABLE: &str = "Cannot reach the daemon — restart Spectral to relaunch it";
+const DEVICE_RECONNECTING: &str = "Input device disconnected — waiting for it to return";
 
 fn show_error(ui_weak: &Weak<MainWindow>, msg: &str) {
     if let Some(ui) = ui_weak.upgrade() {
@@ -197,37 +198,54 @@ fn stop_playback_and_recording_on_exit(ui: &MainWindow) {
     }
 }
 
-/// Whether the device at `idx` in the filtered list equals the applied device,
+/// Whether the device at `idx` in the filtered list is the applied one,
 /// treating an out-of-range index as "no device" (matches only when none is
-/// applied). The settings-change callbacks share this comparison.
+/// applied). Compared by `node.name`, not by id: a replugged device is the
+/// same device to the user and keeps its name, while its id has moved, and
+/// an id comparison would raise a phantom "input source" change.
 fn device_matches_applied(
     idx: i32,
     devices: &[AudioDevice],
-    applied_device_id: &std::cell::Cell<Option<u32>>,
+    applied_node_name: &std::cell::RefCell<Option<String>>,
 ) -> bool {
+    let applied = applied_node_name.borrow();
     if idx >= 0 && (idx as usize) < devices.len() {
-        Some(devices[idx as usize].id) == applied_device_id.get()
+        applied.as_deref() == Some(devices[idx as usize].node_name.as_str())
     } else {
-        applied_device_id.get().is_none()
+        applied.is_none()
     }
 }
 
 /// Where the previously selected device lands in a refreshed list: an index
 /// is only meaningful within one list, so the selection carries across a
-/// refresh by device id, not by position. No previous selection — or a
-/// device that vanished — resolves to -1 (nothing selected).
+/// refresh by `node.name`. Carrying it by id would drop the selection on
+/// every replug, which is the whole reason the old device list read stale.
+/// No previous selection — or a device that really is gone — resolves to -1.
+/// Where the device the daemon reports as selected sits in the list the
+/// window is showing, or -1 when it is not there. By `node.name`, for the
+/// same reason the two functions above are: the daemon also reports a
+/// PipeWire id, but that one is deliberately allowed to go stale once the
+/// pipeline recovers a device on its own, and PipeWire hands freed ids out
+/// again — so matching on it either selects nothing on a mic that is
+/// running fine, or selects whichever device inherited the id.
+fn selection_for_node_name(devices: &[AudioDevice], node_name: Option<&str>) -> i32 {
+    node_name
+        .and_then(|name| devices.iter().position(|d| d.node_name == name))
+        .map_or(-1, |idx| idx as i32)
+}
+
 fn reresolve_selection(old: &[AudioDevice], old_idx: i32, new: &[AudioDevice]) -> i32 {
     usize::try_from(old_idx)
         .ok()
         .and_then(|idx| old.get(idx))
-        .and_then(|device| new.iter().position(|d| d.id == device.id))
+        .and_then(|device| new.iter().position(|d| d.node_name == device.node_name))
         .map_or(-1, |idx| idx as i32)
 }
 
 /// The last settings the daemon acknowledged; staged UI edits are compared
 /// against these to drive the Active↔Pending display.
 struct AppliedSettings {
-    device_id: std::cell::Cell<Option<u32>>,
+    device_node_name: std::cell::RefCell<Option<String>>,
     threshold: std::cell::Cell<i32>,
     mic_name: std::cell::RefCell<String>,
     rumble_filter: std::cell::Cell<bool>,
@@ -275,7 +293,7 @@ fn changed_settings(
     if staged.mic_name.as_str() != applied.mic_name.borrow().as_str() {
         changed.push("mic name");
     }
-    if !device_matches_applied(staged.device_index, devices, &applied.device_id) {
+    if !device_matches_applied(staged.device_index, devices, &applied.device_node_name) {
         changed.push("input source");
     }
     if staged.auto_level != applied.auto_level.get() {
@@ -382,6 +400,8 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                     threshold: 50,
                     rumble_filter: false,
                     auto_level: false,
+                    capture_detached: false,
+                    is_recording: false,
                     is_playing_original: false,
                     is_playing_filtered: false,
                     last_error: None,
@@ -431,17 +451,13 @@ fn run_app() -> Result<(), Box<dyn Error>> {
 
     let last_valid_mic_name = Rc::new(std::cell::RefCell::new(daemon_state.mic_name.clone()));
 
-    if let Some(device_id) = daemon_state.device_id
-        && let Some(idx) = filtered_devices
-            .borrow()
-            .iter()
-            .position(|d| d.id == device_id)
-    {
-        ui.set_selected_input_index(idx as i32);
-    }
+    ui.set_selected_input_index(selection_for_node_name(
+        &filtered_devices.borrow(),
+        daemon_state.device_node_name.as_deref(),
+    ));
 
     let applied = Rc::new(AppliedSettings {
-        device_id: std::cell::Cell::new(daemon_state.device_id),
+        device_node_name: std::cell::RefCell::new(daemon_state.device_node_name.clone()),
         threshold: std::cell::Cell::new(daemon_state.threshold),
         mic_name: std::cell::RefCell::new(daemon_state.mic_name.clone()),
         rumble_filter: std::cell::Cell::new(daemon_state.rumble_filter),
@@ -454,6 +470,9 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     // resetting the cache there re-arms the display for a failure that
     // recurs with the identical message within one poll tick.
     let last_daemon_error = Rc::new(std::cell::RefCell::new(None::<String>));
+    // Whether the error line currently carries the reconnect notice, so it
+    // can be withdrawn without disturbing a daemon error underneath it.
+    let showing_reconnect = Rc::new(std::cell::Cell::new(false));
     // The newest snapshot the poll has seen, for the diagnostics dump. A
     // launch failure fabricates a defaults-only DaemonState upstream to keep
     // the window open; seeding the cache with that would report invented
@@ -591,9 +610,12 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                 if idx >= 0 && (idx as usize) < devices.len() {
                     match DaemonClient::connect() {
                         Ok(mut c) => {
-                            let device_id = devices[idx as usize].id;
+                            let device = &devices[idx as usize];
+                            let device_id = device.id;
+                            let device_node_name = device.node_name.clone();
                             match c.send_command(DaemonCommand::Enable {
                                 device_id: Some(device_id),
+                                device_node_name: Some(device_node_name.clone()),
                                 mic_name: Some(mic_name.clone()),
                                 threshold: Some(threshold),
                                 rumble_filter: Some(rumble_filter),
@@ -601,7 +623,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                             }) {
                                 Ok(DaemonResponse::Ok) => {
                                     applied.threshold.set(threshold);
-                                    applied.device_id.set(Some(device_id));
+                                    *applied.device_node_name.borrow_mut() = Some(device_node_name);
                                     applied.rumble_filter.set(rumble_filter);
                                     applied.auto_level.set(auto_level);
                                     *applied.mic_name.borrow_mut() = mic_name;
@@ -840,6 +862,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let current_status = current_status.clone();
         let last_daemon_error = last_daemon_error.clone();
         let last_daemon_state = last_daemon_state.clone();
+        let showing_reconnect = showing_reconnect.clone();
         move || {
             let Some(ui) = ui_weak.upgrade() else { return };
             match DaemonClient::connect() {
@@ -850,6 +873,11 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         // since that is the one worth reporting.
                         *last_daemon_state.borrow_mut() = Some(state.clone());
 
+                        // The card drives its own recording display and
+                        // counts itself down, so a capture the daemon has
+                        // already reaped — an unplugged device mid-test —
+                        // would otherwise keep animating to the end.
+                        ui.set_is_recording(state.is_recording);
                         ui.set_is_playing_original(state.is_playing_original);
                         ui.set_is_playing_filtered(state.is_playing_filtered);
 
@@ -859,7 +887,9 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         // values and Apply silently reverts the other
                         // client's change. Staged UI properties are never
                         // written from here — the chips carry the drift.
-                        applied.device_id.set(state.device_id);
+                        if *applied.device_node_name.borrow() != state.device_node_name {
+                            *applied.device_node_name.borrow_mut() = state.device_node_name.clone();
+                        }
                         applied.threshold.set(state.threshold);
                         applied.rumble_filter.set(state.rumble_filter);
                         applied.auto_level.set(state.auto_level);
@@ -886,8 +916,31 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                             }
                             *last_daemon_error.borrow_mut() = state.last_error;
                         }
+
+                        // The reconnect window is a live condition, not a
+                        // sticky daemon error: it is re-derived every tick
+                        // and withdrawn the moment the capture stream is
+                        // back, which last_error's cleared-only-by-enable
+                        // contract cannot express. It overlays the line so
+                        // the user sees why the mic is silent right now.
+                        ui.set_reconnecting(state.capture_detached);
+                        if state.capture_detached {
+                            show_error(&ui_weak, DEVICE_RECONNECTING);
+                            showing_reconnect.set(true);
+                        } else if showing_reconnect.replace(false)
+                            && ui.get_error_text() == DEVICE_RECONNECTING
+                        {
+                            clear_error(&ui_weak);
+                        }
                     }
-                    Ok(_) => show_error(&ui_weak, "Unexpected response from daemon"),
+                    Ok(_) => {
+                        show_error(&ui_weak, "Unexpected response from daemon");
+                        // No snapshot means no evidence the window is still
+                        // open, and the pill would otherwise stay latched on
+                        // Reconnecting under an unrelated message.
+                        ui.set_reconnecting(false);
+                        ui.set_is_recording(false);
+                    }
                     Err(_) => {
                         show_error(&ui_weak, DAEMON_UNREACHABLE);
                         // An unreachable daemon is not playing anything; a
@@ -895,6 +948,8 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         // its 250 ms playback interval.
                         ui.set_is_playing_original(false);
                         ui.set_is_playing_filtered(false);
+                        ui.set_reconnecting(false);
+                        ui.set_is_recording(false);
                     }
                 },
                 Err(_) => {
@@ -905,6 +960,8 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                     show_error(&ui_weak, DAEMON_UNREACHABLE);
                     ui.set_is_playing_original(false);
                     ui.set_is_playing_filtered(false);
+                    ui.set_reconnecting(false);
+                    ui.set_is_recording(false);
                     if current_status.get() != Status::Inactive {
                         current_status.set(Status::Inactive);
                         update_ui_status(&ui_weak, Status::Inactive);
@@ -954,6 +1011,7 @@ mod tests {
         AudioDevice {
             id,
             name: name.to_string(),
+            node_name: format!("node.{name}"),
             channels: 2,
         }
     }
@@ -975,14 +1033,14 @@ mod tests {
     }
 
     fn applied(
-        device_id: Option<u32>,
+        device_node_name: Option<&str>,
         threshold: i32,
         mic_name: &str,
         rumble_filter: bool,
         auto_level: bool,
     ) -> AppliedSettings {
         AppliedSettings {
-            device_id: std::cell::Cell::new(device_id),
+            device_node_name: std::cell::RefCell::new(device_node_name.map(str::to_string)),
             threshold: std::cell::Cell::new(threshold),
             mic_name: std::cell::RefCell::new(mic_name.to_string()),
             rumble_filter: std::cell::Cell::new(rumble_filter),
@@ -1039,7 +1097,7 @@ mod tests {
     #[test]
     fn no_chips_when_staged_settings_match_applied() {
         let devices = [device(10, "A")];
-        let applied = applied(Some(10), 50, "Spectral-Mic", false, false);
+        let applied = applied(Some("node.A"), 50, "Spectral-Mic", false, false);
         let staged = staged(0, 50, "Spectral-Mic", false, false);
         assert!(changed_settings(&staged, &devices, &applied).is_empty());
     }
@@ -1047,7 +1105,7 @@ mod tests {
     #[test]
     fn each_divergent_setting_yields_its_chip_label() {
         let devices = [device(10, "A"), device(20, "B")];
-        let applied = applied(Some(10), 50, "Spectral-Mic", false, false);
+        let applied = applied(Some("node.A"), 50, "Spectral-Mic", false, false);
         let cases = [
             (staged(0, 80, "Spectral-Mic", false, false), "threshold"),
             (staged(0, 50, "Spectral-Mic", true, false), "rumble filter"),
@@ -1063,7 +1121,7 @@ mod tests {
     #[test]
     fn chip_labels_follow_the_footer_canonical_order() {
         let devices = [device(10, "A"), device(20, "B")];
-        let applied = applied(Some(10), 50, "Spectral-Mic", false, false);
+        let applied = applied(Some("node.A"), 50, "Spectral-Mic", false, false);
         let staged = staged(1, 80, "Denoised", true, true);
         assert_eq!(
             changed_settings(&staged, &devices, &applied),
@@ -1078,11 +1136,11 @@ mod tests {
     }
 
     #[test]
-    fn the_input_source_chip_follows_the_device_id_not_the_index() {
-        // The list was reordered since Enable: the id at the staged index is
-        // what decides, not the position.
+    fn the_input_source_chip_follows_the_device_name_not_the_index() {
+        // The list was reordered since Enable: the name at the staged index
+        // is what decides, not the position.
         let reordered = [device(20, "B"), device(10, "A")];
-        let applied_some = applied(Some(10), 50, "Spectral-Mic", false, false);
+        let applied_some = applied(Some("node.A"), 50, "Spectral-Mic", false, false);
         let applied_none = applied(None, 50, "Spectral-Mic", false, false);
         let cases = [
             (1, &applied_some, false),
@@ -1105,18 +1163,20 @@ mod tests {
     }
 
     #[test]
-    fn refresh_carries_the_selection_by_device_id_not_by_index() {
+    fn refresh_carries_the_selection_by_node_name_not_by_index() {
         let dev = |id: u32, name: &str| AudioDevice {
             id,
             name: name.to_string(),
+            node_name: format!("node.{name}"),
             channels: 2,
         };
         let old = [dev(10, "A"), dev(20, "B"), dev(30, "C")];
         let cases = [
             // Unchanged list: selection stays put.
             (1, vec![dev(10, "A"), dev(20, "B"), dev(30, "C")], 1),
-            // Reordered list: follow the id, not the position.
-            (1, vec![dev(20, "B"), dev(10, "A")], 0),
+            // Reordered list, new ids (a replug): follow the name, not the
+            // id or the position.
+            (1, vec![dev(21, "B"), dev(11, "A")], 0),
             // The selected device vanished: clear the selection.
             (2, vec![dev(10, "A"), dev(20, "B")], -1),
             // Nothing was selected: nothing to carry over.
@@ -1131,6 +1191,64 @@ mod tests {
                 "old_idx {old_idx}"
             );
         }
+    }
+
+    #[test]
+    fn a_refresh_carries_the_selection_when_only_the_id_changed() {
+        let old = vec![device(44, "Yeti"), device(45, "Webcam")];
+        let new = vec![device(57, "Webcam"), device(58, "Yeti")];
+        // Same device, new PipeWire id after a replug: it must be found at
+        // its new position, not dropped.
+        assert_eq!(reresolve_selection(&old, 0, &new), 1);
+    }
+
+    #[test]
+    fn a_refresh_drops_a_selection_whose_device_really_went_away() {
+        let old = vec![device(44, "Yeti")];
+        let new = vec![device(57, "Webcam")];
+        assert_eq!(reresolve_selection(&old, 0, &new), -1);
+    }
+
+    /// What the picker shows when the window opens. The daemon keeps
+    /// reporting the id the user enabled with even after the pipeline has
+    /// recovered the device under a new one, so the id is exactly the wrong
+    /// thing to open on: it selects nothing on a mic that is running, and
+    /// once PipeWire has recycled it, it selects somebody else's device —
+    /// which one click on Apply would then switch the microphone to.
+    #[test]
+    fn the_startup_selection_resolves_by_node_name_across_a_new_id() {
+        let devices = vec![device(71, "Yeti"), device(44, "Webcam")];
+        assert_eq!(
+            selection_for_node_name(&devices, Some("node.Yeti")),
+            0,
+            "the recovered device is in the list under a new id"
+        );
+        assert_eq!(
+            selection_for_node_name(&devices, Some("node.Gone")),
+            -1,
+            "a device that really is absent selects nothing"
+        );
+        assert_eq!(
+            selection_for_node_name(&devices, None),
+            -1,
+            "no remembered device selects nothing"
+        );
+    }
+
+    #[test]
+    fn the_applied_device_matches_by_name_across_a_new_id() {
+        let devices = vec![device(57, "Yeti")];
+        let applied = std::cell::RefCell::new(Some("node.Yeti".to_string()));
+        assert!(device_matches_applied(0, &devices, &applied));
+    }
+
+    #[test]
+    fn an_out_of_range_index_matches_only_when_nothing_is_applied() {
+        let devices = vec![device(57, "Yeti")];
+        let none = std::cell::RefCell::new(None);
+        let some = std::cell::RefCell::new(Some("node.Yeti".to_string()));
+        assert!(device_matches_applied(-1, &devices, &none));
+        assert!(!device_matches_applied(-1, &devices, &some));
     }
 
     #[test]

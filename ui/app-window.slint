@@ -43,6 +43,7 @@ export component MainWindow inherits Window {
     in-out property <string> status_text: "Inactive";
     in-out property <string> error_text: "";
     in-out property <bool> mic_enabled: false;
+    in-out property <bool> reconnecting: false;
     in-out property <bool> show_device_help_popup: false;
     in-out property <bool> show_help_popup: false;
     // Rust opens this one (the chip click has to snapshot fresh diagnostics
@@ -84,11 +85,14 @@ export component MainWindow inherits Window {
 
     VerticalLayout {
         AppBar {
-            status_text: root.status_text;
-            // Derived, not pushed from Rust: the pill is green exactly when
-            // the mic is up (Pending renders as Active by design), and the
-            // colors stay Theme-owned instead of duplicated as Rust hexes.
-            status_color: root.mic_enabled ? Theme.ok : Theme.text_muted;
+            // Derived, not pushed from Rust, for the same reason as the
+            // color below: Rust writes one flag and the presentation stays
+            // in one place. The mic really is up while reconnecting, so
+            // mic_enabled stays true and the footer keeps offering Disable.
+            status_text: root.reconnecting ? "Reconnecting" : root.status_text;
+            status_color: root.reconnecting
+                ? Theme.warn
+                : (root.mic_enabled ? Theme.ok : Theme.text_muted);
             mic_enabled: root.mic_enabled;
             // Derived in Slint so the ~20 Rust error sites keep writing one
             // string and nothing else: error_text stays the single store.

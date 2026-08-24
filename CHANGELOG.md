@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- The virtual microphone now survives its input device being unplugged. It
+  stays available to whatever is using it and goes quiet for up to 30
+  seconds while it waits, then picks the device up again by itself when it
+  is plugged back in — so a call carries on instead of losing the
+  microphone. If the device does not come back within 30 seconds the
+  microphone stops and says so.
+- The status pill reads "Reconnecting" while the microphone is waiting for
+  a disconnected input device, and `spectral status` says the same. The
+  error area names the device that went away until it comes back.
+
 ### Security
 - Voice-test recordings are no longer readable by other users on the same
   machine. The recordings directory and the two WAV files took whatever the
@@ -16,6 +27,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   next time a recording is made.
 
 ### Fixed
+- The voice test no longer keeps showing a recording in progress after the
+  input device has been unplugged. The capture stops when the device goes,
+  as it always did, but the countdown and the level meter ran on to the end
+  as though nothing had happened.
+- A voice test that failed no longer leaves its error on screen until you
+  toggle the microphone off and on. Recording or playing back again clears
+  it, the way enabling already did.
+- Enabling the microphone again after unplugging and replugging it no
+  longer fails with "Cannot use device 44: No Audio/Source node with id
+  44". PipeWire gives a device a new id every time it is plugged in, and
+  the window was still sending the old one; it now sends the device's
+  durable name instead. Refreshing the device list also keeps your
+  selection across a replug rather than clearing it.
+- The window, `spectral status` and the diagnostics dump no longer name or
+  select the wrong microphone after a replug. All three identified the
+  device by the id it was enabled with; PipeWire gives that id to whatever
+  is plugged in next, so the picker could open on a webcam microphone while
+  the real one was in use, and a dump could send a bug report after the
+  wrong hardware. They now go by the device's durable name.
 - The unsaved-changes chips no longer slide under the Disable button at the
   window's minimum width. Three chips did not fit the footer's left slot; the
   row now collapses to the count alone from the third change onward, as it
