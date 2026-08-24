@@ -221,6 +221,19 @@ fn device_matches_applied(
 /// refresh by `node.name`. Carrying it by id would drop the selection on
 /// every replug, which is the whole reason the old device list read stale.
 /// No previous selection — or a device that really is gone — resolves to -1.
+/// Where the device the daemon reports as selected sits in the list the
+/// window is showing, or -1 when it is not there. By `node.name`, for the
+/// same reason the two functions above are: the daemon also reports a
+/// PipeWire id, but that one is deliberately allowed to go stale once the
+/// pipeline recovers a device on its own, and PipeWire hands freed ids out
+/// again — so matching on it either selects nothing on a mic that is
+/// running fine, or selects whichever device inherited the id.
+fn selection_for_node_name(devices: &[AudioDevice], node_name: Option<&str>) -> i32 {
+    node_name
+        .and_then(|name| devices.iter().position(|d| d.node_name == name))
+        .map_or(-1, |idx| idx as i32)
+}
+
 fn reresolve_selection(old: &[AudioDevice], old_idx: i32, new: &[AudioDevice]) -> i32 {
     usize::try_from(old_idx)
         .ok()
@@ -437,14 +450,10 @@ fn run_app() -> Result<(), Box<dyn Error>> {
 
     let last_valid_mic_name = Rc::new(std::cell::RefCell::new(daemon_state.mic_name.clone()));
 
-    if let Some(device_id) = daemon_state.device_id
-        && let Some(idx) = filtered_devices
-            .borrow()
-            .iter()
-            .position(|d| d.id == device_id)
-    {
-        ui.set_selected_input_index(idx as i32);
-    }
+    ui.set_selected_input_index(selection_for_node_name(
+        &filtered_devices.borrow(),
+        daemon_state.device_node_name.as_deref(),
+    ));
 
     let applied = Rc::new(AppliedSettings {
         device_node_name: std::cell::RefCell::new(daemon_state.device_node_name.clone()),
@@ -1183,6 +1192,32 @@ mod tests {
         let old = vec![device(44, "Yeti")];
         let new = vec![device(57, "Webcam")];
         assert_eq!(reresolve_selection(&old, 0, &new), -1);
+    }
+
+    /// What the picker shows when the window opens. The daemon keeps
+    /// reporting the id the user enabled with even after the pipeline has
+    /// recovered the device under a new one, so the id is exactly the wrong
+    /// thing to open on: it selects nothing on a mic that is running, and
+    /// once PipeWire has recycled it, it selects somebody else's device —
+    /// which one click on Apply would then switch the microphone to.
+    #[test]
+    fn the_startup_selection_resolves_by_node_name_across_a_new_id() {
+        let devices = vec![device(71, "Yeti"), device(44, "Webcam")];
+        assert_eq!(
+            selection_for_node_name(&devices, Some("node.Yeti")),
+            0,
+            "the recovered device is in the list under a new id"
+        );
+        assert_eq!(
+            selection_for_node_name(&devices, Some("node.Gone")),
+            -1,
+            "a device that really is absent selects nothing"
+        );
+        assert_eq!(
+            selection_for_node_name(&devices, None),
+            -1,
+            "no remembered device selects nothing"
+        );
     }
 
     #[test]

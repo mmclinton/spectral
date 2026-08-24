@@ -398,11 +398,6 @@ pub fn find_node(node_name: &str) -> Result<Option<(u32, u32)>, Box<dyn Error>> 
         .map(|node| (node.id, node.channels)))
 }
 
-/// [`find_node`] reduced to the id, for callers that only need presence.
-pub fn find_node_id(node_name: &str) -> Result<Option<u32>, Box<dyn Error>> {
-    Ok(find_node(node_name)?.map(|(id, _)| id))
-}
-
 /// Get the PipeWire node name for a device by its ID, straight from the
 /// registry — `node.name` is what streams and recorders target. Errors if
 /// the connection fails or no node with that id exposes one.
