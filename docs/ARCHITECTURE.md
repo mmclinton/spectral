@@ -89,6 +89,45 @@ The UI threshold maps to a VAD confidence cutoff via `vad_cutoff`: 0 disables
 the gate entirely (denoise only), and 1–100 map linearly onto a cutoff up to
 0.95.
 
+## Losing the capture device
+
+Unplugging the input device does not end the pipeline. The virtual mic node
+and its link stay up and go quiet, so an application holding the mic keeps its
+device, and the loop spends up to `RECONNECT_TIMEOUT` (30 s) trying to get the
+capture stream back. `ReattachState` in `pipewire.rs` is the whole policy.
+
+One unplug is reported twice in the same iteration: as `StreamState::Error` on
+the capture stream, and as a core `-ENOENT` on its proxy.
+`core_error_is_lost_target` is what separates that from a failure of the
+connection itself, which must stay fatal.
+
+The rules in `ReattachState::step` are load-bearing, and each exists because
+the obvious version misbehaves:
+
+- The deadline runs from when audio stopped, not from the last detach, so a
+  device flapping just under the timeout still expires.
+- A rebuild is withheld while an attempt is in flight. A Bluetooth headset
+  acquires its SCO transport *because* a capture stream asked for it, which
+  routinely takes seconds; retrying on the interval would restart that from
+  zero forever. The deadline is checked ahead of this, so a stream stuck in
+  Connecting still expires on time.
+- Only a stream observed live closes the window. Counting a successful connect
+  would hand a device that errors immediately afterward an unlimited number of
+  full windows.
+
+A re-attach drops the format lock, so a replugged device is free to negotiate a
+different channel count, and calls `AudioProcessor::reset_for_reattach` to
+clear the stage state and flush the denoiser's overlap-add tail
+(`DENOISER_FLUSH_FRAMES`) rather than mixing it into the new stream. Past the
+timeout the pipeline records a failure and exits.
+
+While the window is open the pipeline's `detached` atomic surfaces as
+`DaemonState::capture_detached`, which is what the GUI's "Reconnecting" status
+and `spectral status`'s `(reconnecting)` report. Anything that changes the
+capture stream's lifecycle has to keep this path intact — it is the difference
+between a call carrying on and an application losing its microphone
+mid-sentence.
+
 ## Module map
 
 | Path | Responsibility |
