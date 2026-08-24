@@ -57,17 +57,13 @@ Manual builds may work but are unsupported. The commands, build steps, and cavea
 5. Click "Enable" — the virtual microphone is created and becomes the system default input
 6. Applications that pin a specific device can select the virtual mic by name (default "Spectral-Mic"); "Rename"/"Reset" stage a new name, applied on the next Enable/Apply
 
+## Screenshot
+
 <div align="center">
   <img src="./assets/screenshot.png" width="820" alt="Spectral's main window: an app bar with the status, a full-width input threshold band, then two columns of cards holding the input device list, the virtual mic name, the voice-processing switches and the voice test, above a footer with Disable and Apply">
 </div>
 
 Everything the GUI does is also available from the terminal — `spectral enable`, `spectral status`, `spectral disable`. The full reference is in [docs/CLI.md](docs/CLI.md).
-
-## What 1.0 promises
-
-Four things stay as they are for the whole 1.x series: the command-line surface — its subcommands, its `enable` flags, and what exit codes 0, 1 and 2 classify; the settings file at `$XDG_CONFIG_HOME/spectral/state.toml`, both its path and its keys; the rule for what makes a valid virtual mic name; and the application id `page.codeberg.mmc.Spectral`, which is what your desktop and your package manager identify Spectral by. New subcommands and new optional flags can arrive in a minor release, and new settings keys arrive with defaults, so an older Spectral still reads a file a newer one wrote. Removing or renaming any of it waits for 2.0.
-
-Two things are deliberately not promised. The library is not a public API — the modules under `src/` are free to move. Neither is the daemon's IPC format beyond its version handshake: the GUI, the CLI and the daemon are installed together, and a client that meets a daemon of a different protocol version restarts it rather than negotiating.
 
 ## How it works
 
