@@ -394,7 +394,11 @@ fn print_status(state: &DaemonState) {
         Status::Pending => "Pending",
         Status::Inactive => "Inactive",
     };
-    println!("status:           {status}");
+    if state.capture_detached {
+        println!("status:           {status} (reconnecting)");
+    } else {
+        println!("status:           {status}");
+    }
     println!("device:           {}", describe_device(state));
     println!("mic name:         {}", state.mic_name);
     println!("threshold:        {}%", state.threshold);

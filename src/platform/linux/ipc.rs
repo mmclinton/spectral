@@ -133,6 +133,12 @@ pub struct DaemonState {
     /// Auto-level stage on/off; defaulted for the same reason.
     #[serde(default)]
     pub auto_level: bool,
+    /// Whether the mic is up but running on silence while it waits for its
+    /// capture device to return. Defaulted so a pre-1.0 daemon's payload
+    /// still parses; an older client that does not read it simply shows the
+    /// mic as active, which it is.
+    #[serde(default)]
+    pub capture_detached: bool,
     /// Whether the raw voice-test capture is currently playing.
     pub is_playing_original: bool,
     /// Whether the processed voice-test capture is currently playing.
@@ -438,6 +444,7 @@ mod tests {
         assert_eq!(state.last_error, None);
         assert!(!state.rumble_filter);
         assert!(!state.auto_level);
+        assert!(!state.capture_detached);
     }
 
     #[test]
@@ -586,6 +593,7 @@ mod tests {
             threshold: 80,
             rumble_filter: true,
             auto_level: false,
+            capture_detached: false,
             is_playing_original: false,
             is_playing_filtered: true,
             last_error: Some("pipeline died".to_string()),
@@ -604,6 +612,7 @@ mod tests {
             threshold: 50,
             rumble_filter: false,
             auto_level: false,
+            capture_detached: false,
             is_playing_original: false,
             is_playing_filtered: false,
             last_error: None,
@@ -620,6 +629,7 @@ mod tests {
             threshold: 80,
             rumble_filter: true,
             auto_level: false,
+            capture_detached: false,
             is_playing_original: false,
             is_playing_filtered: false,
             last_error: None,
@@ -652,19 +662,19 @@ mod tests {
                 status: Status::Active,
                 ..
             }) => {
-                r#"{"State":{"protocol_version":2,"status":"Active","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"is_playing_original":false,"is_playing_filtered":true,"last_error":"pipeline died"}}"#
+                r#"{"State":{"protocol_version":2,"status":"Active","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"capture_detached":false,"is_playing_original":false,"is_playing_filtered":true,"last_error":"pipeline died"}}"#
             }
             DaemonResponse::State(DaemonState {
                 status: Status::Pending,
                 ..
             }) => {
-                r#"{"State":{"protocol_version":2,"status":"Pending","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}}"#
+                r#"{"State":{"protocol_version":2,"status":"Pending","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"capture_detached":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}}"#
             }
             DaemonResponse::State(DaemonState {
                 status: Status::Inactive,
                 ..
             }) => {
-                r#"{"State":{"protocol_version":2,"status":"Inactive","device_id":null,"device_node_name":null,"mic_name":"Spectral-Mic","threshold":50,"rumble_filter":false,"auto_level":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}}"#
+                r#"{"State":{"protocol_version":2,"status":"Inactive","device_id":null,"device_node_name":null,"mic_name":"Spectral-Mic","threshold":50,"rumble_filter":false,"auto_level":false,"capture_detached":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}}"#
             }
             DaemonResponse::Error(_) => r#"{"Error":"no such device"}"#,
         }

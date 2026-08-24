@@ -70,6 +70,7 @@ fn update_ui_status(ui_weak: &Weak<MainWindow>, status: Status) {
 }
 
 const DAEMON_UNREACHABLE: &str = "Cannot reach the daemon — restart Spectral to relaunch it";
+const DEVICE_RECONNECTING: &str = "Input device disconnected — waiting for it to return";
 
 fn show_error(ui_weak: &Weak<MainWindow>, msg: &str) {
     if let Some(ui) = ui_weak.upgrade() {
@@ -387,6 +388,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                     threshold: 50,
                     rumble_filter: false,
                     auto_level: false,
+                    capture_detached: false,
                     is_playing_original: false,
                     is_playing_filtered: false,
                     last_error: None,
@@ -460,6 +462,9 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     // resetting the cache there re-arms the display for a failure that
     // recurs with the identical message within one poll tick.
     let last_daemon_error = Rc::new(std::cell::RefCell::new(None::<String>));
+    // Whether the error line currently carries the reconnect notice, so it
+    // can be withdrawn without disturbing a daemon error underneath it.
+    let showing_reconnect = Rc::new(std::cell::Cell::new(false));
     // The newest snapshot the poll has seen, for the diagnostics dump. A
     // launch failure fabricates a defaults-only DaemonState upstream to keep
     // the window open; seeding the cache with that would report invented
@@ -850,6 +855,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let current_status = current_status.clone();
         let last_daemon_error = last_daemon_error.clone();
         let last_daemon_state = last_daemon_state.clone();
+        let showing_reconnect = showing_reconnect.clone();
         move || {
             let Some(ui) = ui_weak.upgrade() else { return };
             match DaemonClient::connect() {
@@ -899,6 +905,22 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                             }
                             *last_daemon_error.borrow_mut() = state.last_error;
                         }
+
+                        // The reconnect window is a live condition, not a
+                        // sticky daemon error: it is re-derived every tick
+                        // and withdrawn the moment the capture stream is
+                        // back, which last_error's cleared-only-by-enable
+                        // contract cannot express. It overlays the line so
+                        // the user sees why the mic is silent right now.
+                        ui.set_reconnecting(state.capture_detached);
+                        if state.capture_detached {
+                            show_error(&ui_weak, DEVICE_RECONNECTING);
+                            showing_reconnect.set(true);
+                        } else if showing_reconnect.replace(false)
+                            && ui.get_error_text() == DEVICE_RECONNECTING
+                        {
+                            clear_error(&ui_weak);
+                        }
                     }
                     Ok(_) => show_error(&ui_weak, "Unexpected response from daemon"),
                     Err(_) => {
@@ -908,6 +930,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         // its 250 ms playback interval.
                         ui.set_is_playing_original(false);
                         ui.set_is_playing_filtered(false);
+                        ui.set_reconnecting(false);
                     }
                 },
                 Err(_) => {
@@ -918,6 +941,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                     show_error(&ui_weak, DAEMON_UNREACHABLE);
                     ui.set_is_playing_original(false);
                     ui.set_is_playing_filtered(false);
+                    ui.set_reconnecting(false);
                     if current_status.get() != Status::Inactive {
                         current_status.set(Status::Inactive);
                         update_ui_status(&ui_weak, Status::Inactive);

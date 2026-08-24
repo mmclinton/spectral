@@ -55,6 +55,10 @@ pub fn build_diagnostics(
             lines.push(format!("  protocol (daemon): {}", state.protocol_version));
             lines.push(format!("  status: {}", describe_status(state.status)));
             lines.push(format!(
+                "  capture detached: {}",
+                yes_no(state.capture_detached)
+            ));
+            lines.push(format!(
                 "  device: {}",
                 describe_device(state.device_id, devices)
             ));
@@ -141,6 +145,7 @@ mod tests {
             threshold: 65,
             rumble_filter: true,
             auto_level: false,
+            capture_detached: false,
             is_playing_original: false,
             is_playing_filtered: true,
             last_error: None,
@@ -296,5 +301,15 @@ mod tests {
         assert!(dump.contains("config: unavailable (no valid XDG config base or HOME)"));
         // The log is resolvable here, so the dump still asks for it.
         assert!(dump.ends_with("Attach the daemon log named above."));
+    }
+
+    #[test]
+    fn a_detached_capture_is_named_in_the_dump() {
+        let detached = DaemonState {
+            capture_detached: true,
+            ..state()
+        };
+        assert!(render(Some(&detached), &[]).contains("  capture detached: yes"));
+        assert!(render(Some(&state()), &[]).contains("  capture detached: no"));
     }
 }

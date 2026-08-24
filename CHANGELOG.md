@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is plugged back in — so a call carries on instead of losing the
   microphone. If the device does not come back within 30 seconds the
   microphone stops and says so.
+- The status pill reads "Reconnecting" while the microphone is waiting for
+  a disconnected input device, and `spectral status` says the same. The
+  error area names the device that went away until it comes back.
 
 ### Security
 - Voice-test recordings are no longer readable by other users on the same

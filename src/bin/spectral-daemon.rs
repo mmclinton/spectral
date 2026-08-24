@@ -388,11 +388,14 @@ fn handle_client(
                         // Lazy failure detection: the pipeline only records why it
                         // died; reads reconcile, tearing down the dead mic so no
                         // silent zombie source stays selectable.
-                        let dead_mic = {
+                        let (dead_mic, capture_detached) = {
                             let mut mic_guard = lock_or_recover(&virtual_mic);
                             match mic_guard.as_ref().and_then(VirtualMic::failure) {
-                                Some(msg) => mic_guard.take().map(|mic| (mic, msg)),
-                                None => None,
+                                Some(msg) => (mic_guard.take().map(|mic| (mic, msg)), false),
+                                None => (
+                                    None,
+                                    mic_guard.as_ref().is_some_and(VirtualMic::is_detached),
+                                ),
                             }
                         };
                         if let Some((mic, msg)) = dead_mic {
@@ -476,6 +479,7 @@ fn handle_client(
                             threshold,
                             rumble_filter,
                             auto_level,
+                            capture_detached,
                             is_playing_original,
                             is_playing_filtered,
                             last_error,
@@ -483,6 +487,19 @@ fn handle_client(
                         DaemonResponse::State(daemon_state)
                     }
                     DaemonCommand::StartRecording => {
+                        {
+                            let detached = lock_or_recover(&virtual_mic)
+                                .as_ref()
+                                .is_some_and(VirtualMic::is_detached);
+                            if detached {
+                                conn.send_response(DaemonResponse::Error(
+                                    "The input device is disconnected — the voice test would record silence"
+                                        .to_string(),
+                                ))?;
+                                continue;
+                            }
+                        }
+
                         let source_node = lock_or_recover(&state.device_node_name).clone();
 
                         let Some(source_node) = source_node else {
