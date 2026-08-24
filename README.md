@@ -14,14 +14,14 @@
 
 **Real-time microphone noise suppression for Linux.**
 
-Spectral runs a microphone you choose through the RNNoise neural network and exposes the result as a native PipeWire virtual microphone. Any application — your browser, a chat client, OBS — can select it like any other input. Keyboard clatter, fans, and room tone go; your voice stays.
+Spectral runs a microphone you choose through the RNNoise neural network and exposes the result as a native PipeWire virtual mic. Any application — your browser, a chat client, OBS — can select it like any other input. Keyboard clatter, fans, and room tone go; your voice stays.
 
 [RNNoise](https://arxiv.org/pdf/1709.08243) is a hybrid DSP and neural-network noise suppressor by Jean-Marc Valin, developed at Mozilla and published through Xiph.Org.
 
 ## Features
 
 - Real-time RNNoise denoising, with a voice-activity gate you can dial from off (denoise only) to strict
-- A native PipeWire virtual microphone that any application can select, and that becomes your system default input when you enable it
+- A native PipeWire virtual mic that any application can select, and that becomes your system default input when you enable it
 - A built-in voice test — record yourself and compare original against filtered
 - Two optional voice-processing switches, both off by default: a rumble filter and automatic volume leveling
 - Settings persist across restarts, and your device is remembered by name, so it survives reboots and PipeWire restarts
@@ -37,14 +37,14 @@ Confirmed working on x86_64 and on aarch64.
 
 ## Installation
 
-Spectral is in nixpkgs as `spectral-mic`; the other paths build from this repository.
+Spectral is in nixpkgs as `spectral-mic`; the other paths build from packaging kept in this repository.
 
-| Path                        | What you get                                                    |
-| --------------------------- | --------------------------------------------------------------- |
-| nixpkgs `spectral-mic`      | The packaged release, installed as `spectral`                   |
-| Nix flake (this repository) | The latest commit, plus the NixOS module nixpkgs does not ship  |
-| AUR `spectral-mic`          | An Arch build from the PKGBUILD kept in this repository         |
-| Flatpak                     | A sandboxed build from the included manifest                    |
+| Path                        | What you get                                                   |
+| --------------------------- | -------------------------------------------------------------- |
+| nixpkgs `spectral-mic`      | The packaged release, installed as `spectral`                  |
+| Nix flake (this repository) | The latest commit, plus the NixOS module nixpkgs does not ship |
+| AUR `spectral-mic`          | An Arch build from the PKGBUILD kept in this repository        |
+| Flatpak                     | A sandboxed build from the included manifest                   |
 
 Manual builds may work but are unsupported. Which of these are published yet, and the commands, build steps, and caveats for each, are in [docs/INSTALLATION.md](docs/INSTALLATION.md).
 
@@ -54,7 +54,7 @@ Manual builds may work but are unsupported. Which of these are published yet, an
 2. Select your input device from the list
 3. Adjust the threshold: higher values gate more strictly on voice activity
 4. Optionally flip any of the Voice Processing switches
-5. Click "Enable" — the virtual microphone is created and becomes the system default input
+5. Click "Enable" — the virtual mic is created and becomes the system default input
 6. Applications that pin a specific device can select the virtual mic by name (default "Spectral-Mic"); "Rename"/"Reset" stage a new name, applied on the next Enable/Apply
 
 ## Screenshot

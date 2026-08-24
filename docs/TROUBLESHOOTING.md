@@ -24,10 +24,10 @@ microphone. Plug your mic into one of the first two inputs.
 
 ## My microphone was unplugged
 
-Spectral keeps the virtual microphone in place for 30 seconds and goes
-quiet, so whatever is using it does not lose the device. Plug the
-microphone back in and it picks up where it left off. After 30 seconds it
-stops, and you enable it again once the device is back.
+Spectral keeps the virtual mic in place for 30 seconds and goes quiet, so
+whatever is using it does not lose the device. Plug the microphone back in
+and it picks up where it left off. After 30 seconds it stops, and you
+enable it again once the device is back.
 
 ## The device list is stale after a PipeWire restart
 
