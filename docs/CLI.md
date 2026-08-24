@@ -2,8 +2,10 @@
 
 The `spectral` binary doubles as a command-line client, so nothing about
 Spectral requires the GUI. Running it without a command opens the control
-panel; running it with one talks to the daemon and exits. Either way the
-daemon is started automatically if it is not already running.
+panel; running it with one talks to the daemon and exits. `enable` starts
+the daemon if none is running, as the GUI does; `disable`, `shutdown` and
+`status` report that none is running instead, and `devices` reads the
+PipeWire registry directly and needs no daemon at all.
 
 ```bash
 spectral devices              # list input devices: id, channels, name
