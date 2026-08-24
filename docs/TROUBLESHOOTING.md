@@ -23,10 +23,19 @@ usually carry loopback or monitor returns that must not bleed into the
 microphone. Devices with more than eight channels are captured as their
 first eight.
 
+## My microphone was unplugged
+
+Spectral keeps the virtual microphone in place for 30 seconds and goes
+quiet, so whatever is using it does not lose the device. Plug the
+microphone back in and it picks up where it left off. After 30 seconds it
+stops, and you enable it again once the device is back.
+
 ## The device list is stale after a PipeWire restart
 
-After something like `systemctl --user restart pipewire`, the device list points
-at devices that no longer exist. Click "Refresh" and re-select before enabling.
+After something like `systemctl --user restart pipewire`, the list shows
+devices that no longer exist. Enabling still works — Spectral remembers
+your device by a name that survives the restart — but click "Refresh" if
+you want the list itself to be accurate before picking a different device.
 
 ## Something failed and I want to know why
 
