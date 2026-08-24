@@ -216,24 +216,25 @@ fn device_matches_applied(
     }
 }
 
-/// Where the previously selected device lands in a refreshed list: an index
-/// is only meaningful within one list, so the selection carries across a
-/// refresh by `node.name`. Carrying it by id would drop the selection on
-/// every replug, which is the whole reason the old device list read stale.
-/// No previous selection — or a device that really is gone — resolves to -1.
 /// Where the device the daemon reports as selected sits in the list the
 /// window is showing, or -1 when it is not there. By `node.name`, for the
-/// same reason the two functions above are: the daemon also reports a
-/// PipeWire id, but that one is deliberately allowed to go stale once the
-/// pipeline recovers a device on its own, and PipeWire hands freed ids out
-/// again — so matching on it either selects nothing on a mic that is
-/// running fine, or selects whichever device inherited the id.
+/// same reason [`device_matches_applied`] and [`reresolve_selection`] are:
+/// the daemon also reports a PipeWire id, but that one is deliberately
+/// allowed to go stale once the pipeline recovers a device on its own, and
+/// PipeWire hands freed ids out again — so matching on it either selects
+/// nothing on a mic that is running fine, or selects whichever device
+/// inherited the id.
 fn selection_for_node_name(devices: &[AudioDevice], node_name: Option<&str>) -> i32 {
     node_name
         .and_then(|name| devices.iter().position(|d| d.node_name == name))
         .map_or(-1, |idx| idx as i32)
 }
 
+/// Where the previously selected device lands in a refreshed list: an index
+/// is only meaningful within one list, so the selection carries across a
+/// refresh by `node.name`. Carrying it by id would drop the selection on
+/// every replug, which is the whole reason the old device list read stale.
+/// No previous selection — or a device that really is gone — resolves to -1.
 fn reresolve_selection(old: &[AudioDevice], old_idx: i32, new: &[AudioDevice]) -> i32 {
     usize::try_from(old_idx)
         .ok()
