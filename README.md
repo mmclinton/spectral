@@ -14,14 +14,14 @@
 
 **Real-time microphone noise suppression for Linux.**
 
-Spectral runs a microphone you choose through the RNNoise neural network and exposes the result as a native PipeWire virtual microphone. Any application — your browser, a chat client, OBS — can select it like any other input. Keyboard clatter, fans, and room tone go; your voice stays.
+Spectral runs a microphone you choose through the RNNoise neural network and exposes the result as a native PipeWire virtual mic. Any application — your browser, a chat client, OBS — can select it like any other input. Keyboard clatter, fans, and room tone go; your voice stays.
 
 [RNNoise](https://arxiv.org/pdf/1709.08243) is a hybrid DSP and neural-network noise suppressor by Jean-Marc Valin, developed at Mozilla and published through Xiph.Org.
 
 ## Features
 
 - Real-time RNNoise denoising, with a voice-activity gate you can dial from off (denoise only) to strict
-- A native PipeWire virtual microphone that any application can select, and that becomes your system default input when you enable it
+- A native PipeWire virtual mic that any application can select, and that becomes your system default input when you enable it
 - A built-in voice test — record yourself and compare original against filtered
 - Two optional voice-processing switches, both off by default: a rumble filter and automatic volume leveling
 - Settings persist across restarts, and your device is remembered by name, so it survives reboots and PipeWire restarts
@@ -37,16 +37,16 @@ Confirmed working on x86_64 and on aarch64.
 
 ## Installation
 
-Spectral is in nixpkgs as `spectral-mic`. The other paths are still in flight.
+Spectral is in nixpkgs as `spectral-mic`; the other paths build from packaging kept in this repository.
 
-| Path                        | Status                                                        |
-| --------------------------- | ------------------------------------------------------------- |
-| nixpkgs `spectral-mic`      | On the unstable channels; on stable at the next NixOS release |
-| Nix flake (this repository) | Tracks the latest commit, and carries the NixOS module        |
-| AUR `spectral-mic`          | Submission pending — build from the PKGBUILD meanwhile        |
-| Flatpak                     | Builds from the included manifest; not on Flathub             |
+| Path                        | What you get                                                   |
+| --------------------------- | -------------------------------------------------------------- |
+| nixpkgs `spectral-mic`      | The packaged release, installed as `spectral`                  |
+| Nix flake (this repository) | The latest commit, plus the NixOS module nixpkgs does not ship |
+| AUR `spectral-mic`          | An Arch build from the PKGBUILD kept in this repository        |
+| Flatpak                     | A sandboxed build from the included manifest                   |
 
-Manual builds may work but are unsupported. The commands, build steps, and caveats for each path are in [docs/INSTALLATION.md](docs/INSTALLATION.md).
+Manual builds may work but are unsupported. Which of these are published yet, and the commands, build steps, and caveats for each, are in [docs/INSTALLATION.md](docs/INSTALLATION.md).
 
 ## Usage
 
@@ -54,8 +54,10 @@ Manual builds may work but are unsupported. The commands, build steps, and cavea
 2. Select your input device from the list
 3. Adjust the threshold: higher values gate more strictly on voice activity
 4. Optionally flip any of the Voice Processing switches
-5. Click "Enable" — the virtual microphone is created and becomes the system default input
+5. Click "Enable" — the virtual mic is created and becomes the system default input
 6. Applications that pin a specific device can select the virtual mic by name (default "Spectral-Mic"); "Rename"/"Reset" stage a new name, applied on the next Enable/Apply
+
+## Screenshot
 
 <div align="center">
   <img src="./assets/screenshot.png" width="820" alt="Spectral's main window: an app bar with the status, a full-width input threshold band, then two columns of cards holding the input device list, the virtual mic name, the voice-processing switches and the voice test, above a footer with Disable and Apply">
@@ -63,15 +65,9 @@ Manual builds may work but are unsupported. The commands, build steps, and cavea
 
 Everything the GUI does is also available from the terminal — `spectral enable`, `spectral status`, `spectral disable`. The full reference is in [docs/CLI.md](docs/CLI.md).
 
-## What 1.0 promises
-
-Four things stay as they are for the whole 1.x series: the command-line surface — its subcommands, its `enable` flags, and what exit codes 0, 1 and 2 classify; the settings file at `$XDG_CONFIG_HOME/spectral/state.toml`, both its path and its keys; the rule for what makes a valid virtual mic name; and the application id `page.codeberg.mmc.Spectral`, which is what your desktop and your package manager identify Spectral by. New subcommands and new optional flags can arrive in a minor release, and new settings keys arrive with defaults, so an older Spectral still reads a file a newer one wrote. Removing or renaming any of it waits for 2.0.
-
-Two things are deliberately not promised. The library is not a public API — the modules under `src/` are free to move. Neither is the daemon's IPC format beyond its version handshake: the GUI, the CLI and the daemon are installed together, and a client that meets a daemon of a different protocol version restarts it rather than negotiating.
-
 ## How it works
 
-A background daemon owns all the audio work: it captures your chosen device, downmixes to mono, and runs each 10 ms frame through the optional rumble filter, RNNoise, the optional leveler, and the voice gate before feeding a PipeWire virtual source node — the microphone other applications see. The GUI and the CLI are thin clients over a Unix socket, holding no audio state of their own, and because the daemon owns every PipeWire object it creates, the virtual mic disappears cleanly when the daemon stops. For the module map, the real-time constraints, and the IPC protocol, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+A background daemon owns all the audio work: it captures your chosen device, downmixes to mono, and runs each 10 ms frame through its DSP chain — RNNoise denoising, the voice gate, and the two optional stages when you switch them on — before feeding a PipeWire virtual source node, the microphone other applications see. The GUI and the CLI are thin clients over a Unix socket, holding no audio state of their own, and because the daemon owns every PipeWire object it creates, the virtual mic disappears cleanly when the daemon stops. For the chain and its order, the module map, the real-time constraints, and the IPC protocol, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Help
 

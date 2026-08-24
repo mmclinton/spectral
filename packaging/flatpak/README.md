@@ -121,7 +121,7 @@ archives are not guaranteed to stay byte-identical, so an `archive` source
 with a `sha256` is the more fragile choice here.
 
 `cargo-sources.json` is copied across unchanged. Everything else — the app ID,
-the runtime, the permissions, both modules — is identical.
+the runtime, the permissions, the module — is identical.
 
 The submission process itself is documented at
 <https://docs.flathub.org/docs/for-app-authors/submission>. Read the
