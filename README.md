@@ -67,7 +67,7 @@ Everything the GUI does is also available from the terminal — `spectral enable
 
 ## How it works
 
-A background daemon owns all the audio work: it captures your chosen device, downmixes to mono, and runs each 10 ms frame through the optional rumble filter, RNNoise, the optional leveler, and the voice gate before feeding a PipeWire virtual source node — the microphone other applications see. The GUI and the CLI are thin clients over a Unix socket, holding no audio state of their own, and because the daemon owns every PipeWire object it creates, the virtual mic disappears cleanly when the daemon stops. For the module map, the real-time constraints, and the IPC protocol, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+A background daemon owns all the audio work: it captures your chosen device, downmixes to mono, and runs each 10 ms frame through its DSP chain — RNNoise denoising, the voice gate, and the two optional stages when you switch them on — before feeding a PipeWire virtual source node, the microphone other applications see. The GUI and the CLI are thin clients over a Unix socket, holding no audio state of their own, and because the daemon owns every PipeWire object it creates, the virtual mic disappears cleanly when the daemon stops. For the chain and its order, the module map, the real-time constraints, and the IPC protocol, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Help
 

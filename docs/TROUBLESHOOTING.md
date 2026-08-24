@@ -20,8 +20,7 @@ When the interface appears as a single multi-channel device instead (e.g.
 averages only the first two channels into the virtual mic — on such
 interfaces those are the physical mic preamps, while the later channels
 usually carry loopback or monitor returns that must not bleed into the
-microphone. Devices with more than eight channels are captured as their
-first eight.
+microphone. Plug your mic into one of the first two inputs.
 
 ## My microphone was unplugged
 
@@ -53,9 +52,8 @@ Under `~/.local/state/spectral/recordings`.
   virtual mic disappears, WirePlumber picks a fallback, which may not be the
   microphone you started with — re-select it in your sound settings if it
   matters.
-- Channel handling is validated for mono and stereo inputs. Interfaces with more
-  than two channels are captured at their native count and averaged from the
-  front pair only, but that path is untested. Bluetooth microphones work —
+- Channel handling is validated for mono and stereo inputs only; the
+  multi-channel path described above is untested. Bluetooth microphones work —
   validated with AirPods Pro 2 — but no other Bluetooth device or codec has been
   tried.
 - Voice-test recordings are not restored in the UI after relaunching the GUI.
