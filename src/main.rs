@@ -978,6 +978,9 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let last_daemon_state = last_daemon_state.clone();
         move || {
             let Some(ui) = ui_weak.upgrade() else { return };
+            // An empty FLATPAK_ID is no id at all, and the dump would go on
+            // to print a `flatpak run` line with nothing to run.
+            let flatpak_app_id = std::env::var("FLATPAK_ID").ok().filter(|id| !id.is_empty());
             // Snapshotted per open rather than bound: the dump is what was
             // true when the user went looking, and reopening refreshes it.
             ui.set_diagnostics_text(
@@ -986,7 +989,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                     &devices.borrow(),
                     daemon_log_path().ok().as_deref(),
                     persistence::get_config_path().ok().as_deref(),
-                    std::env::var_os("FLATPAK_ID").is_some(),
+                    flatpak_app_id.as_deref(),
                 )
                 .into(),
             );

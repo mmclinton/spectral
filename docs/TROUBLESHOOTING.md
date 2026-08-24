@@ -42,6 +42,14 @@ An "Error" chip appears in the app bar next to the status. Click it for the
 full message and a diagnostics summary. The daemon also logs to
 `$XDG_RUNTIME_DIR/spectral-daemon.log`.
 
+On a Flatpak install that path is inside the sandbox, so a host terminal
+cannot open it. Read it through the sandbox instead:
+
+```bash
+flatpak run --command=cat page.codeberg.mmc.Spectral \
+    /run/user/$(id -u)/spectral-daemon.log
+```
+
 ## Where are my voice-test recordings?
 
 Under `~/.local/state/spectral/recordings`.
@@ -68,4 +76,5 @@ report includes:
   `wireplumber --version`);
 - the input device involved;
 - the Diagnostics box from the app bar's error details, if an error is showing;
-- the daemon log from `$XDG_RUNTIME_DIR/spectral-daemon.log`.
+- the daemon log, from `$XDG_RUNTIME_DIR/spectral-daemon.log` or, under
+  Flatpak, through the command [above](#something-failed-and-i-want-to-know-why).

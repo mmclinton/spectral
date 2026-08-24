@@ -116,6 +116,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as text characters, which a font places by its own metrics rather than
   by the button, and the close mark came from whichever fallback font
   happened to supply it.
+- The diagnostics dump no longer sends Flatpak users after a log file their
+  terminal cannot open. The path it names lives inside the sandbox, so the
+  dump now says so and gives the command that reads it from the host.
 
 ### Changed
 - The threshold band no longer dims while the mic is off. The threshold can

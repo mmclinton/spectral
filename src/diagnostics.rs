@@ -25,20 +25,32 @@ const ISSUE_URL: &str = "https://codeberg.org/mmc/spectral/issues";
 /// config base respectively could not be resolved, which is itself the most
 /// useful thing the dump can say: naming a path that was never opened would
 /// send the reporter hunting for a file that does not exist.
+///
+/// `flatpak_app_id` is the sandbox's own application id, and `None` on a
+/// native install. Under Flatpak every path above is a path *inside* the
+/// sandbox, which the dump has to say plainly.
 pub fn build_diagnostics(
     daemon_state: Option<&DaemonState>,
     devices: &[AudioDevice],
     log_path: Option<&Path>,
     config_path: Option<&Path>,
-    flatpak: bool,
+    flatpak_app_id: Option<&str>,
 ) -> String {
     let mut lines = vec![
         format!("spectral version: {}", env!("CARGO_PKG_VERSION")),
         format!("protocol (gui): {PROTOCOL_VERSION}"),
-        format!("packaging: {}", if flatpak { "flatpak" } else { "native" }),
-        match log_path {
-            Some(path) => format!("daemon log: {}", path.display()),
-            None => "daemon log: unavailable (XDG_RUNTIME_DIR is not set to an absolute path)"
+        format!(
+            "packaging: {}",
+            if flatpak_app_id.is_some() {
+                "flatpak"
+            } else {
+                "native"
+            }
+        ),
+        match (log_path, flatpak_app_id) {
+            (Some(path), Some(_)) => format!("daemon log: {} (inside the sandbox)", path.display()),
+            (Some(path), None) => format!("daemon log: {}", path.display()),
+            (None, _) => "daemon log: unavailable (XDG_RUNTIME_DIR is not set to an absolute path)"
                 .to_string(),
         },
         match config_path {
@@ -87,8 +99,22 @@ pub fn build_diagnostics(
 
     lines.push(String::new());
     lines.push(format!("Report issues at {ISSUE_URL}"));
-    if log_path.is_some() {
-        lines.push("Attach the daemon log named above.".to_string());
+    match (log_path, flatpak_app_id) {
+        // No host shell can open the sandbox path, so the dump carries the
+        // command that reads it instead. A second `flatpak run` is enough:
+        // the runtime dir bind-mounted over it is per application, not per
+        // instance, so it is the running instance's own log.
+        (Some(path), Some(app_id)) => {
+            lines.push(
+                "Attach the daemon log named above; from the host, read it with:".to_string(),
+            );
+            lines.push(format!(
+                "  flatpak run --command=cat {app_id} {}",
+                path.display()
+            ));
+        }
+        (Some(_), None) => lines.push("Attach the daemon log named above.".to_string()),
+        (None, _) => {}
     }
     lines.join("\n")
 }
@@ -178,7 +204,7 @@ mod tests {
             devices,
             Some(Path::new("/run/user/1000/spectral-daemon.log")),
             Some(Path::new("/home/user/.config/spectral/state.toml")),
-            false,
+            None,
         )
     }
 
@@ -265,17 +291,61 @@ mod tests {
 
     #[test]
     fn packaging_line_says_flatpak_or_native() {
-        for (flatpak, expected) in [(true, "packaging: flatpak"), (false, "packaging: native")] {
+        for (app_id, expected) in [
+            (Some("page.codeberg.mmc.Spectral"), "packaging: flatpak"),
+            (None, "packaging: native"),
+        ] {
             let dump = build_diagnostics(
                 None,
                 &[],
                 Some(Path::new("/run/user/1000/spectral-daemon.log")),
                 Some(Path::new("/tmp/state.toml")),
-                flatpak,
+                app_id,
             );
 
-            assert!(dump.contains(expected), "flatpak={flatpak}");
+            assert!(dump.contains(expected), "app_id={app_id:?}");
         }
+    }
+
+    /// Under Flatpak the log path is a path inside the sandbox: a reporter
+    /// who pastes it into a host terminal gets "No such file or directory".
+    /// The dump has to say so and hand over the command that does work.
+    #[test]
+    fn a_sandboxed_log_is_marked_and_paired_with_the_command_that_reads_it() {
+        let dump = build_diagnostics(
+            Some(&state()),
+            &[],
+            Some(Path::new("/run/user/1000/spectral-daemon.log")),
+            Some(Path::new(
+                "/home/user/.var/app/page.codeberg.mmc.Spectral/config/state.toml",
+            )),
+            Some("page.codeberg.mmc.Spectral"),
+        );
+
+        assert!(
+            dump.contains("daemon log: /run/user/1000/spectral-daemon.log (inside the sandbox)")
+        );
+        assert!(dump.ends_with(
+            "Attach the daemon log named above; from the host, read it with:\n  \
+             flatpak run --command=cat page.codeberg.mmc.Spectral \
+             /run/user/1000/spectral-daemon.log"
+        ));
+    }
+
+    /// A sandbox with no runtime dir has no log to fetch, so the retrieval
+    /// command must not appear either — it would only fail.
+    #[test]
+    fn a_sandbox_without_a_log_path_offers_no_retrieval_command() {
+        let dump = build_diagnostics(
+            Some(&state()),
+            &[],
+            None,
+            Some(Path::new("/tmp/state.toml")),
+            Some("page.codeberg.mmc.Spectral"),
+        );
+
+        assert!(!dump.contains("flatpak run"));
+        assert!(dump.ends_with(&format!("Report issues at {ISSUE_URL}")));
     }
 
     #[test]
@@ -322,7 +392,7 @@ mod tests {
             &[],
             None,
             Some(Path::new("/home/user/.config/spectral/state.toml")),
-            false,
+            None,
         );
 
         assert!(
@@ -344,7 +414,7 @@ mod tests {
             &[],
             Some(Path::new("/run/user/1000/spectral-daemon.log")),
             None,
-            false,
+            None,
         );
 
         assert!(dump.contains("config: unavailable (no valid XDG config base or HOME)"));
