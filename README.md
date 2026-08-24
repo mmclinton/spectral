@@ -37,16 +37,16 @@ Confirmed working on x86_64 and on aarch64.
 
 ## Installation
 
-Spectral is in nixpkgs as `spectral-mic`. The other paths are still in flight.
+Spectral is in nixpkgs as `spectral-mic`; the other paths build from this repository.
 
-| Path                        | Status                                                        |
-| --------------------------- | ------------------------------------------------------------- |
-| nixpkgs `spectral-mic`      | On the unstable channels; on stable at the next NixOS release |
-| Nix flake (this repository) | Tracks the latest commit, and carries the NixOS module        |
-| AUR `spectral-mic`          | Submission pending — build from the PKGBUILD meanwhile        |
-| Flatpak                     | Builds from the included manifest; not on Flathub             |
+| Path                        | What you get                                                    |
+| --------------------------- | --------------------------------------------------------------- |
+| nixpkgs `spectral-mic`      | The packaged release, installed as `spectral`                   |
+| Nix flake (this repository) | The latest commit, plus the NixOS module nixpkgs does not ship  |
+| AUR `spectral-mic`          | An Arch build from the PKGBUILD kept in this repository         |
+| Flatpak                     | A sandboxed build from the included manifest                    |
 
-Manual builds may work but are unsupported. The commands, build steps, and caveats for each path are in [docs/INSTALLATION.md](docs/INSTALLATION.md).
+Manual builds may work but are unsupported. Which of these are published yet, and the commands, build steps, and caveats for each, are in [docs/INSTALLATION.md](docs/INSTALLATION.md).
 
 ## Usage
 

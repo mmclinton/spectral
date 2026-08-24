@@ -10,7 +10,7 @@ Spectral needs Linux with **PipeWire** and its session manager, **WirePlumber**,
 
 ## NixOS / Nix
 
-Spectral is in nixpkgs as `spectral-mic` — the attribute carries the suffix, the binary it installs is `spectral`. It is on the unstable channels; a stable NixOS release picks it up at its next branch-off.
+Spectral is in nixpkgs as `spectral-mic` — the attribute carries the suffix, the binary it installs is `spectral`. Whether your channel has it yet depends on when that channel branched; `nix search nixpkgs spectral-mic` answers that for the one you are on.
 
 ```nix
 environment.systemPackages = [ pkgs.spectral-mic ];
@@ -89,7 +89,7 @@ cd spectral/packaging/aur
 makepkg -si
 ```
 
-The PKGBUILD fetches and builds the pinned latest release tarball (currently v0.8.0), not the checkout it sits in, and declares x86_64 only — no aarch64 Arch system has been tested.
+The PKGBUILD fetches and builds the release tarball its `pkgver` names, not the checkout it sits in, and declares x86_64 only — no aarch64 Arch system has been tested.
 
 The package is named `spectral-mic` rather than `spectral` because the unrelated AUR package of that name ships a binary called `spectral` too. The PKGBUILD is maintained here under [packaging/aur](../packaging/aur).
 
