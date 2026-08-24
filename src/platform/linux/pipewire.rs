@@ -131,14 +131,22 @@ impl ReattachState {
 
     /// Records the attempt when it returns [`Reattach::Retry`], so callers
     /// cannot forget to.
-    fn step(&mut self, now: Instant, target_present: bool) -> Reattach {
+    ///
+    /// `attempt_in_flight` means a stream exists but has not reported live
+    /// yet. Rebuilding over one destroys a connection that is merely slow:
+    /// a Bluetooth headset's SCO transport is acquired lazily *because* a
+    /// capture stream wants it and routinely takes seconds, so a retry every
+    /// interval restarts that work from zero and the device never arrives.
+    /// The deadline is checked ahead of it, so a stream that never leaves
+    /// Connecting still expires on time instead of holding the window open.
+    fn step(&mut self, now: Instant, target_present: bool, attempt_in_flight: bool) -> Reattach {
         let Some(since) = self.detached_since else {
             return Reattach::Attached;
         };
         if now.duration_since(since) >= RECONNECT_TIMEOUT {
             return Reattach::GiveUp;
         }
-        if !target_present {
+        if !target_present || attempt_in_flight {
             return Reattach::Waiting;
         }
         let due = self
@@ -855,10 +863,18 @@ fn run_pipeline(
         if wiring.lost.replace(false) {
             capture = None;
             wiring.live.set(false);
+            let why = wiring.error.borrow().clone().unwrap_or_default();
+            if !ready_sent {
+                // Nothing is holding the mic yet — Enable is still blocked on
+                // the ready handshake — so a window here protects no audio and
+                // costs the caller the whole ready timeout, after which it
+                // reports a generic timeout instead of this reason.
+                record_failure(failure, format!("capture stream error: {why}"));
+                break;
+            }
             if !reattach.is_detached() {
                 reattach.detach(now);
                 detached.store(true, Ordering::SeqCst);
-                let why = wiring.error.borrow().clone().unwrap_or_default();
                 eprintln!("[pipeline] capture target lost, holding the mic open: {why}");
             }
         }
@@ -872,11 +888,11 @@ fn run_pipeline(
             eprintln!("[pipeline] capture target re-attached");
         }
 
-        match reattach.step(now, target_node_id.get().is_some()) {
+        match reattach.step(now, target_node_id.get().is_some(), capture.is_some()) {
             Reattach::Attached | Reattach::Waiting => {}
             Reattach::Retry => {
-                capture = None;
-                wiring.live.set(false);
+                // No stream to drop: `step` withholds Retry while one is in
+                // flight, and the teardown above is what cleared this slot.
                 wiring.format_state.reset_for_reattach();
                 match connect_capture_stream(&core, source_node, channels, &wiring) {
                     Ok(stream) => capture = Some(stream),
@@ -1169,7 +1185,7 @@ mod tests {
     #[test]
     fn a_state_that_never_detached_reports_attached() {
         let mut state = ReattachState::default();
-        assert_eq!(state.step(Instant::now(), true), Reattach::Attached);
+        assert_eq!(state.step(Instant::now(), true, false), Reattach::Attached);
         assert!(!state.is_detached());
     }
 
@@ -1178,8 +1194,8 @@ mod tests {
         let base = Instant::now();
         let mut state = ReattachState::default();
         state.detach(base);
-        assert_eq!(state.step(at(base, 1), false), Reattach::Waiting);
-        assert_eq!(state.step(at(base, 5), false), Reattach::Waiting);
+        assert_eq!(state.step(at(base, 1), false, false), Reattach::Waiting);
+        assert_eq!(state.step(at(base, 5), false, false), Reattach::Waiting);
     }
 
     #[test]
@@ -1187,16 +1203,59 @@ mod tests {
         let base = Instant::now();
         let mut state = ReattachState::default();
         state.detach(base);
-        assert_eq!(state.step(base, true), Reattach::Retry);
+        assert_eq!(state.step(base, true, false), Reattach::Retry);
         // Too soon: one attempt per interval, so a target that appears
         // before it can be connected costs retries and not a spin.
         assert_eq!(
-            state.step(base + Duration::from_millis(100), true),
+            state.step(base + Duration::from_millis(100), true, false),
             Reattach::Waiting
         );
         assert_eq!(
-            state.step(base + REATTACH_RETRY_INTERVAL, true),
+            state.step(base + REATTACH_RETRY_INTERVAL, true, false),
             Reattach::Retry
+        );
+    }
+
+    /// The retry is for a target with no stream on it. A stream that is
+    /// still negotiating gets the interval back rather than being replaced,
+    /// or a device whose transport takes longer than one interval to come up
+    /// is restarted from zero every time and never finishes.
+    #[test]
+    fn an_attempt_still_in_flight_is_left_alone_rather_than_replaced() {
+        let base = Instant::now();
+        let mut state = ReattachState::default();
+        state.detach(base);
+        assert_eq!(state.step(base, true, false), Reattach::Retry);
+        for elapsed in [1, 2, 5, 10] {
+            assert_eq!(
+                state.step(at(base, elapsed), true, true),
+                Reattach::Waiting,
+                "an in-flight attempt was preempted after {elapsed}s"
+            );
+        }
+        // The attempt died without ever going live: the slot is free, and
+        // the throttle is the only thing left holding the next rebuild.
+        assert_eq!(state.step(at(base, 10), true, false), Reattach::Retry);
+    }
+
+    /// The other direction of the same guard: waiting on an attempt must not
+    /// become waiting forever, so the deadline is checked ahead of it.
+    #[test]
+    fn a_stream_stuck_negotiating_still_gives_up_at_the_deadline() {
+        let base = Instant::now();
+        let mut state = ReattachState::default();
+        state.detach(base);
+        assert_eq!(
+            state.step(
+                base + RECONNECT_TIMEOUT - Duration::from_millis(1),
+                true,
+                true
+            ),
+            Reattach::Waiting
+        );
+        assert_eq!(
+            state.step(base + RECONNECT_TIMEOUT, true, true),
+            Reattach::GiveUp
         );
     }
 
@@ -1206,11 +1265,15 @@ mod tests {
         let mut state = ReattachState::default();
         state.detach(base);
         assert_eq!(
-            state.step(base + RECONNECT_TIMEOUT - Duration::from_millis(1), false),
+            state.step(
+                base + RECONNECT_TIMEOUT - Duration::from_millis(1),
+                false,
+                false
+            ),
             Reattach::Waiting
         );
         assert_eq!(
-            state.step(base + RECONNECT_TIMEOUT, false),
+            state.step(base + RECONNECT_TIMEOUT, false, false),
             Reattach::GiveUp
         );
     }
@@ -1223,7 +1286,7 @@ mod tests {
         // A failed re-attach detaches again. The deadline runs from when
         // audio actually stopped, or a flapping device would never expire.
         state.detach(at(base, 20));
-        assert_eq!(state.step(at(base, 31), false), Reattach::GiveUp);
+        assert_eq!(state.step(at(base, 31), false, false), Reattach::GiveUp);
     }
 
     #[test]
@@ -1234,8 +1297,8 @@ mod tests {
         state.attach();
         assert!(!state.is_detached());
         state.detach(at(base, 100));
-        assert_eq!(state.step(at(base, 120), false), Reattach::Waiting);
-        assert_eq!(state.step(at(base, 130), false), Reattach::GiveUp);
+        assert_eq!(state.step(at(base, 120), false, false), Reattach::Waiting);
+        assert_eq!(state.step(at(base, 130), false, false), Reattach::GiveUp);
     }
 
     /// Both process callbacks decode with a compiled-in width and rate, so
