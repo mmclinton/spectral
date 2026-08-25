@@ -40,3 +40,10 @@ under `[Unreleased]` in CHANGELOG.md.
 GPL-3.0-only, inbound = outbound: by submitting a change you agree to
 license it under GPL-3.0-only. Third-party notices for statically
 linked components live in THIRD-PARTY.md.
+
+## Releases
+
+Versioning, channels, and the release pipeline are documented in
+[docs/RELEASING.md](docs/RELEASING.md). Releases are cut by the
+maintainer when a coherent user-visible arc has landed; landing on
+`main` alone ships nothing.
