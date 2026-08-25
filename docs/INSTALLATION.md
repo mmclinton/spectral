@@ -7,6 +7,7 @@ Spectral needs Linux with **PipeWire** and its session manager, **WirePlumber**,
 - [NixOS / Nix](#nixos--nix)
 - [Arch Linux (AUR)](#arch-linux-aur)
 - [Flatpak](#flatpak)
+- [What is deliberately not packaged](#what-is-deliberately-not-packaged)
 
 ## NixOS / Nix
 
@@ -115,3 +116,15 @@ page.codeberg.mmc.Spectral devices
 Alias it if the full name grates — Flatpak has no way to export a shorter one.
 
 Details, including the full permission set and what a Flathub submission would change, are in [packaging/flatpak](../packaging/flatpak).
+
+## What is deliberately not packaged
+
+There are no deb or rpm packages, no PPA or COPR repositories, no
+AppImage, and no prebuilt binaries or release tarballs — and none are
+planned. Flatpak already covers those desktops with a runtime this
+project can pin and an update cadence it controls, while Spectral moves
+too fast for distro archives, which would freeze it into stale
+packages. A prebuilt binary is the worst of the options: it inherits
+its build machine's loader and library paths and fails on everyone
+else's. If one of these formats matters to you, open an issue
+describing the need — the list is a decision, not an oversight.
