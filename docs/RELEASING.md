@@ -7,27 +7,23 @@ fix is a patch to this file.
 
 ## Channels
 
-A release reaches users through two channels, with a third kept ready:
+A release reaches users through exactly two channels:
 
 | Channel | What a release means there |
 | --- | --- |
 | nixpkgs (`spectral-mic`) | an update PR pinning the new tag and hashes |
 | Flathub | a manifest bump in the Flathub app repository (once the initial submission lands) |
-| AUR (`spectral-mic`) | a PKGBUILD + `.SRCINFO` push — currently best-effort, see below |
 
-**AUR status:** the files under [packaging/aur](../packaging/aur) are
-updated every release, so `makepkg -si` from a checkout always builds
-the newest tag, but the package name is not yet claimed on the AUR
-because account registration is externally blocked. If an Arch user
-wants to submit it from these files in the meantime, that is welcome.
-
-**Deliberately out of scope:** deb, rpm, PPA/COPR repositories,
-AppImage, raw release tarballs, and prebuilt binaries. Flatpak covers
-those desktops with a pinned runtime and an update cadence this project
-controls; distro archives would freeze a fast-moving pre-1.0 app into
-stale packages; and a binary built on one machine inherits its loader
-and library paths and fails on everyone else's. The list is a decision,
-not an oversight — concrete demand can reopen it.
+**Deliberately out of scope:** the AUR, deb, rpm, PPA/COPR
+repositories, AppImage, raw release tarballs, and prebuilt binaries.
+Flatpak covers every desktop with a pinned runtime and an update
+cadence this project controls; distro archives would freeze a
+fast-moving pre-1.0 app into stale packages; and a binary built on one
+machine inherits its loader and library paths and fails on everyone
+else's. The list is a decision, not an oversight — concrete demand can
+reopen it, and anyone is welcome to package the release tags
+independently (on the AUR, note that the name `spectral` is taken by
+an unrelated tool; this project used `spectral-mic` there).
 
 ## When to release
 
@@ -52,10 +48,9 @@ The per-change test:
   lands, and urgency decides the timing. The default is to batch;
   only breakage and security justify a same-day release. UI wording is
   user-visible (it is compiled into the binary); a code comment is not.
-- **Packaging-only error** (PKGBUILD or nix expression wrong, source
-  fine) — no new tag. AUR: bump `pkgrel`, regenerate `.SRCINFO`, push.
-  nixpkgs: a package-only PR. `pkgver` says which source, `pkgrel` says
-  which packaging of that source.
+- **Packaging-only error** (a package expression or manifest wrong,
+  source fine) — no new tag. nixpkgs: a package-only PR. Flathub: a
+  manifest-only PR in the Flathub repository.
 
 `[Unreleased]` is both the accumulator and the gauge: when it reads
 like something a user would want, cut the release.
@@ -68,7 +63,7 @@ the title `Spectral X.Y.Z` and `-` bullets summarizing the release.
 
 ## The version-bump surface
 
-Five files carry the version and must move together:
+Four files carry the version and must move together:
 
 | File | Field | Moved by |
 | --- | --- | --- |
@@ -76,7 +71,6 @@ Five files carry the version and must move together:
 | `Cargo.lock` | the `spectral` stanza | the script, via cargo |
 | `nix/package.nix` | `version` | the script |
 | `assets/page.codeberg.mmc.Spectral.metainfo.xml` | `<release>` entry | **authored by hand first** — the script only verifies it exists |
-| `packaging/aur/PKGBUILD` | `pkgver`, `pkgrel` | the script; the tarball hash and `.SRCINFO` follow the tag (`--post-tag` mode) |
 
 The in-repo Flatpak manifest builds `main` and carries no version; the
 versioned manifest lives in the Flathub repository. `nix/package.nix`
@@ -108,9 +102,9 @@ and expression disagree.
 
 ## Fan-out
 
-Order: nixpkgs first (it merges on reviewer time), then AUR, then
-Flathub. Skipping versions downstream is legal — each channel bumps
-from whatever it has to the newest tag.
+Order: nixpkgs first (it merges on reviewer time), then Flathub.
+Skipping versions downstream is legal — each channel bumps from
+whatever it has to the newest tag.
 
 ### nixpkgs
 
@@ -144,13 +138,6 @@ Intentionally different (do not sync): the builder
 lockfile), where tests run, `pname` (`spectral-mic` vs `spectral`),
 and the `passthru`/maintainers/fixpoint plumbing.
 
-### AUR
-
-After the tag is public: `./packaging/bump-version.sh --post-tag X.Y.Z`,
-verify the `.SRCINFO` diff touches only pkgver/pkgrel/source/sha256
-lines, commit `build(aur): pin the vX.Y.Z tarball hash`. Publishing the
-result to the AUR itself waits on the account claim (see Channels).
-
 ### Flathub
 
 Bump the manifest's source tag in the Flathub app repository and
@@ -161,12 +148,11 @@ the initial submission lands.
 
 What users see, when, after a release:
 
-1. **AUR** — minutes after the push; helpers flag the update.
-2. **nixpkgs `master`** — when the bump PR merges; days to weeks of
+1. **nixpkgs `master`** — when the bump PR merges; days to weeks of
    review latency is normal, and after about a week a polite post in
    the Discourse "PRs ready for review" thread is the escalation path.
-3. **`nixos-unstable`** — a few days after merge, once Hydra builds it.
-4. **Flathub** — hours after the Flathub PR merges.
-5. **NixOS stable** — only at the next release branch-off; backports
+2. **`nixos-unstable`** — a few days after merge, once Hydra builds it.
+3. **Flathub** — hours after the Flathub PR merges.
+4. **NixOS stable** — only at the next release branch-off; backports
    are for critical and security fixes only. Stable users being one
    release behind is the channel's contract, not a problem to solve.
