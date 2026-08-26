@@ -52,6 +52,25 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.9.0" date="2026-08-26">
+      <description>
+        <p>
+          The virtual microphone now survives its input device being
+          unplugged: it stays available, waits up to thirty seconds for
+          the device to return, and picks it up again by itself — the
+          status reads Reconnecting while it waits. Plugging a device
+          back in no longer confuses the app with a stale id, and
+          unplugging it can no longer silently swap your microphone for
+          the system default. Voice-test recordings are now private to
+          your user account, stop with a clear error when the disk
+          fills, and can no longer be corrupted by a transient write
+          failure. Settings survive two clients applying at once, the
+          window feels quicker to reflect the daemon, and errors open
+          into a details view with a copyable diagnostics summary for
+          bug reports.
+        </p>
+      </description>
+    </release>
     <release version="0.8.0" date="2026-07-31">
       <description>
         <p>

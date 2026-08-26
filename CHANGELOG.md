@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-26
+
 ### Added
 - The virtual microphone now survives its input device being unplugged. It
   stays available to whatever is using it and goes quiet for up to 30
@@ -22,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The in-repo AUR PKGBUILD. Spectral's supported channels are nixpkgs and
   Flatpak; anyone is welcome to package the release tags for the AUR or
   any other format independently.
+- Voice-test recordings left behind by 0.2.2 and older are no longer swept
+  up. Those versions kept the recordings under the config directory; the
+  daemon deleted the two stale files on every start so config backups stopped
+  syncing audio. Anyone still upgrading from that far back can delete
+  `~/.config/spectral/recordings/` by hand — current recordings live under
+  the state directory and are unaffected.
 
 ### Security
 - Voice-test recordings are no longer readable by other users on the same
@@ -151,14 +159,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with no way to read the rest; the chip opens a details view with the full
   message and a copyable diagnostics summary — versions, packaging, the log
   and config paths, and the daemon's last known state — for bug reports.
-
-### Removed
-- Voice-test recordings left behind by 0.2.2 and older are no longer swept
-  up. Those versions kept the recordings under the config directory; the
-  daemon deleted the two stale files on every start so config backups stopped
-  syncing audio. Anyone still upgrading from that far back can delete
-  `~/.config/spectral/recordings/` by hand — current recordings live under
-  the state directory and are unaffected.
 
 ## [0.8.0] - 2026-07-31
 
@@ -613,7 +613,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nix is the only officially supported installation method
 - Requires PipeWire (with the PulseAudio compatibility layer) and WirePlumber
 
-[Unreleased]: https://codeberg.org/mmc/spectral/compare/v0.8.0...main
+[Unreleased]: https://codeberg.org/mmc/spectral/compare/v0.9.0...main
+[0.9.0]: https://codeberg.org/mmc/spectral/compare/v0.8.0...v0.9.0
 [0.8.0]: https://codeberg.org/mmc/spectral/compare/v0.7.0...v0.8.0
 [0.7.0]: https://codeberg.org/mmc/spectral/compare/v0.6.2...v0.7.0
 [0.6.2]: https://codeberg.org/mmc/spectral/compare/v0.6.1...v0.6.2
