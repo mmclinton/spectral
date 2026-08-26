@@ -59,7 +59,6 @@
               })
               pkgs.pkg-config
               pkgs.gh
-              pkgs.pacman
               pkgs.appstream
               pkgs.curl
               pkgs.jq
@@ -67,7 +66,6 @@
             ]
             ++ spectral.passthru.linkedLibs;
 
-            MAKEPKG_CONF = "${pkgs.pacman}/etc/makepkg.conf";
             LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath spectral.passthru.dlopenLibs;
             RUST_BACKTRACE = "1";
           };
