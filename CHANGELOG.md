@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a disconnected input device, and `spectral status` says the same. The
   error area names the device that went away until it comes back.
 
+### Removed
+- The in-repo AUR PKGBUILD. Spectral's supported channels are nixpkgs and
+  Flatpak; anyone is welcome to package the release tags for the AUR or
+  any other format independently.
+
 ### Security
 - Voice-test recordings are no longer readable by other users on the same
   machine. The recordings directory and the two WAV files took whatever the
