@@ -95,7 +95,7 @@ mod tests {
                 .collect();
             let out = filter.process(&frame);
             if frame_idx >= frames / 2 {
-                sum_squares += out.iter().map(|&s| (s as f64).powi(2)).sum::<f64>();
+                sum_squares += out.iter().map(|&s| f64::from(s).powi(2)).sum::<f64>();
                 count += FRAME;
             }
         }

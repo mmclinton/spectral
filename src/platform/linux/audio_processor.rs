@@ -51,7 +51,7 @@ impl AudioProcessor {
         Self {
             state,
             denoiser: DenoiseState::new(),
-            highpass: HighPass::new(RUMBLE_CUTOFF_HZ, SAMPLE_RATE as f64, RNNOISE_FRAME_SIZE),
+            highpass: HighPass::new(RUMBLE_CUTOFF_HZ, f64::from(SAMPLE_RATE), RNNOISE_FRAME_SIZE),
             leveler: Leveler::new(),
             gate: VoiceGate::new(RNNOISE_FRAME_SIZE),
             flush_silence: vec![0.0; RNNOISE_FRAME_SIZE],
@@ -148,7 +148,7 @@ impl VirtualMic {
             let rule = mic_name_rule();
             return Err(format!("Invalid mic name {virtual_name:?}: {rule}").into());
         }
-        let processor = AudioProcessor::new(state.clone());
+        let processor = AudioProcessor::new(state);
 
         let audio_pipeline =
             NativeAudioPipeline::start(processor, source_node_name, virtual_name, input_channels)

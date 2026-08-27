@@ -490,7 +490,7 @@ fn run_recorder(
                 failure,
                 format!(
                     "recording reached the {} s safety cap",
-                    MAX_RECORDING_SAMPLES / SAMPLE_RATE as u64
+                    MAX_RECORDING_SAMPLES / u64::from(SAMPLE_RATE)
                 ),
             );
             break;
@@ -907,11 +907,9 @@ fn load_wav(path: &Path) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + 
     let reader = hound::WavReader::open(path)?;
     let spec = reader.spec();
     if spec != WAV_SPEC {
-        return Err(format!(
-            "Unsupported WAV spec: {:?} (expected mono 48 kHz 32-bit float)",
-            spec
-        )
-        .into());
+        return Err(
+            format!("Unsupported WAV spec: {spec:?} (expected mono 48 kHz 32-bit float)").into(),
+        );
     }
     let mut out: Vec<f32> = Vec::new();
     for sample in reader.into_samples::<f32>() {
