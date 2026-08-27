@@ -1,11 +1,8 @@
 # Contributing
 
-Spectral is developed on Codeberg: https://codeberg.org/mmc/spectral.
-Bug reports and patches are welcome via issues and pull requests there.
+Spectral is developed on Codeberg: https://codeberg.org/mmc/spectral. Bug reports and patches are welcome via issues and pull requests there.
 
-For a map of the codebase, read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-What makes a bug report useful is listed under
-[Reporting a bug](docs/TROUBLESHOOTING.md#reporting-a-bug).
+For a map of the codebase, read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). What makes a bug report useful is listed under [Reporting a bug](docs/TROUBLESHOOTING.md#reporting-a-bug).
 
 ## Building
 
@@ -19,28 +16,18 @@ Everything is pinned by the nix flake:
 
 `nix flake check` must pass. It builds the package and gates formatting (`rustfmt.toml`), lints, and `cargo test`. The `[lints]` table in Cargo.toml denies every rustc and clippy warning, with the test carve-outs and the project's identifier vocabulary in `clippy.toml`. A bare `cargo build` enforces the rustc half only, because rustc ignores `clippy::` lints; the clippy half needs `cargo clippy`.
 
-If you touch Cargo.toml or Cargo.lock, also run `cargo deny check` from
-the dev shell (security advisories, license compliance, duplicate
-versions, registry sources — policy in `deny.toml`).
+If you touch Cargo.toml or Cargo.lock, also run `cargo deny check` from the dev shell (security advisories, license compliance, duplicate versions, registry sources — policy in `deny.toml`).
 
-The MSRV is the `rust-version` field in Cargo.toml. It is bumped only
-when a change genuinely needs a newer compiler.
+The MSRV is the `rust-version` field in Cargo.toml. It is bumped only when a change genuinely needs a newer compiler.
 
 ## Commits
 
-Conventional Commits: `<type>(<scope>): <imperative description>`, kept
-small and independently reviewable. User-visible changes add a line
-under `[Unreleased]` in CHANGELOG.md.
+Conventional Commits: `<type>(<scope>): <imperative description>`, kept small and independently reviewable. User-visible changes add a line under `[Unreleased]` in CHANGELOG.md.
 
 ## Licensing
 
-GPL-3.0-only, inbound = outbound: by submitting a change you agree to
-license it under GPL-3.0-only. Third-party notices for statically
-linked components live in THIRD-PARTY.md.
+GPL-3.0-only, inbound = outbound: by submitting a change you agree to license it under GPL-3.0-only. Third-party notices for statically linked components live in THIRD-PARTY.md.
 
 ## Releases
 
-Versioning, channels, and the release pipeline are documented in
-[docs/RELEASING.md](docs/RELEASING.md). Releases are cut by the
-maintainer when a coherent user-visible arc has landed; landing on
-`main` alone ships nothing.
+Versioning, channels, and the release pipeline are documented in [docs/RELEASING.md](docs/RELEASING.md). Releases are cut by the maintainer when a coherent user-visible arc has landed; landing on `main` alone ships nothing.
