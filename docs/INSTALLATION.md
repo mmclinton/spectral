@@ -1,6 +1,6 @@
 # Installation
 
-Spectral is in nixpkgs as `spectral-mic`. A Flatpak manifest is included and builds cleanly but has not been through a Flathub review. Manual builds may work but are unsupported.
+Spectral is in nixpkgs as `spectral-mic`. A Flatpak manifest is included and builds cleanly; [Flatpak](#flatpak) below carries its publishing status. Manual builds may work but are unsupported.
 
 Spectral needs Linux with **PipeWire** and its session manager, **WirePlumber**, on Wayland or X11, x86_64 or aarch64.
 
