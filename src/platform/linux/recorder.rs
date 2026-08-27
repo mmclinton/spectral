@@ -568,8 +568,12 @@ fn process_capture(stream: &pipewire::stream::Stream, data: &mut Rc<RefCell<Capt
     };
 
     let mut write_error = None;
-    for frame in bytes.chunks_exact(4) {
-        let sample = f32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]);
+    // See the capture callback in `pipewire`: `[u8; 4]` from `as_chunks`
+    // needs no bounds check per sample, and drops the same partial tail
+    // `chunks_exact` did.
+    let (frames, _) = bytes.as_chunks::<4>();
+    for frame in frames {
+        let sample = f32::from_le_bytes(*frame);
         if let Err(e) = writer.write_sample(sample) {
             // Disk full or I/O error. Leave the writer in place so finalize
             // still runs on what was captured, and hand the cause to the
