@@ -133,13 +133,13 @@ mid-sentence.
 | Path | Responsibility |
 | --- | --- |
 | `src/state.rs` | `AppState` (the daemon's shared state), `AudioDevice`, the `Status` lifecycle enum, mic-name validation, and `lock_or_recover`. |
-| `src/main.rs` | Slint GUI. UI in `ui/`, where `app-window.slint` composes the app bar, threshold band, cards, footer and popups against the shared `theme.slint`; compiled by `build.rs` and bound via `slint::include_modules!()`. |
+| `src/main.rs` | Slint GUI. UI in `ui/`, where `app-window.slint` composes the app bar, threshold band, cards, footer and popups against the shared `theme.slint`; compiled by `build.rs` and bound via `slint::include_modules!()` in the `generated_ui` module (see below). |
 | `src/cli.rs` | Headless subcommand parsing and execution. Bare `spectral` launches the GUI. |
 | `src/fonts.rs` | Resolves the user's preferred monospaced family, which Slint cannot ask for itself. |
 | `src/daemon_launch.rs` | Spawning the daemon and bootstrapping a connection; shared by the GUI and CLI. |
 | `src/diagnostics.rs` | Renders the bug-report dump behind the GUI's error details modal, from in-process state only. |
 | `src/bin/spectral-daemon.rs` | Daemon main loop, connection handlers, and the lock-ordering convention. |
-| `src/platform/mod.rs` | The platform seam; re-exports `linux`. |
+| `src/platform/mod.rs` | The platform seam. Re-exports the Linux modules the binaries use — `audio_devices`, `audio_processor`, `ipc`, `persistence`, `recorder` — while `linux` itself stays crate-private, so there is one path to any item. |
 | `src/platform/linux/pipewire.rs` | `NativeAudioPipeline`: the audio thread, capture stream, virtual source node, and link. |
 | `src/platform/linux/audio_processor.rs` | `AudioProcessor` (the per-frame chain) and `VirtualMic` (lifecycle of the mic). |
 | `src/platform/linux/stages/` | The individual DSP stages: `highpass.rs`, `leveler.rs`, `gate.rs`. |
@@ -150,6 +150,8 @@ mid-sentence.
 
 Settings persist to `$XDG_CONFIG_HOME/spectral/state.toml`; voice-test
 recordings live under the XDG state dir at `~/.local/state/spectral/recordings`.
+
+`slint::include_modules!()` is wrapped in a `generated_ui` module rather than called at the crate root. slint-build regenerates that code from `ui/` on every build, and it carries its own `#![allow(clippy::all, clippy::pedantic, clippy::nursery)]`, which does not cover the restriction lints Cargo.toml denies — some 1500 generated `unwrap` calls would otherwise fail the build. When a newly adopted lint trips the generated code, allow it on that module; never work around it in `ui/`.
 
 ## Threading and real-time constraints
 

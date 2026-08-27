@@ -17,10 +17,7 @@ Everything is pinned by the nix flake:
 
 ## Before submitting
 
-`nix flake check` must pass. It builds the package and gates formatting
-(`rustfmt.toml`), lints (all rustc and clippy warnings are denied — the
-`[lints]` table in Cargo.toml means a bare `cargo build` enforces the
-same), and `cargo test`.
+`nix flake check` must pass. It builds the package and gates formatting (`rustfmt.toml`), lints, and `cargo test`. The `[lints]` table in Cargo.toml denies every rustc and clippy warning, with the test carve-outs and the project's identifier vocabulary in `clippy.toml`. A bare `cargo build` enforces the rustc half only, because rustc ignores `clippy::` lints; the clippy half needs `cargo clippy`.
 
 If you touch Cargo.toml or Cargo.lock, also run `cargo deny check` from
 the dev shell (security advisories, license compliance, duplicate

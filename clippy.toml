@@ -1,0 +1,8 @@
+# Vocabulary the codebase uses in prose. `..` extends clippy's defaults rather
+# than replacing them.
+doc-valid-idents = ["PipeWire", "RNNoise", "WirePlumber", ".."]
+
+# `unwrap`/`expect` are denied below, but a test that cannot unwrap has to
+# thread a Result through every assertion for no gain.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true

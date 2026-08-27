@@ -51,7 +51,7 @@ impl AudioProcessor {
         Self {
             state,
             denoiser: DenoiseState::new(),
-            highpass: HighPass::new(RUMBLE_CUTOFF_HZ, SAMPLE_RATE as f64, RNNOISE_FRAME_SIZE),
+            highpass: HighPass::new(RUMBLE_CUTOFF_HZ, f64::from(SAMPLE_RATE), RNNOISE_FRAME_SIZE),
             leveler: Leveler::new(),
             gate: VoiceGate::new(RNNOISE_FRAME_SIZE),
             flush_silence: vec![0.0; RNNOISE_FRAME_SIZE],
@@ -59,7 +59,7 @@ impl AudioProcessor {
         }
     }
 
-    /// Denoise and gate exactly one frame: `input` is RNNOISE_FRAME_SIZE mono
+    /// Denoise and gate exactly one frame: `input` is `RNNOISE_FRAME_SIZE` mono
     /// samples scaled to the i16 range, `output` receives the processed frame.
     /// Runs on the real-time audio thread — no locks, no allocations.
     pub fn process_frame(&mut self, input: &[f32], output: &mut [f32]) {
@@ -148,7 +148,7 @@ impl VirtualMic {
             let rule = mic_name_rule();
             return Err(format!("Invalid mic name {virtual_name:?}: {rule}").into());
         }
-        let processor = AudioProcessor::new(state.clone());
+        let processor = AudioProcessor::new(state);
 
         let audio_pipeline =
             NativeAudioPipeline::start(processor, source_node_name, virtual_name, input_channels)

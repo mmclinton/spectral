@@ -299,7 +299,7 @@ mod tests {
     }
 
     /// Concurrent saves are reachable in the daemon: one handler thread per
-    /// connection, and save_state runs under no lock. Whichever write lands
+    /// connection, and `save_state` runs under no lock. Whichever write lands
     /// last, the file must be one writer's whole output — never two spliced
     /// together, which is what a shared temp name produced.
     #[test]

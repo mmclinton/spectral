@@ -68,6 +68,9 @@ fn main() {
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
 
+    // A daemon that cannot be signalled cannot be shut down cleanly, and the
+    // virtual mic would outlive it. Fail at startup rather than mid-session.
+    #[expect(clippy::expect_used, reason = "fail-fast at daemon startup")]
     let mut signals = signal_hook::iterator::Signals::new([
         signal_hook::consts::SIGTERM,
         signal_hook::consts::SIGINT,

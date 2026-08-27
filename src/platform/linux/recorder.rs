@@ -79,9 +79,9 @@ const FLUSH_INTERVAL_SAMPLES: u64 = SAMPLE_RATE as u64;
 
 /// Hard daemon-side cap on one recording: 60 s per stream. The GUI stops
 /// recordings at 15 s, so this backstop only fires when no client is left
-/// to send StopRecording (e.g. the GUI died mid-recording) — bounding disk
+/// to send `StopRecording` (e.g. the GUI died mid-recording) — bounding disk
 /// use instead of writing until the disk is full. Reaching it goes through
-/// the failure slot so the GetState reap tears the recorder down and
+/// the failure slot so the `GetState` reap tears the recorder down and
 /// reports why.
 const MAX_RECORDING_SAMPLES: u64 = 60 * SAMPLE_RATE as u64;
 
@@ -490,7 +490,7 @@ fn run_recorder(
                 failure,
                 format!(
                     "recording reached the {} s safety cap",
-                    MAX_RECORDING_SAMPLES / SAMPLE_RATE as u64
+                    MAX_RECORDING_SAMPLES / u64::from(SAMPLE_RATE)
                 ),
             );
             break;
@@ -568,8 +568,12 @@ fn process_capture(stream: &pipewire::stream::Stream, data: &mut Rc<RefCell<Capt
     };
 
     let mut write_error = None;
-    for frame in bytes.chunks_exact(4) {
-        let sample = f32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]);
+    // See the capture callback in `pipewire`: `[u8; 4]` from `as_chunks`
+    // needs no bounds check per sample, and drops the same partial tail
+    // `chunks_exact` did.
+    let (frames, _) = bytes.as_chunks::<4>();
+    for frame in frames {
+        let sample = f32::from_le_bytes(*frame);
         if let Err(e) = writer.write_sample(sample) {
             // Disk full or I/O error. Leave the writer in place so finalize
             // still runs on what was captured, and hand the cause to the
@@ -903,11 +907,9 @@ fn load_wav(path: &Path) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + 
     let reader = hound::WavReader::open(path)?;
     let spec = reader.spec();
     if spec != WAV_SPEC {
-        return Err(format!(
-            "Unsupported WAV spec: {:?} (expected mono 48 kHz 32-bit float)",
-            spec
-        )
-        .into());
+        return Err(
+            format!("Unsupported WAV spec: {spec:?} (expected mono 48 kHz 32-bit float)").into(),
+        );
     }
     let mut out: Vec<f32> = Vec::new();
     for sample in reader.into_samples::<f32>() {

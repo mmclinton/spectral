@@ -31,6 +31,15 @@ warnings = { level = "deny", priority = -1 }
 
 [lints.clippy]
 all = { level = "deny", priority = -1 }
+# Rules the conventions state in prose, machine-enforced. Each is named
+# individually: `restriction` is not meant to be enabled as a group, and the
+# rest of `pedantic` is a separate decision. Thresholds and the test-only
+# carve-outs live in clippy.toml.
+doc_markdown = "deny"
+expect_used = "deny"
+print_stdout = "deny"
+undocumented_unsafe_blocks = "deny"
+unwrap_used = "deny"
 
 [dependencies]
 slint = { version = "=1.17.1", default-features = false, features = [

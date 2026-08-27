@@ -181,7 +181,7 @@ impl ReattachState {
 }
 
 /// Ready = both streams up and the feed link created; the daemon's Enable
-/// blocks on this inside PIPELINE_READY_TIMEOUT.
+/// blocks on this inside `PIPELINE_READY_TIMEOUT`.
 #[derive(Default)]
 struct ReadyFlags {
     capture: Cell<bool>,
@@ -1107,14 +1107,13 @@ fn process_capture_buffer(
                 processor.reset_for_reattach();
             }
 
-            for audio_chunk in valid_data.chunks_exact(4) {
-                let sample = f32::from_le_bytes([
-                    audio_chunk[0],
-                    audio_chunk[1],
-                    audio_chunk[2],
-                    audio_chunk[3],
-                ]);
-                input_buffer.push(sanitize_sample(sample));
+            // `as_chunks` hands back `[u8; 4]` rather than a slice, so the
+            // four bounds checks per sample that indexing needs are gone
+            // from the capture callback. The trailing partial frame is
+            // discarded either way.
+            let (frames, _) = valid_data.as_chunks::<4>();
+            for frame in frames {
+                input_buffer.push(sanitize_sample(f32::from_le_bytes(*frame)));
             }
 
             // Process complete frames (480 samples per channel) in the
