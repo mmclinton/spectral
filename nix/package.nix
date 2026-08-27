@@ -132,6 +132,13 @@ craneLib'.buildPackage (
           // {
             inherit cargoArtifacts;
             cargoClippyExtraArgs = "--all-targets -- --deny warnings";
+            # Same reason rustfmt.toml joins the fmt source below: clippy.toml
+            # is not a build input, and putting it in buildFiles would make
+            # every lint tweak recompile the crate.
+            src = lib.fileset.toSource {
+              root = ./..;
+              fileset = lib.fileset.union buildFiles ./../clippy.toml;
+            };
           }
         );
 
