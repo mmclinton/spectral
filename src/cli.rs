@@ -100,6 +100,64 @@ Exit codes:
     )
 }
 
+/// The frozen CLI surface. The `match` arms below stay the authority on
+/// what parses; these are the list the typo hints and the reference tests
+/// both walk, so the tables are no longer test-only scaffolding standing
+/// alongside the parser but something the parser itself reads.
+const SUBCOMMANDS: [&str; 5] = ["enable", "disable", "status", "devices", "shutdown"];
+const ENABLE_FLAGS: [&str; 5] = [
+    "--device",
+    "--threshold",
+    "--mic-name",
+    "--rumble-filter",
+    "--auto-level",
+];
+
+/// Levenshtein distance, two rows rather than the full matrix because only
+/// the previous one is ever read.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    let mut curr = vec![0; b.len() + 1];
+
+    for (i, ca) in a.chars().enumerate() {
+        curr[0] = i + 1;
+        for (j, &cb) in b.iter().enumerate() {
+            let substitute = prev[j] + usize::from(ca != cb);
+            curr[j + 1] = substitute.min(prev[j + 1] + 1).min(curr[j] + 1);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+
+    prev[b.len()]
+}
+
+/// The nearest candidate to `input`, or `None` when nothing is close enough
+/// to read as a typo rather than a different word.
+///
+/// The budget is a third of the input's length, so `stat` is left alone —
+/// two edits from `status` on four characters is a different word, and a
+/// wrong guess costs more than no guess — while `--rumble-filtre` still
+/// resolves. Ties go to the alphabetically first candidate, so the message
+/// does not depend on table order.
+fn suggest<'a>(input: &str, candidates: &[&'a str]) -> Option<&'a str> {
+    let budget = (input.chars().count() / 3).max(1);
+    candidates
+        .iter()
+        .map(|&candidate| (edit_distance(input, candidate), candidate))
+        .filter(|&(distance, _)| distance <= budget)
+        .min()
+        .map(|(_, candidate)| candidate)
+}
+
+/// A usage error that offers the nearest spelling when there is one.
+fn unknown(what: &str, got: &str, candidates: &[&str]) -> String {
+    match suggest(got, candidates) {
+        Some(hint) => format!("{what} '{got}'; did you mean '{hint}'?"),
+        None => format!("{what} '{got}'"),
+    }
+}
+
 /// Parses the arguments after argv\[0\]; an `Err` is a usage-error message
 /// destined for exit code 2. Both `--flag value` and `--flag=value` forms
 /// are accepted.
@@ -121,7 +179,7 @@ pub fn parse<A: IntoIterator<Item = OsString>>(args: A) -> Result<CliCommand, St
         "shutdown" => CliCommand::Shutdown,
         "--help" | "-h" => CliCommand::Help,
         "--version" | "-V" => CliCommand::Version,
-        other => return Err(format!("unknown command '{other}'")),
+        other => return Err(unknown("unknown command", other, &SUBCOMMANDS)),
     };
 
     match args.next() {
@@ -195,7 +253,7 @@ where
                 let value = take_value(args, inline, "--auto-level")?;
                 auto_level = Some(parse_toggle(&value, "--auto-level")?);
             }
-            other => return Err(format!("unexpected argument '{other}'")),
+            other => return Err(unknown("unexpected argument", other, &ENABLE_FLAGS)),
         }
     }
 
@@ -652,23 +710,12 @@ mod tests {
         }
     }
 
-    /// The half of the frozen CLI surface no constant can render. The exit
-    /// codes reach `help()` by interpolation, but the subcommand set and the
-    /// `enable` flags are prose in four places — `help()`, docs/CLI.md, the
-    /// man page and the fish completions — with the parser as the fifth
-    /// copy. This table is the one list all five are checked against.
-    const SUBCOMMANDS: [&str; 5] = ["enable", "disable", "status", "devices", "shutdown"];
-    const ENABLE_FLAGS: [&str; 5] = [
-        "--device",
-        "--threshold",
-        "--mic-name",
-        "--rumble-filter",
-        "--auto-level",
-    ];
-    /// Long options that belong to no subcommand. Not part of the frozen
-    /// surface — they sit here so the reverse scan below has somewhere to
-    /// put a `--` token that is legitimately not an `enable` flag. Short
-    /// forms (`-h`, `-V`) go unchecked; the scan only looks at `--`.
+    /// Long options that belong to no subcommand. Unlike [`SUBCOMMANDS`] and
+    /// [`ENABLE_FLAGS`] this one stays test-only: the parser never offers
+    /// either as a suggestion, since neither is valid after a subcommand.
+    /// It sits here so the reverse scan below has somewhere to put a `--`
+    /// token that is legitimately not an `enable` flag. Short forms (`-h`,
+    /// `-V`) go unchecked; the scan only looks at `--`.
     const GLOBAL_OPTIONS: [&str; 2] = ["--help", "--version"];
 
     /// The four rendered surfaces, for the scans that walk all of them.
@@ -927,6 +974,79 @@ mod tests {
     fn duplicate_and_valueless_flags_are_rejected() {
         assert!(p(&["enable", "--device", "1", "--device", "2"]).is_err());
         assert!(p(&["enable", "--device"]).is_err());
+    }
+
+    #[test]
+    fn a_near_miss_is_offered_the_spelling_it_probably_meant() {
+        assert_eq!(
+            p(&["enalbe"]),
+            Err("unknown command 'enalbe'; did you mean 'enable'?".to_string())
+        );
+        assert_eq!(
+            p(&["enable", "--devcie", "3"]),
+            Err("unexpected argument '--devcie'; did you mean '--device'?".to_string())
+        );
+    }
+
+    #[test]
+    fn a_word_too_far_from_any_command_is_offered_nothing() {
+        // Far enough away that a hint would be a guess, not a correction.
+        assert_eq!(
+            p(&["frobnicate"]),
+            Err("unknown command 'frobnicate'".to_string())
+        );
+        // Short inputs get a budget of 1, so two edits is already too many.
+        assert_eq!(p(&["stat"]), Err("unknown command 'stat'".to_string()));
+        assert_eq!(
+            p(&["enable", "--zzz"]),
+            Err("unexpected argument '--zzz'".to_string())
+        );
+    }
+
+    #[test]
+    fn every_subcommand_and_flag_suggests_itself_from_a_single_edit() {
+        for word in SUBCOMMANDS {
+            let typo: String = word
+                .char_indices()
+                .filter(|&(i, _)| i != 1)
+                .map(|(_, c)| c)
+                .collect();
+            assert_eq!(
+                suggest(&typo, &SUBCOMMANDS),
+                Some(word),
+                "dropping a character from `{word}` no longer resolves back to it"
+            );
+        }
+        for flag in ENABLE_FLAGS {
+            let typo: String = flag
+                .char_indices()
+                .filter(|&(i, _)| i != 3)
+                .map(|(_, c)| c)
+                .collect();
+            assert_eq!(
+                suggest(&typo, &ENABLE_FLAGS),
+                Some(flag),
+                "dropping a character from `{flag}` no longer resolves back to it"
+            );
+        }
+    }
+
+    #[test]
+    fn edit_distance_counts_insertions_deletions_and_substitutions() {
+        let cases = [
+            ("", "", 0),
+            ("enable", "enable", 0),
+            ("enable", "", 6),
+            ("", "enable", 6),
+            ("enalbe", "enable", 2),
+            ("kitten", "sitting", 3),
+            // Non-ASCII must count characters, not bytes.
+            ("café", "cafe", 1),
+        ];
+        for (a, b, want) in cases {
+            assert_eq!(edit_distance(a, b), want, "edit_distance({a:?}, {b:?})");
+            assert_eq!(edit_distance(b, a), want, "edit_distance({b:?}, {a:?})");
+        }
     }
 
     #[test]
