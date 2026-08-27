@@ -181,7 +181,7 @@ impl ReattachState {
 }
 
 /// Ready = both streams up and the feed link created; the daemon's Enable
-/// blocks on this inside PIPELINE_READY_TIMEOUT.
+/// blocks on this inside `PIPELINE_READY_TIMEOUT`.
 #[derive(Default)]
 struct ReadyFlags {
     capture: Cell<bool>,

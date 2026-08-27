@@ -2,6 +2,10 @@
 //! the GUI; everything here runs against the daemon socket (or the PipeWire
 //! registry directly) without touching Slint.
 
+// This module is the one place stdout is a result channel rather than a
+// diagnostic one: a subcommand's answer is what the caller pipes.
+#![allow(clippy::print_stdout, reason = "stdout is the CLI's result channel")]
+
 use crate::daemon_launch;
 use spectral_lib::platform::audio_devices;
 use spectral_lib::platform::ipc::{

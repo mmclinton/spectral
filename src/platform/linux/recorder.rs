@@ -79,9 +79,9 @@ const FLUSH_INTERVAL_SAMPLES: u64 = SAMPLE_RATE as u64;
 
 /// Hard daemon-side cap on one recording: 60 s per stream. The GUI stops
 /// recordings at 15 s, so this backstop only fires when no client is left
-/// to send StopRecording (e.g. the GUI died mid-recording) — bounding disk
+/// to send `StopRecording` (e.g. the GUI died mid-recording) — bounding disk
 /// use instead of writing until the disk is full. Reaching it goes through
-/// the failure slot so the GetState reap tears the recorder down and
+/// the failure slot so the `GetState` reap tears the recorder down and
 /// reports why.
 const MAX_RECORDING_SAMPLES: u64 = 60 * SAMPLE_RATE as u64;
 

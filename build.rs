@@ -1,6 +1,9 @@
 use std::env;
 use std::path::Path;
 
+// A build script has no error channel but a panic: either the UI compiles or
+// there is nothing to link against.
+#[expect(clippy::expect_used, reason = "build failure must abort the build")]
 fn main() {
     let manifest_dir =
         env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set by Cargo");

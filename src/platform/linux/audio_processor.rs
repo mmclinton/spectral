@@ -59,7 +59,7 @@ impl AudioProcessor {
         }
     }
 
-    /// Denoise and gate exactly one frame: `input` is RNNOISE_FRAME_SIZE mono
+    /// Denoise and gate exactly one frame: `input` is `RNNOISE_FRAME_SIZE` mono
     /// samples scaled to the i16 range, `output` receives the processed frame.
     /// Runs on the real-time audio thread — no locks, no allocations.
     pub fn process_frame(&mut self, input: &[f32], output: &mut [f32]) {
