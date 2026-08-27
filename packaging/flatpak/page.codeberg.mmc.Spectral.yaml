@@ -41,6 +41,7 @@ modules:
         /app/share/icons/hicolor/512x512/apps/page.codeberg.mmc.Spectral.png
       - install -Dm644 -t /app/share/licenses/page.codeberg.mmc.Spectral
         LICENSE THIRD-PARTY.md
+      - install -Dm644 assets/spectral.1 /app/share/man/man1/spectral.1
     sources:
       # Development manifest: builds the checked-out repository. The Flathub
       # submission replaces this entry with the public release; see README.md.
