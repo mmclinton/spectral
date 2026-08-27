@@ -654,9 +654,9 @@ mod tests {
 
     /// The half of the frozen CLI surface no constant can render. The exit
     /// codes reach `help()` by interpolation, but the subcommand set and the
-    /// `enable` flags are prose in two places — `help()` and docs/CLI.md —
-    /// with the parser as the third copy. This table is the one list all
-    /// three are checked against.
+    /// `enable` flags are prose in four places — `help()`, docs/CLI.md, the
+    /// man page and the fish completions — with the parser as the fifth
+    /// copy. This table is the one list all five are checked against.
     const SUBCOMMANDS: [&str; 5] = ["enable", "disable", "status", "devices", "shutdown"];
     const ENABLE_FLAGS: [&str; 5] = [
         "--device",
@@ -670,6 +670,30 @@ mod tests {
     /// put a `--` token that is legitimately not an `enable` flag. Short
     /// forms (`-h`, `-V`) go unchecked; the scan only looks at `--`.
     const GLOBAL_OPTIONS: [&str; 2] = ["--help", "--version"];
+
+    /// The four rendered surfaces, for the scans that walk all of them.
+    /// `help()` is built here; the rest are read at compile time, so a file
+    /// that goes missing fails the build rather than an assertion.
+    fn surfaces() -> [(&'static str, String); 4] {
+        [
+            ("--help", help()),
+            ("docs/CLI.md", include_str!("../docs/CLI.md").to_owned()),
+            (
+                "assets/spectral.1",
+                include_str!("../assets/spectral.1").to_owned(),
+            ),
+            (
+                "assets/spectral.fish",
+                include_str!("../assets/spectral.fish").to_owned(),
+            ),
+        ]
+    }
+
+    /// roff escapes a literal hyphen as `\-`, so the man page spells
+    /// `--device` as `\-\-device`. Normalize before any flag search.
+    fn unescape_roff(text: &str) -> String {
+        text.replace("\\-", "-")
+    }
 
     /// Forces a new [`CliCommand`] to declare whether it is spelled as a
     /// subcommand: the match is exhaustive, so the variant will not compile
@@ -735,15 +759,48 @@ mod tests {
         }
     }
 
-    /// The other direction: a flag added to either reference but not to
+    #[test]
+    fn the_man_page_and_completions_carry_every_subcommand_and_flag() {
+        let man = unescape_roff(include_str!("../assets/spectral.1"));
+        let fish = include_str!("../assets/spectral.fish");
+
+        for word in SUBCOMMANDS {
+            assert!(man.contains(word), "`{word}` is missing from spectral.1");
+            assert!(
+                fish.contains(&format!("-a {word} ")),
+                "`{word}` is missing from the fish completions"
+            );
+        }
+        for flag in ENABLE_FLAGS {
+            assert!(man.contains(flag), "{flag} is missing from spectral.1");
+            // Fish spells a long option without its dashes: `-l device`.
+            let bare = flag.trim_start_matches('-');
+            assert!(
+                fish.contains(&format!("-l {bare} ")),
+                "{flag} is missing from the fish completions"
+            );
+        }
+    }
+
+    /// The man page's `.TH` line carries the version, which would otherwise
+    /// be a fourth place to remember on a release bump.
+    #[test]
+    fn the_man_page_version_matches_the_crate() {
+        let man = include_str!("../assets/spectral.1");
+        let expected = format!("\"spectral {}\"", env!("CARGO_PKG_VERSION"));
+        assert!(
+            man.contains(&expected),
+            "the spectral.1 .TH line does not carry {expected}"
+        );
+    }
+
+    /// The other direction: a flag added to any surface but not to
     /// [`ENABLE_FLAGS`] fails here, so the table cannot fall behind the prose
     /// the way docs/CLI.md fell behind the exit codes.
     #[test]
-    fn neither_reference_documents_a_flag_the_table_does_not_carry() {
-        let help = help();
-        let doc = include_str!("../docs/CLI.md");
-        for (source, text) in [("--help", help.as_str()), ("docs/CLI.md", doc)] {
-            for word in text.split_whitespace() {
+    fn no_surface_documents_a_flag_the_table_does_not_carry() {
+        for (source, text) in surfaces() {
+            for word in unescape_roff(&text).split_whitespace() {
                 let flag = word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-');
                 // Split on `=` the way `parse` does: both spellings name the
                 // same flag, and without this, documenting the `--flag=value`
