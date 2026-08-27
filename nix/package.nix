@@ -66,6 +66,7 @@ let
     ./../docs/CLI.md
     # Installed below, and include_str!'d by the same tests.
     ./../assets/spectral.1
+    ./../assets/spectral.fish
   ];
 
   src = lib.fileset.toSource {
@@ -113,6 +114,7 @@ craneLib'.buildPackage (
       install -Dm644 assets/spectral.png $out/share/icons/hicolor/512x512/apps/page.codeberg.mmc.Spectral.png
       install -Dm644 THIRD-PARTY.md $out/share/licenses/spectral/THIRD-PARTY.md
       install -Dm644 assets/spectral.1 $out/share/man/man1/spectral.1
+      install -Dm644 assets/spectral.fish $out/share/fish/vendor_completions.d/spectral.fish
 
       # The GUI shells out to xdg-open for its Help links; hosts without
       # xdg-utils would otherwise fail the spawn silently.

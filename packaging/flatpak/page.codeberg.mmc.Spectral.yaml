@@ -42,6 +42,8 @@ modules:
       - install -Dm644 -t /app/share/licenses/page.codeberg.mmc.Spectral
         LICENSE THIRD-PARTY.md
       - install -Dm644 assets/spectral.1 /app/share/man/man1/spectral.1
+      - install -Dm644 assets/spectral.fish
+        /app/share/fish/vendor_completions.d/spectral.fish
     sources:
       # Development manifest: builds the checked-out repository. The Flathub
       # submission replaces this entry with the public release; see README.md.
