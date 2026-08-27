@@ -11,7 +11,9 @@ spectral disable              # tear the virtual mic down
 spectral shutdown             # stop the daemon
 ```
 
-`spectral --help` prints the same reference; `spectral --version` prints the version.
+`spectral --help` prints the same reference; `spectral --version` prints the version. `man spectral` covers the same ground and adds the file locations, which nothing else documents.
+
+Fish users get completions for the subcommands and every flag, including live device ids for `--device` and the `on`/`off` values. A packaged install puts them on fish's completion path already; running from a checkout, `source assets/spectral.fish` loads them for the session.
 
 ## `enable` flags
 
