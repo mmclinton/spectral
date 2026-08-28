@@ -112,6 +112,10 @@ const ENABLE_FLAGS: [&str; 5] = [
     "--rumble-filter",
     "--auto-level",
 ];
+/// The long options that belong to no subcommand. They parse in first
+/// position and nowhere else, so they join the candidates there and stay out
+/// of the `enable` ones.
+const GLOBAL_OPTIONS: [&str; 2] = ["--help", "--version"];
 
 /// Levenshtein distance, two rows rather than the full matrix because only
 /// the previous one is ever read.
@@ -179,7 +183,10 @@ pub fn parse<A: IntoIterator<Item = OsString>>(args: A) -> Result<CliCommand, St
         "shutdown" => CliCommand::Shutdown,
         "--help" | "-h" => CliCommand::Help,
         "--version" | "-V" => CliCommand::Version,
-        other => return Err(unknown("unknown command", other, &SUBCOMMANDS)),
+        other => {
+            let candidates = [SUBCOMMANDS.as_slice(), GLOBAL_OPTIONS.as_slice()].concat();
+            return Err(unknown("unknown command", other, &candidates));
+        }
     };
 
     match args.next() {
@@ -985,6 +992,16 @@ mod tests {
         assert_eq!(
             p(&["enable", "--devcie", "3"]),
             Err("unexpected argument '--devcie'; did you mean '--device'?".to_string())
+        );
+        // First position parses `--help` and `--version` too, so a typo of
+        // either is a near miss there even though `enable` never sees them.
+        assert_eq!(
+            p(&["--hlep"]),
+            Err("unknown command '--hlep'; did you mean '--help'?".to_string())
+        );
+        assert_eq!(
+            p(&["--verison"]),
+            Err("unknown command '--verison'; did you mean '--version'?".to_string())
         );
     }
 
