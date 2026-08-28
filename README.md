@@ -1,15 +1,3 @@
-<div align="center">
-  <img src="./assets/spectral.png" alt="Spectral icon" width="200">
-  <p>
-    <a href="https://codeberg.org/mmc/spectral/actions?workflow=ci.yml">
-      <img src="https://codeberg.org/mmc/spectral/badges/workflows/ci.yml/badge.svg?branch=main" alt="CI status">
-    </a>
-    <a href="LICENSE">
-      <img src="https://img.shields.io/badge/license-GPL--3.0--only-blue" alt="License: GPL-3.0-only">
-    </a>
-  </p>
-</div>
-
 # Spectral
 
 **Real-time microphone noise suppression for Linux.**
@@ -58,11 +46,11 @@ Manual builds may work but are unsupported. Which of these are published yet, an
 
 ## Screenshot
 
+> Everything the GUI does is also available from the terminal. The full reference is in [docs/CLI.md](docs/CLI.md).
+
 <div align="center">
   <img src="./assets/screenshot.png" width="820" alt="Spectral's main window: an app bar with the status, a full-width input threshold band, then two columns of cards holding the input device list, the virtual mic name, the voice-processing switches and the voice test, above a footer with Disable and Apply">
 </div>
-
-Everything the GUI does is also available from the terminal — `spectral enable`, `spectral status`, `spectral disable`. The full reference is in [docs/CLI.md](docs/CLI.md).
 
 ## How it works
 
