@@ -124,7 +124,8 @@ craneLib'.buildPackage (
     '';
 
     # Fails the build when the binary's version disagrees with `version`
-    # above — catches a missed spot in the 3-place release bump.
+    # above — catches a missed spot in the release bump, whose full list of
+    # spots packaging/bump-version.sh owns.
     nativeInstallCheckInputs = [ versionCheckHook ];
     doInstallCheck = true;
 
