@@ -717,28 +717,22 @@ mod tests {
         }
     }
 
-    /// Long options that belong to no subcommand. Unlike [`SUBCOMMANDS`] and
-    /// [`ENABLE_FLAGS`] this one stays test-only: the parser never offers
-    /// either as a suggestion, since neither is valid after a subcommand.
-    /// It sits here so the reverse scan below has somewhere to put a `--`
-    /// token that is legitimately not an `enable` flag. Short forms (`-h`,
-    /// `-V`) go unchecked; the scan only looks at `--`.
-    const GLOBAL_OPTIONS: [&str; 2] = ["--help", "--version"];
-
-    /// The four rendered surfaces, for the scans that walk all of them.
-    /// `help()` is built here; the rest are read at compile time, so a file
-    /// that goes missing fails the build rather than an assertion.
+    /// The four rendered surfaces, each normalized to the `--flag` spelling
+    /// so one scan can walk them all. `help()` is built here; the rest are
+    /// read at compile time, so a file that goes missing fails the build
+    /// rather than an assertion. Short forms (`-h`, `-V`) go unchecked; the
+    /// scan only looks at `--`.
     fn surfaces() -> [(&'static str, String); 4] {
         [
             ("--help", help()),
             ("docs/CLI.md", include_str!("../docs/CLI.md").to_owned()),
             (
                 "assets/spectral.1",
-                include_str!("../assets/spectral.1").to_owned(),
+                unescape_roff(include_str!("../assets/spectral.1")),
             ),
             (
                 "assets/spectral.fish",
-                include_str!("../assets/spectral.fish").to_owned(),
+                expand_fish_long_options(include_str!("../assets/spectral.fish")),
             ),
         ]
     }
@@ -747,6 +741,29 @@ mod tests {
     /// `--device` as `\-\-device`. Normalize before any flag search.
     fn unescape_roff(text: &str) -> String {
         text.replace("\\-", "-")
+    }
+
+    /// Fish spells a long option without its dashes — `-l device` — so a
+    /// scan that only looks at `--` tokens walks straight past every
+    /// completion in the file and the surface contributes nothing. Restoring
+    /// the dashes is what makes it count.
+    ///
+    /// Only `complete` invocations are rewritten, which is why continuation
+    /// lines are joined first: elsewhere `-l` is fish's own `--local`
+    /// (`set -l`, `read -l`), and rewriting those would invent flags the file
+    /// never documents.
+    fn expand_fish_long_options(text: &str) -> String {
+        text.replace("\\\n", " ")
+            .lines()
+            .map(|line| {
+                if line.trim_start().starts_with("complete ") {
+                    line.replace(" -l ", " --")
+                } else {
+                    line.to_owned()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     /// Forces a new [`CliCommand`] to declare whether it is spelled as a
@@ -818,15 +835,26 @@ mod tests {
         let man = unescape_roff(include_str!("../assets/spectral.1"));
         let fish = include_str!("../assets/spectral.fish");
 
+        // Anchored to the entry shapes the COMMANDS and OPTIONS blocks use,
+        // for the reason the docs/CLI.md check above spells out: every one of
+        // these words also occurs in the surrounding prose, so an unanchored
+        // search stays green on a man page whose reference blocks have lost
+        // the entry entirely.
         for word in SUBCOMMANDS {
-            assert!(man.contains(word), "`{word}` is missing from spectral.1");
+            assert!(
+                man.contains(&format!("\n.TP\n.B {word}\n")),
+                "`{word}` is missing from the spectral.1 COMMANDS block"
+            );
             assert!(
                 fish.contains(&format!("-a {word} ")),
                 "`{word}` is missing from the fish completions"
             );
         }
         for flag in ENABLE_FLAGS {
-            assert!(man.contains(flag), "{flag} is missing from spectral.1");
+            assert!(
+                man.contains(&format!("\n.BI {flag} ")),
+                "{flag} is missing from the spectral.1 OPTIONS block"
+            );
             // Fish spells a long option without its dashes: `-l device`.
             let bare = flag.trim_start_matches('-');
             assert!(
@@ -836,8 +864,28 @@ mod tests {
         }
     }
 
-    /// The man page's `.TH` line carries the version, which would otherwise
-    /// be a fourth place to remember on a release bump.
+    /// The man page and docs/CLI.md restate the `--mic-name` rule in their own
+    /// wording — roff markup and a table cell — where they cannot interpolate
+    /// [`mic_name_rule`] the way [`help`] does. Relaxing the rule would
+    /// otherwise leave both advertising a limit the parser no longer applies,
+    /// which is exactly what the constant exists to prevent.
+    #[test]
+    fn the_references_restate_the_current_mic_name_limit() {
+        let man = unescape_roff(include_str!("../assets/spectral.1"));
+        let doc = include_str!("../docs/CLI.md");
+        assert!(
+            man.contains(&format!("1-{MIC_NAME_MAX_LEN} characters")),
+            "spectral.1 does not carry the current mic-name limit"
+        );
+        assert!(
+            doc.contains(&format!("at most {MIC_NAME_MAX_LEN} characters")),
+            "docs/CLI.md does not carry the current mic-name limit"
+        );
+    }
+
+    /// The man page's `.TH` line carries the version, so it is one of the
+    /// spots `packaging/bump-version.sh` moves; this is the check that fails
+    /// the release if it ever stops moving with the rest.
     #[test]
     fn the_man_page_version_matches_the_crate() {
         let man = include_str!("../assets/spectral.1");
@@ -854,7 +902,7 @@ mod tests {
     #[test]
     fn no_surface_documents_a_flag_the_table_does_not_carry() {
         for (source, text) in surfaces() {
-            for word in unescape_roff(&text).split_whitespace() {
+            for word in text.split_whitespace() {
                 let flag = word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-');
                 // Split on `=` the way `parse` does: both spellings name the
                 // same flag, and without this, documenting the `--flag=value`
