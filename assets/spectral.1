@@ -16,6 +16,12 @@ spectral \- real-time noise suppression for PipeWire
 .IR on | off ]
 .RB [ \-\-auto\-level
 .IR on | off ]
+.br
+.B spectral
+.RB { \-h | \-\-help }
+.br
+.B spectral
+.RB { \-V | \-\-version }
 .SH DESCRIPTION
 .B spectral
 creates a virtual microphone that runs a chosen input device through RNNoise
@@ -77,7 +83,12 @@ Cut low\-frequency rumble below roughly 90 Hz before denoising.
 .TP
 .BI \-\-auto\-level " on|off"
 Even out voice volume automatically, with a peak limiter as the safety ceiling.
-.SS Global options
+.SS First\-position options
+Both are read in place of a command, not alongside one:
+.B spectral \-\-help
+prints the help text, while
+.B spectral enable \-\-help
+is a usage error.
 .TP
 .BR \-h ", " \-\-help
 Show the help text and exit.

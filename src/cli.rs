@@ -80,7 +80,7 @@ bare `spectral enable` reuses the whole remembered setup:
       --rumble-filter <on|off>  Cut rumble below ~90 Hz before denoising
       --auto-level <on|off>     Even out volume; peak limiter as the ceiling
 
-Options:
+Options, in place of a command rather than alongside one:
   -h, --help     Show this help
   -V, --version  Show the version
 
