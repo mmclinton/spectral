@@ -57,6 +57,13 @@ pub const EXIT_USAGE_ERROR: u8 = 2;
 fn help() -> String {
     let rule = mic_name_rule();
     let version = env!("CARGO_PKG_VERSION");
+    let range = threshold_choice();
+    let toggle = toggle_choice();
+    let commands = COMMANDS
+        .iter()
+        .map(|&(word, summary)| format!("  {word:<12}{summary}"))
+        .collect::<Vec<_>>()
+        .join("\n");
     format!(
         "\
 spectral {version} — real-time noise suppression for PipeWire
@@ -65,20 +72,16 @@ Usage:  spectral [COMMAND]
         spectral                  open the control panel (GUI)
 
 Commands:
-  enable      Create the virtual microphone and start denoising
-  disable     Tear down the virtual microphone
-  status      Show the daemon's state
-  devices     List input devices with their current PipeWire ids
-  shutdown    Stop the daemon
+{commands}
 
 Flags for `enable` — all optional; an omitted flag keeps its last value, so a
 bare `spectral enable` reuses the whole remembered setup:
       --device <ID>             Input device to capture; see `spectral devices`
-      --threshold <0-100>       Voice gate threshold; 0 = denoise only
+      --threshold <{range}>       Voice gate threshold; {THRESHOLD_MIN} = denoise only
       --mic-name <NAME>         Virtual mic name;
                                 {rule}
-      --rumble-filter <on|off>  Cut rumble below ~90 Hz before denoising
-      --auto-level <on|off>     Even out volume; peak limiter as the ceiling
+      --rumble-filter <{toggle}>  Cut rumble below ~90 Hz before denoising
+      --auto-level <{toggle}>     Even out volume; peak limiter as the ceiling
 
 Options, in place of a command rather than alongside one:
   -h, --help     Show this help
@@ -104,7 +107,34 @@ Exit codes:
 /// what parses; these are the list the typo hints and the reference tests
 /// both walk, so the tables are no longer test-only scaffolding standing
 /// alongside the parser but something the parser itself reads.
-const SUBCOMMANDS: [&str; 5] = ["enable", "disable", "status", "devices", "shutdown"];
+///
+/// Each subcommand carries the one-line summary [`help`] renders. The man
+/// page and the completions restate it word for word and cannot
+/// interpolate, so a test holds all three to the same sentence — `status`
+/// had already picked up a second wording on each.
+const COMMANDS: [(&str, &str); 5] = [
+    (
+        "enable",
+        "Create the virtual microphone and start denoising",
+    ),
+    ("disable", "Tear down the virtual microphone"),
+    ("status", "Show the daemon's state"),
+    (
+        "devices",
+        "List input devices with their current PipeWire ids",
+    ),
+    ("shutdown", "Stop the daemon"),
+];
+/// The subcommand words alone, for the candidate lists and the reference
+/// scans. Read out of [`COMMANDS`] rather than spelled again, so a word can
+/// never disagree with the summary beside it.
+const SUBCOMMANDS: [&str; 5] = [
+    COMMANDS[0].0,
+    COMMANDS[1].0,
+    COMMANDS[2].0,
+    COMMANDS[3].0,
+    COMMANDS[4].0,
+];
 const ENABLE_FLAGS: [&str; 5] = [
     "--device",
     "--threshold",
@@ -112,6 +142,30 @@ const ENABLE_FLAGS: [&str; 5] = [
     "--rumble-filter",
     "--auto-level",
 ];
+
+/// The `--threshold` range, spelled once. The parser's bounds check, both
+/// of its error messages and the `--help` line read it from here; the man
+/// page and docs/CLI.md restate it by hand, so a test pins those against
+/// the same numbers.
+const THRESHOLD_MIN: i32 = 0;
+const THRESHOLD_MAX: i32 = 100;
+
+/// The two words the on/off flags accept, likewise spelled once. Fish
+/// completes to them, so drift here does not merely misdocument the parser:
+/// it offers a value set the parser rejects.
+const TOGGLE_ON: &str = "on";
+const TOGGLE_OFF: &str = "off";
+
+/// The `--threshold` range as every surface shows it.
+fn threshold_choice() -> String {
+    format!("{THRESHOLD_MIN}-{THRESHOLD_MAX}")
+}
+
+/// The on/off vocabulary as every surface shows it.
+fn toggle_choice() -> String {
+    format!("{TOGGLE_ON}|{TOGGLE_OFF}")
+}
+
 /// The long options that belong to no subcommand. They parse in first
 /// position and nowhere else, so they join the candidates there and stay out
 /// of the `enable` ones.
@@ -235,11 +289,12 @@ where
                     return Err("duplicate flag --threshold".to_string());
                 }
                 let value = take_value(args, inline, "--threshold")?;
+                let range = threshold_choice();
                 let parsed: i32 = value
                     .parse()
-                    .map_err(|_| format!("invalid --threshold '{value}': expected 0-100"))?;
-                if !(0..=100).contains(&parsed) {
-                    return Err(format!("invalid --threshold '{value}': expected 0-100"));
+                    .map_err(|_| format!("invalid --threshold '{value}': expected {range}"))?;
+                if !(THRESHOLD_MIN..=THRESHOLD_MAX).contains(&parsed) {
+                    return Err(format!("invalid --threshold '{value}': expected {range}"));
                 }
                 threshold = Some(parsed);
             }
@@ -283,9 +338,12 @@ where
 
 fn parse_toggle(value: &str, flag: &str) -> Result<bool, String> {
     match value {
-        "on" => Ok(true),
-        "off" => Ok(false),
-        other => Err(format!("invalid {flag} '{other}': expected on|off")),
+        TOGGLE_ON => Ok(true),
+        TOGGLE_OFF => Ok(false),
+        other => {
+            let toggle = toggle_choice();
+            Err(format!("invalid {flag} '{other}': expected {toggle}"))
+        }
     }
 }
 
@@ -762,6 +820,12 @@ mod tests {
         text.replace("\\-", "-")
     }
 
+    /// A Markdown table cell escapes a literal `|` as `\|`, so docs/CLI.md
+    /// spells `on|off` as `on\|off`. Normalize the same way.
+    fn unescape_markdown(text: &str) -> String {
+        text.replace("\\|", "|")
+    }
+
     /// The body of one man-page section, so an assertion about a reference
     /// block cannot be satisfied by the surrounding prose — and so deleting
     /// the block outright fails here rather than going unnoticed.
@@ -1063,6 +1127,85 @@ mod tests {
                 "exit code {code} is missing from the spectral.1 EXIT STATUS block"
             );
         }
+    }
+
+    /// The five command summaries are byte-identical across `--help`, the
+    /// man page and the completions, and nothing held them together —
+    /// `status` had already picked up a second wording on the page and a
+    /// third in docs/CLI.md's usage block. `--help` now renders the table,
+    /// so only the two files can drift, and this is what catches that. The
+    /// page may say more than the summary, as its `status` entry does, but
+    /// it has to open with the same sentence.
+    #[test]
+    fn every_command_summary_reads_the_same_on_every_surface() {
+        let man = unescape_roff(include_str!("../assets/spectral.1"));
+        let commands = man_section(&man, ".SH COMMANDS");
+        let completions = fish_completions();
+
+        for (word, summary) in COMMANDS {
+            let (_, entry) = commands
+                .split_once(&format!("\n.TP\n.B {word}\n"))
+                .unwrap_or_else(|| {
+                    panic!("`{word}` is missing from the spectral.1 COMMANDS block")
+                });
+            let described = entry.lines().next().unwrap_or_default();
+            assert!(
+                described.starts_with(summary),
+                "spectral.1 describes `{word}` as {described:?}, which does not open with {summary:?}"
+            );
+            assert!(
+                completions.iter().any(|completion| {
+                    completion.arguments.iter().any(|value| value == word)
+                        && completion.description.as_deref() == Some(summary)
+                }),
+                "the fish completion for `{word}` does not carry its summary {summary:?}"
+            );
+        }
+    }
+
+    /// The `--threshold` range and the on/off vocabulary were bare literals
+    /// six and five times over. Widening the gate, or accepting
+    /// `true`/`false`, updated the parser and `--help` together and left
+    /// every other rendering advertising the old contract — with fish
+    /// actively completing to a value set the parser rejects, which is worse
+    /// than a stale sentence.
+    #[test]
+    fn the_references_restate_the_current_flag_vocabularies() {
+        let man = unescape_roff(include_str!("../assets/spectral.1"));
+        let doc = unescape_markdown(include_str!("../docs/CLI.md"));
+        let range = threshold_choice();
+        let toggle = toggle_choice();
+
+        for (source, text) in [
+            ("docs/CLI.md", doc.as_str()),
+            ("assets/spectral.1", man.as_str()),
+        ] {
+            assert!(
+                text.contains(&range),
+                "{source} does not carry the current --threshold range {range}"
+            );
+            assert!(
+                text.contains(&toggle),
+                "{source} does not carry the current on/off vocabulary {toggle}"
+            );
+        }
+
+        let completions = fish_completions();
+        let offered: Vec<&str> = completions
+            .iter()
+            .filter(|completion| {
+                completion
+                    .long_options
+                    .iter()
+                    .any(|option| option == "--rumble-filter" || option == "--auto-level")
+            })
+            .flat_map(|completion| completion.arguments.iter().map(String::as_str))
+            .collect();
+        assert_eq!(
+            offered,
+            [TOGGLE_ON, TOGGLE_OFF, TOGGLE_ON, TOGGLE_OFF],
+            "the fish completions offer a toggle value set the parser does not accept"
+        );
     }
 
     /// The FILES section names two paths whose last component lives in the
