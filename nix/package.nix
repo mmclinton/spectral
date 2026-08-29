@@ -50,7 +50,7 @@ let
     libxrandr
   ];
 
-  # Only what the build reads. A docs, packaging, or CI commit must not
+  # Only what the compiler reads. A docs, packaging, or CI commit must not
   # change the derivation hash and force a recompile.
   buildFiles = lib.fileset.unions [
     ./../src
@@ -58,17 +58,26 @@ let
     ./../build.rs
     ./../Cargo.toml
     ./../Cargo.lock
+  ];
+
+  # Shipped verbatim by postInstall, or read by the test target through
+  # include_str!, or both — but never opened by rustfmt, which parses .rs
+  # files alone and expands no macros. Keeping them out of buildFiles is
+  # what stops a typo fix in the man page from re-running the format check;
+  # everything else here consumes them.
+  dataFiles = lib.fileset.unions [
     ./../assets/page.codeberg.mmc.Spectral.desktop
     ./../assets/page.codeberg.mmc.Spectral.metainfo.xml
     ./../assets/spectral.png
-    ./../THIRD-PARTY.md
-    # The CLI tests include_str! this.
+    ./../assets/spectral.1
+    ./../assets/spectral.fish
     ./../docs/CLI.md
+    ./../THIRD-PARTY.md
   ];
 
   src = lib.fileset.toSource {
     root = ./..;
-    fileset = buildFiles;
+    fileset = lib.fileset.union buildFiles dataFiles;
   };
 
   commonArgs = {
@@ -110,6 +119,8 @@ craneLib'.buildPackage (
       install -Dm644 assets/page.codeberg.mmc.Spectral.metainfo.xml $out/share/metainfo/page.codeberg.mmc.Spectral.metainfo.xml
       install -Dm644 assets/spectral.png $out/share/icons/hicolor/512x512/apps/page.codeberg.mmc.Spectral.png
       install -Dm644 THIRD-PARTY.md $out/share/licenses/spectral/THIRD-PARTY.md
+      install -Dm644 assets/spectral.1 $out/share/man/man1/spectral.1
+      install -Dm644 assets/spectral.fish $out/share/fish/vendor_completions.d/spectral.fish
 
       # The GUI shells out to xdg-open for its Help links; hosts without
       # xdg-utils would otherwise fail the spawn silently.
@@ -119,7 +130,8 @@ craneLib'.buildPackage (
     '';
 
     # Fails the build when the binary's version disagrees with `version`
-    # above — catches a missed spot in the 3-place release bump.
+    # above — catches a missed spot in the release bump, whose full list of
+    # spots packaging/bump-version.sh owns.
     nativeInstallCheckInputs = [ versionCheckHook ];
     doInstallCheck = true;
 
@@ -134,10 +146,15 @@ craneLib'.buildPackage (
             cargoClippyExtraArgs = "--all-targets -- --deny warnings";
             # Same reason rustfmt.toml joins the fmt source below: clippy.toml
             # is not a build input, and putting it in buildFiles would make
-            # every lint tweak recompile the crate.
+            # every lint tweak recompile the crate. --all-targets compiles
+            # the test target, so the data files have to be here.
             src = lib.fileset.toSource {
               root = ./..;
-              fileset = lib.fileset.union buildFiles ./../clippy.toml;
+              fileset = lib.fileset.unions [
+                buildFiles
+                dataFiles
+                ./../clippy.toml
+              ];
             };
           }
         );
@@ -147,7 +164,8 @@ craneLib'.buildPackage (
         fmt = craneLib'.cargoFmt {
           inherit pname version;
           # rustfmt.toml is not a build input, so it joins the source only
-          # here.
+          # here. dataFiles is deliberately absent: this is the one check
+          # that reads none of it.
           src = lib.fileset.toSource {
             root = ./..;
             fileset = lib.fileset.union buildFiles ./../rustfmt.toml;

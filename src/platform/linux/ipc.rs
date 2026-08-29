@@ -198,8 +198,12 @@ fn runtime_dir_from(value: Option<&str>) -> Option<PathBuf> {
     path.is_absolute().then_some(path)
 }
 
+/// Name of the control socket inside `$XDG_RUNTIME_DIR`. Public because the
+/// man page names the path and a test pins the two together.
+pub const SOCKET_FILE_NAME: &str = "spectral-daemon.sock";
+
 fn get_socket_path() -> Result<PathBuf, std::io::Error> {
-    Ok(runtime_dir()?.join("spectral-daemon.sock"))
+    Ok(runtime_dir()?.join(SOCKET_FILE_NAME))
 }
 
 fn get_pid_file_path() -> Result<PathBuf, std::io::Error> {

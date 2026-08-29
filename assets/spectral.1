@@ -1,0 +1,172 @@
+.TH SPECTRAL 1 "2026-08-27" "spectral 0.9.0" "General Commands Manual"
+.SH NAME
+spectral \- real-time noise suppression for PipeWire
+.SH SYNOPSIS
+.B spectral
+.RI [ COMMAND ]
+.br
+.B spectral enable
+.RB [ \-\-device
+.IR ID ]
+.RB [ \-\-threshold
+.IR 0\-100 ]
+.RB [ \-\-mic\-name
+.IR NAME ]
+.RB [ \-\-rumble\-filter
+.IR on | off ]
+.RB [ \-\-auto\-level
+.IR on | off ]
+.br
+.B spectral
+.RB { \-h | \-\-help }
+.br
+.B spectral
+.RB { \-V | \-\-version }
+.SH DESCRIPTION
+.B spectral
+creates a virtual microphone that runs a chosen input device through RNNoise
+denoising and voice\-activity gating, so any application can select the cleaned
+microphone.
+.PP
+Run with no command it opens the graphical control panel. Run with a command it
+talks to the background daemon and exits, so nothing about Spectral requires the
+GUI.
+.PP
+.B enable
+starts the daemon if none is running, as the GUI does.
+.BR disable ", " shutdown " and " status
+report that none is running instead.
+.B devices
+reads the PipeWire registry directly and needs no daemon at all.
+.SH COMMANDS
+.TP
+.B enable
+Create the virtual microphone and start denoising.
+.TP
+.B disable
+Tear down the virtual microphone.
+.TP
+.B status
+Show the daemon's state: device, mic name, threshold and toggles.
+.TP
+.B devices
+List input devices with their current PipeWire ids.
+.TP
+.B shutdown
+Stop the daemon.
+.SH OPTIONS
+.SS Flags for enable
+Every flag is optional, and an omitted flag keeps whatever the daemon already
+has: the prior setting, or the default on a first run. That is what makes a
+bare
+.B spectral enable
+a "restore what I had" command.
+.TP
+.BI \-\-device " ID"
+Input device to capture, as listed by
+.BR "spectral devices" .
+Defaults to the remembered device.
+.TP
+.BI \-\-threshold " 0-100"
+Voice gate threshold.
+.B 0
+means denoise only, with the gate off. Higher values gate more strictly on voice
+activity.
+.TP
+.BI \-\-mic\-name " NAME"
+Virtual microphone name. Only
+.B [A\-Za\-z0\-9_\-]
+is allowed, 1\-20 characters.
+.TP
+.BI \-\-rumble\-filter " on|off"
+Cut low\-frequency rumble below roughly 90 Hz before denoising.
+.TP
+.BI \-\-auto\-level " on|off"
+Even out voice volume automatically, with a peak limiter as the safety ceiling.
+.SS First\-position options
+Both are read in place of a command, not alongside one:
+.B spectral \-\-help
+prints the help text, while
+.B spectral enable \-\-help
+is a usage error.
+.TP
+.BR \-h ", " \-\-help
+Show the help text and exit.
+.TP
+.BR \-V ", " \-\-version
+Show the version and exit.
+.SH EXIT STATUS
+.TP
+.B 0
+Success, including a
+.B disable
+or
+.B shutdown
+that had nothing to do.
+.TP
+.B 1
+Runtime failure, including
+.B status
+when no daemon is running.
+.TP
+.B 2
+Usage error; argument parsing failed before any command ran.
+.SH FILES
+.TP
+.I $XDG_CONFIG_HOME/spectral/state.toml
+Persisted settings. Falls back to
+.I ~/.config/spectral/state.toml
+when
+.B XDG_CONFIG_HOME
+is unset.
+.TP
+.I $XDG_RUNTIME_DIR/spectral-daemon.sock
+Control socket the GUI and the CLI use to reach the daemon. Spectral requires
+.B XDG_RUNTIME_DIR
+to be set to an absolute path.
+.SH EXAMPLES
+Find an input device id:
+.PP
+.RS
+.B spectral devices
+.RE
+.PP
+Create the virtual mic on a specific device:
+.PP
+.RS
+.B spectral enable \-\-device 62
+.RE
+.PP
+Denoise only, with the voice gate off:
+.PP
+.RS
+.B spectral enable \-\-threshold 0
+.RE
+.PP
+Re\-enable with everything remembered from last time:
+.PP
+.RS
+.B spectral enable
+.RE
+.SH NOTES
+Device ids come from PipeWire and are scoped to the running PipeWire instance:
+they change when PipeWire restarts, and a stale id will not resolve. The daemon
+sidesteps this by also remembering the selected device by its node name and
+re\-resolving from that, so a flagless
+.B spectral enable
+keeps working across reboots and PipeWire restarts. Re\-run
+.B spectral devices
+before passing an explicit
+.BR \-\-device .
+.PP
+A Flatpak install exports the CLI as
+.B page.codeberg.mmc.Spectral
+rather than
+.BR spectral .
+.SH SEE ALSO
+.BR pipewire (1),
+.BR wireplumber (1)
+.PP
+Full documentation: <https://codeberg.org/mmc/spectral>
+.SH BUGS
+Report bugs at <https://codeberg.org/mmc/spectral/issues>.

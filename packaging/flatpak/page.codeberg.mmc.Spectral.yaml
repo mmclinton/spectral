@@ -41,6 +41,12 @@ modules:
         /app/share/icons/hicolor/512x512/apps/page.codeberg.mmc.Spectral.png
       - install -Dm644 -t /app/share/licenses/page.codeberg.mmc.Spectral
         LICENSE THIRD-PARTY.md
+      # The man page and the fish completions are deliberately not installed.
+      # Flatpak exports only applications, icons, metainfo, MIME and D-Bus
+      # services from /app/share, so neither would reach the host's manpath or
+      # fish's completion path; and the completions are written for a command
+      # named `spectral`, which a Flatpak install does not provide — its
+      # export is page.codeberg.mmc.Spectral.
     sources:
       # Development manifest: builds the checked-out repository. The Flathub
       # submission replaces this entry with the public release; see README.md.

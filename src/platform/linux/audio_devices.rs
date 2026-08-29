@@ -31,6 +31,25 @@ fn parse_channel_count(raw: Option<&str>) -> u32 {
         .unwrap_or(FALLBACK_CHANNELS)
 }
 
+/// The human-readable name for a source node.
+///
+/// An interface split into individual inputs gives every one the same
+/// `node.nick` (the card, "EVO4") and distinguishes them only in
+/// `node.description` ("EVO4 Mic 1 / Line 1"), so description wins.
+///
+/// A present-but-blank value is treated as absent rather than passed
+/// through: it is not a name, and a nameless row prints as an empty column
+/// that anything parsing `spectral devices` — the shell completions among
+/// them — cannot tell from a short line.
+fn display_name(description: Option<&str>, nick: Option<&str>) -> String {
+    [description, nick]
+        .into_iter()
+        .flatten()
+        .find(|value| !value.trim().is_empty())
+        .unwrap_or("Unknown")
+        .to_string()
+}
+
 /// One `Audio/Source` node with its identity and true channel count.
 struct SourceNode {
     id: u32,
@@ -85,14 +104,7 @@ fn collect_source_nodes() -> Result<Vec<SourceNode>, Box<dyn Error>> {
             let Some(node_name) = props.get("node.name") else {
                 return;
             };
-            // An interface split into individual inputs gives every one
-            // the same `node.nick` (the card, "EVO4") and distinguishes
-            // them only in `node.description` ("EVO4 Mic 1 / Line 1").
-            let display_name = props
-                .get("node.description")
-                .or_else(|| props.get("node.nick"))
-                .unwrap_or("Unknown")
-                .to_string();
+            let display_name = display_name(props.get("node.description"), props.get("node.nick"));
 
             let index = {
                 let mut entries = found_globals.borrow_mut();
@@ -344,6 +356,27 @@ mod tests {
         ];
         for (raw, expected) in cases {
             assert_eq!(parse_channel_count(raw), expected, "raw {raw:?}");
+        }
+    }
+
+    #[test]
+    fn a_blank_display_name_falls_through_to_the_next_source() {
+        let cases: [(Option<&str>, Option<&str>, &str); 7] = [
+            (Some("EVO4 Mic 1"), Some("EVO4"), "EVO4 Mic 1"),
+            (None, Some("EVO4"), "EVO4"),
+            (None, None, "Unknown"),
+            // Advertised but empty is not a name.
+            (Some(""), Some("EVO4"), "EVO4"),
+            (Some("   "), Some("EVO4"), "EVO4"),
+            (Some(""), Some(""), "Unknown"),
+            (Some(""), None, "Unknown"),
+        ];
+        for (description, nick, expected) in cases {
+            assert_eq!(
+                display_name(description, nick),
+                expected,
+                "description {description:?}, nick {nick:?}"
+            );
         }
     }
 }

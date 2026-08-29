@@ -57,6 +57,13 @@ pub const EXIT_USAGE_ERROR: u8 = 2;
 fn help() -> String {
     let rule = mic_name_rule();
     let version = env!("CARGO_PKG_VERSION");
+    let range = threshold_choice();
+    let toggle = toggle_choice();
+    let commands = COMMANDS
+        .iter()
+        .map(|&(word, summary)| format!("  {word:<12}{summary}"))
+        .collect::<Vec<_>>()
+        .join("\n");
     format!(
         "\
 spectral {version} — real-time noise suppression for PipeWire
@@ -65,22 +72,18 @@ Usage:  spectral [COMMAND]
         spectral                  open the control panel (GUI)
 
 Commands:
-  enable      Create the virtual microphone and start denoising
-  disable     Tear down the virtual microphone
-  status      Show the daemon's state
-  devices     List input devices with their current PipeWire ids
-  shutdown    Stop the daemon
+{commands}
 
 Flags for `enable` — all optional; an omitted flag keeps its last value, so a
 bare `spectral enable` reuses the whole remembered setup:
       --device <ID>             Input device to capture; see `spectral devices`
-      --threshold <0-100>       Voice gate threshold; 0 = denoise only
+      --threshold <{range}>       Voice gate threshold; {THRESHOLD_MIN} = denoise only
       --mic-name <NAME>         Virtual mic name;
                                 {rule}
-      --rumble-filter <on|off>  Cut rumble below ~90 Hz before denoising
-      --auto-level <on|off>     Even out volume; peak limiter as the ceiling
+      --rumble-filter <{toggle}>  Cut rumble below ~90 Hz before denoising
+      --auto-level <{toggle}>     Even out volume; peak limiter as the ceiling
 
-Options:
+Options, in place of a command rather than alongside one:
   -h, --help     Show this help
   -V, --version  Show the version
 
@@ -98,6 +101,127 @@ Exit codes:
   {EXIT_FAILURE}  runtime failure
   {EXIT_USAGE_ERROR}  usage error"
     )
+}
+
+/// The frozen CLI surface. The `match` arms below stay the authority on
+/// what parses; these are the list the typo hints and the reference tests
+/// both walk, so the tables are no longer test-only scaffolding standing
+/// alongside the parser but something the parser itself reads.
+///
+/// Each subcommand carries the one-line summary [`help`] renders. The man
+/// page and the completions restate it word for word and cannot
+/// interpolate, so a test holds all three to the same sentence — `status`
+/// had already picked up a second wording on each.
+const COMMANDS: [(&str, &str); 5] = [
+    (
+        "enable",
+        "Create the virtual microphone and start denoising",
+    ),
+    ("disable", "Tear down the virtual microphone"),
+    ("status", "Show the daemon's state"),
+    (
+        "devices",
+        "List input devices with their current PipeWire ids",
+    ),
+    ("shutdown", "Stop the daemon"),
+];
+/// The subcommand words alone, for the candidate lists and the reference
+/// scans. Read out of [`COMMANDS`] rather than spelled again, so a word can
+/// never disagree with the summary beside it.
+const SUBCOMMANDS: [&str; 5] = [
+    COMMANDS[0].0,
+    COMMANDS[1].0,
+    COMMANDS[2].0,
+    COMMANDS[3].0,
+    COMMANDS[4].0,
+];
+const ENABLE_FLAGS: [&str; 5] = [
+    "--device",
+    "--threshold",
+    "--mic-name",
+    "--rumble-filter",
+    "--auto-level",
+];
+
+/// The `--threshold` range, spelled once. The parser's bounds check, both
+/// of its error messages and the `--help` line read it from here; the man
+/// page and docs/CLI.md restate it by hand, so a test pins those against
+/// the same numbers.
+const THRESHOLD_MIN: i32 = 0;
+const THRESHOLD_MAX: i32 = 100;
+
+/// The two words the on/off flags accept, likewise spelled once. Fish
+/// completes to them, so drift here does not merely misdocument the parser:
+/// it offers a value set the parser rejects.
+const TOGGLE_ON: &str = "on";
+const TOGGLE_OFF: &str = "off";
+
+/// The `--threshold` range as every surface shows it.
+fn threshold_choice() -> String {
+    format!("{THRESHOLD_MIN}-{THRESHOLD_MAX}")
+}
+
+/// The on/off vocabulary as every surface shows it.
+fn toggle_choice() -> String {
+    format!("{TOGGLE_ON}|{TOGGLE_OFF}")
+}
+
+/// The long options that belong to no subcommand. They parse in first
+/// position and nowhere else, so they join the candidates there and stay out
+/// of the `enable` ones.
+const GLOBAL_OPTIONS: [&str; 2] = ["--help", "--version"];
+
+/// Levenshtein distance, two rows rather than the full matrix because only
+/// the previous one is ever read.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    let mut curr = vec![0; b.len() + 1];
+
+    for (i, ca) in a.chars().enumerate() {
+        curr[0] = i + 1;
+        for (j, &cb) in b.iter().enumerate() {
+            let substitute = prev[j] + usize::from(ca != cb);
+            curr[j + 1] = substitute.min(prev[j + 1] + 1).min(curr[j] + 1);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+
+    prev[b.len()]
+}
+
+/// The nearest candidate to `input`, or `None` when nothing is close enough
+/// to read as a typo rather than a different word.
+///
+/// The budget is a third of the shorter of the two words, capped at two
+/// edits. Both halves of that matter. Measuring the input alone lets a long
+/// unknown flag buy a budget wide enough to reach an unrelated candidate:
+/// `--device-name` is four edits from `--mic-name`, and pointing someone
+/// reaching for the input device at the flag that renames the virtual mic
+/// is worse than saying nothing. Two is the ceiling because a transposition
+/// costs two; past that a hint is a guess. `stat` is still left alone — two
+/// edits from `status` on four characters — while `--rumble-filtre` still
+/// resolves. Ties go to the alphabetically first candidate, so the message
+/// does not depend on table order.
+fn suggest<'a>(input: &str, candidates: &[&'a str]) -> Option<&'a str> {
+    let input_len = input.chars().count();
+    candidates
+        .iter()
+        .filter_map(|&candidate| {
+            let budget = (input_len.min(candidate.chars().count()) / 3).clamp(1, 2);
+            let distance = edit_distance(input, candidate);
+            (distance <= budget).then_some((distance, candidate))
+        })
+        .min()
+        .map(|(_, candidate)| candidate)
+}
+
+/// A usage error that offers the nearest spelling when there is one.
+fn unknown(what: &str, got: &str, candidates: &[&str]) -> String {
+    match suggest(got, candidates) {
+        Some(hint) => format!("{what} '{got}'; did you mean '{hint}'?"),
+        None => format!("{what} '{got}'"),
+    }
 }
 
 /// Parses the arguments after argv\[0\]; an `Err` is a usage-error message
@@ -121,7 +245,10 @@ pub fn parse<A: IntoIterator<Item = OsString>>(args: A) -> Result<CliCommand, St
         "shutdown" => CliCommand::Shutdown,
         "--help" | "-h" => CliCommand::Help,
         "--version" | "-V" => CliCommand::Version,
-        other => return Err(format!("unknown command '{other}'")),
+        other => {
+            let candidates = [SUBCOMMANDS.as_slice(), GLOBAL_OPTIONS.as_slice()].concat();
+            return Err(unknown("unknown command", other, &candidates));
+        }
     };
 
     match args.next() {
@@ -162,11 +289,12 @@ where
                     return Err("duplicate flag --threshold".to_string());
                 }
                 let value = take_value(args, inline, "--threshold")?;
+                let range = threshold_choice();
                 let parsed: i32 = value
                     .parse()
-                    .map_err(|_| format!("invalid --threshold '{value}': expected 0-100"))?;
-                if !(0..=100).contains(&parsed) {
-                    return Err(format!("invalid --threshold '{value}': expected 0-100"));
+                    .map_err(|_| format!("invalid --threshold '{value}': expected {range}"))?;
+                if !(THRESHOLD_MIN..=THRESHOLD_MAX).contains(&parsed) {
+                    return Err(format!("invalid --threshold '{value}': expected {range}"));
                 }
                 threshold = Some(parsed);
             }
@@ -195,7 +323,7 @@ where
                 let value = take_value(args, inline, "--auto-level")?;
                 auto_level = Some(parse_toggle(&value, "--auto-level")?);
             }
-            other => return Err(format!("unexpected argument '{other}'")),
+            other => return Err(unknown("unexpected argument", other, &ENABLE_FLAGS)),
         }
     }
 
@@ -210,9 +338,12 @@ where
 
 fn parse_toggle(value: &str, flag: &str) -> Result<bool, String> {
     match value {
-        "on" => Ok(true),
-        "off" => Ok(false),
-        other => Err(format!("invalid {flag} '{other}': expected on|off")),
+        TOGGLE_ON => Ok(true),
+        TOGGLE_OFF => Ok(false),
+        other => {
+            let toggle = toggle_choice();
+            Err(format!("invalid {flag} '{other}': expected {toggle}"))
+        }
     }
 }
 
@@ -487,6 +618,7 @@ fn run_shutdown() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spectral_lib::platform::{ipc, persistence};
     use spectral_lib::state::MIC_NAME_MAX_LEN;
 
     fn p(args: &[&str]) -> Result<CliCommand, String> {
@@ -652,24 +784,164 @@ mod tests {
         }
     }
 
-    /// The half of the frozen CLI surface no constant can render. The exit
-    /// codes reach `help()` by interpolation, but the subcommand set and the
-    /// `enable` flags are prose in two places — `help()` and docs/CLI.md —
-    /// with the parser as the third copy. This table is the one list all
-    /// three are checked against.
-    const SUBCOMMANDS: [&str; 5] = ["enable", "disable", "status", "devices", "shutdown"];
-    const ENABLE_FLAGS: [&str; 5] = [
-        "--device",
-        "--threshold",
-        "--mic-name",
-        "--rumble-filter",
-        "--auto-level",
-    ];
-    /// Long options that belong to no subcommand. Not part of the frozen
-    /// surface — they sit here so the reverse scan below has somewhere to
-    /// put a `--` token that is legitimately not an `enable` flag. Short
-    /// forms (`-h`, `-V`) go unchecked; the scan only looks at `--`.
-    const GLOBAL_OPTIONS: [&str; 2] = ["--help", "--version"];
+    /// The four rendered surfaces, each normalized to the `--flag` spelling
+    /// so one scan can walk them all. `help()` is built here; the rest are
+    /// read at compile time, so a file that goes missing fails the build
+    /// rather than an assertion. Short forms (`-h`, `-V`) go unchecked; the
+    /// scan only looks at `--`.
+    ///
+    /// Fish contributes the options its `complete` invocations actually
+    /// register rather than its raw text: a `-l` inside a `-d "..."`
+    /// description would otherwise be read as a flag the file never
+    /// documents, and the scan would fail naming something that does not
+    /// exist.
+    fn surfaces() -> [(&'static str, String); 4] {
+        [
+            ("--help", help()),
+            ("docs/CLI.md", include_str!("../docs/CLI.md").to_owned()),
+            (
+                "assets/spectral.1",
+                unescape_roff(include_str!("../assets/spectral.1")),
+            ),
+            (
+                "assets/spectral.fish",
+                fish_completions()
+                    .iter()
+                    .flat_map(|completion| completion.long_options.iter().cloned())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            ),
+        ]
+    }
+
+    /// roff escapes a literal hyphen as `\-`, so the man page spells
+    /// `--device` as `\-\-device`. Normalize before any flag search.
+    fn unescape_roff(text: &str) -> String {
+        text.replace("\\-", "-")
+    }
+
+    /// A Markdown table cell escapes a literal `|` as `\|`, so docs/CLI.md
+    /// spells `on|off` as `on\|off`. Normalize the same way.
+    fn unescape_markdown(text: &str) -> String {
+        text.replace("\\|", "|")
+    }
+
+    /// The body of one man-page section, so an assertion about a reference
+    /// block cannot be satisfied by the surrounding prose — and so deleting
+    /// the block outright fails here rather than going unnoticed.
+    fn man_section(man: &str, heading: &str) -> String {
+        let (_, body) = man
+            .split_once(heading)
+            .unwrap_or_else(|| panic!("spectral.1 must carry a {heading} section"));
+        body.split_once("\n.SH ")
+            .map_or(body, |(section, _)| section)
+            .to_owned()
+    }
+
+    /// One `complete` invocation from assets/spectral.fish, read as shell
+    /// words rather than searched as text.
+    ///
+    /// A substring search over the raw file is satisfied by things that are
+    /// not completions at all: `-l device ` also matches a `set -l device`,
+    /// and `-a status ` survives its own `complete -c spectral -n "..."`
+    /// header being deleted — which orphans the continuation line, so fish
+    /// reports `Unknown command: -a` and drops the completion while the
+    /// assertion stays green. Parsing the invocation is what makes an
+    /// assertion about it mean anything.
+    #[derive(Default)]
+    struct FishCompletion {
+        /// `-a` values, split the way fish splits them.
+        arguments: Vec<String>,
+        /// `-l` names, restored to their `--flag` spelling.
+        long_options: Vec<String>,
+        /// `-d` description, when the invocation carries one.
+        description: Option<String>,
+    }
+
+    /// Splits a fish line into words, keeping a double-quoted run together.
+    /// Only `complete` lines reach this, so fish's quoting corners elsewhere
+    /// in the file are out of scope.
+    fn fish_words(line: &str) -> Vec<String> {
+        let mut words = Vec::new();
+        let mut current = String::new();
+        let mut quoted = false;
+        let mut started = false;
+        for c in line.chars() {
+            match c {
+                '"' => {
+                    quoted = !quoted;
+                    started = true;
+                }
+                c if c.is_whitespace() && !quoted => {
+                    if started {
+                        words.push(std::mem::take(&mut current));
+                        started = false;
+                    }
+                }
+                c => {
+                    current.push(c);
+                    started = true;
+                }
+            }
+        }
+        if started {
+            words.push(current);
+        }
+        words
+    }
+
+    fn fish_value(words: &[String], i: usize) -> &str {
+        words
+            .get(i + 1)
+            .unwrap_or_else(|| panic!("spectral.fish: `{}` is missing its value", words[i]))
+    }
+
+    /// Every `complete` invocation in assets/spectral.fish.
+    ///
+    /// CRLF is normalized before continuation lines are joined: a `complete`
+    /// spread over two lines is one invocation, and on a checkout with CRLF
+    /// endings the join would otherwise miss, leaving the second line
+    /// looking like something other than a completion. Both of
+    /// [`GLOBAL_OPTIONS`] sit on such a line, so the surface would quietly
+    /// shrink with no assertion the wiser.
+    fn fish_completions() -> Vec<FishCompletion> {
+        let text = include_str!("../assets/spectral.fish")
+            .replace("\r\n", "\n")
+            .replace("\\\n", " ");
+        text.lines()
+            .filter(|line| line.trim_start().starts_with("complete "))
+            .map(|line| {
+                let words = fish_words(line);
+                let mut completion = FishCompletion::default();
+                let mut i = 1;
+                while i < words.len() {
+                    match words[i].as_str() {
+                        "-a" => {
+                            completion.arguments.extend(
+                                fish_value(&words, i).split_whitespace().map(str::to_owned),
+                            );
+                            i += 2;
+                        }
+                        "-l" => {
+                            completion
+                                .long_options
+                                .push(format!("--{}", fish_value(&words, i)));
+                            i += 2;
+                        }
+                        "-d" => {
+                            completion.description = Some(fish_value(&words, i).to_owned());
+                            i += 2;
+                        }
+                        // The remaining value-taking options, skipped whole
+                        // so a value is never read as an option itself.
+                        "-c" | "-n" | "-s" | "-w" | "-p" => i += 2,
+                        _ => i += 1,
+                    }
+                }
+                completion
+            })
+            .collect()
+    }
 
     /// Forces a new [`CliCommand`] to declare whether it is spelled as a
     /// subcommand: the match is exhaustive, so the variant will not compile
@@ -735,14 +1007,295 @@ mod tests {
         }
     }
 
-    /// The other direction: a flag added to either reference but not to
+    #[test]
+    fn the_man_page_and_completions_carry_every_subcommand_and_flag() {
+        let man = unescape_roff(include_str!("../assets/spectral.1"));
+        let completions = fish_completions();
+
+        // Anchored to the entry shapes the COMMANDS and OPTIONS blocks use,
+        // for the reason the docs/CLI.md check above spells out: every one of
+        // these words also occurs in the surrounding prose, so an unanchored
+        // search stays green on a man page whose reference blocks have lost
+        // the entry entirely.
+        for word in SUBCOMMANDS {
+            assert!(
+                man.contains(&format!("\n.TP\n.B {word}\n")),
+                "`{word}` is missing from the spectral.1 COMMANDS block"
+            );
+            assert!(
+                completions
+                    .iter()
+                    .any(|completion| completion.arguments.iter().any(|value| value == word)),
+                "`{word}` is offered by no fish completion"
+            );
+        }
+        for flag in ENABLE_FLAGS {
+            assert!(
+                man.contains(&format!("\n.BI {flag} ")),
+                "{flag} is missing from the spectral.1 OPTIONS block"
+            );
+            assert!(
+                completions
+                    .iter()
+                    .any(|completion| completion.long_options.iter().any(|value| value == flag)),
+                "{flag} is registered by no fish completion"
+            );
+        }
+    }
+
+    /// `spectral_commands` is a second copy of [`SUBCOMMANDS`] living in the
+    /// completions, and it is the one every subcommand gate reads. Drift
+    /// there is invisible to the checks above: leave all ten `complete`
+    /// invocations intact but drop a word from this list and the gate for
+    /// that command never closes, so `spectral shutdown <TAB>` re-offers the
+    /// whole command list and completes `spectral shutdown enable`, which
+    /// the parser rejects.
+    #[test]
+    fn the_fish_subcommand_gate_lists_every_subcommand() {
+        let fish = include_str!("../assets/spectral.fish").replace("\r\n", "\n");
+        let declaration = fish
+            .lines()
+            .find(|line| line.starts_with("set -l spectral_commands "))
+            .expect("spectral.fish must declare the subcommand list its gates read");
+        let listed: Vec<&str> = declaration.split_whitespace().skip(3).collect();
+
+        for word in SUBCOMMANDS {
+            assert!(
+                listed.contains(&word),
+                "`{word}` is missing from spectral.fish's spectral_commands"
+            );
+        }
+        assert_eq!(
+            listed.len(),
+            SUBCOMMANDS.len(),
+            "spectral.fish's spectral_commands carries a word the parser does not: {listed:?}"
+        );
+    }
+
+    /// [`GLOBAL_OPTIONS`] had no forward coverage at all: it appears only as
+    /// an allow-list in the reverse scan, and an allow-list can never fail on
+    /// a missing token. Deleting the man page's whole first-position block,
+    /// or both fish registrations, or the `--help` options stanza left the
+    /// suite green with the shipped surfaces no longer documenting how to
+    /// get help or the version.
+    #[test]
+    fn every_global_option_is_documented_on_every_surface() {
+        let help = help();
+        let doc = include_str!("../docs/CLI.md");
+        let man = unescape_roff(include_str!("../assets/spectral.1"));
+        let options = man_section(&man, ".SS First-position options");
+        let completions = fish_completions();
+
+        for option in GLOBAL_OPTIONS {
+            assert!(
+                p(&[option]).is_ok(),
+                "the parser no longer accepts {option} in first position"
+            );
+            assert!(
+                help.contains(&format!(", {option} ")),
+                "{option} is missing from the --help options stanza"
+            );
+            assert!(
+                doc.contains(&format!("`spectral {option}`")),
+                "{option} is missing from docs/CLI.md"
+            );
+            assert!(
+                options.contains(&format!(" {option}\n")),
+                "{option} is missing from the spectral.1 first-position block"
+            );
+            assert!(
+                completions
+                    .iter()
+                    .any(|completion| completion.long_options.iter().any(|value| value == option)),
+                "{option} is registered by no fish completion"
+            );
+        }
+    }
+
+    /// The man page restates the exit-code table in roff, where it cannot
+    /// interpolate the constants any more than docs/CLI.md can. That table
+    /// has had a test since it fell behind once; this one had nothing, so
+    /// changing a code updated `--help`, failed the docs/CLI.md check, and
+    /// left the page advertising the old number with the gate green.
+    #[test]
+    fn the_man_page_documents_the_same_exit_codes() {
+        let man = unescape_roff(include_str!("../assets/spectral.1"));
+        let table = man_section(&man, ".SH EXIT STATUS");
+        for code in [EXIT_SUCCESS, EXIT_FAILURE, EXIT_USAGE_ERROR] {
+            assert!(
+                table.contains(&format!("\n.TP\n.B {code}\n")),
+                "exit code {code} is missing from the spectral.1 EXIT STATUS block"
+            );
+        }
+    }
+
+    /// The five command summaries are byte-identical across `--help`, the
+    /// man page and the completions, and nothing held them together —
+    /// `status` had already picked up a second wording on the page and a
+    /// third in docs/CLI.md's usage block. `--help` now renders the table,
+    /// so only the two files can drift, and this is what catches that. The
+    /// page may say more than the summary, as its `status` entry does, but
+    /// it has to open with the same sentence.
+    #[test]
+    fn every_command_summary_reads_the_same_on_every_surface() {
+        let man = unescape_roff(include_str!("../assets/spectral.1"));
+        let commands = man_section(&man, ".SH COMMANDS");
+        let completions = fish_completions();
+
+        for (word, summary) in COMMANDS {
+            let (_, entry) = commands
+                .split_once(&format!("\n.TP\n.B {word}\n"))
+                .unwrap_or_else(|| {
+                    panic!("`{word}` is missing from the spectral.1 COMMANDS block")
+                });
+            let described = entry.lines().next().unwrap_or_default();
+            assert!(
+                described.starts_with(summary),
+                "spectral.1 describes `{word}` as {described:?}, which does not open with {summary:?}"
+            );
+            assert!(
+                completions.iter().any(|completion| {
+                    completion.arguments.iter().any(|value| value == word)
+                        && completion.description.as_deref() == Some(summary)
+                }),
+                "the fish completion for `{word}` does not carry its summary {summary:?}"
+            );
+        }
+    }
+
+    /// The `--threshold` range and the on/off vocabulary were bare literals
+    /// six and five times over. Widening the gate, or accepting
+    /// `true`/`false`, updated the parser and `--help` together and left
+    /// every other rendering advertising the old contract — with fish
+    /// actively completing to a value set the parser rejects, which is worse
+    /// than a stale sentence.
+    #[test]
+    fn the_references_restate_the_current_flag_vocabularies() {
+        let man = unescape_roff(include_str!("../assets/spectral.1"));
+        let doc = unescape_markdown(include_str!("../docs/CLI.md"));
+        let range = threshold_choice();
+        let toggle = toggle_choice();
+
+        for (source, text) in [
+            ("docs/CLI.md", doc.as_str()),
+            ("assets/spectral.1", man.as_str()),
+        ] {
+            assert!(
+                text.contains(&range),
+                "{source} does not carry the current --threshold range {range}"
+            );
+            assert!(
+                text.contains(&toggle),
+                "{source} does not carry the current on/off vocabulary {toggle}"
+            );
+        }
+
+        let completions = fish_completions();
+        let offered: Vec<&str> = completions
+            .iter()
+            .filter(|completion| {
+                completion
+                    .long_options
+                    .iter()
+                    .any(|option| option == "--rumble-filter" || option == "--auto-level")
+            })
+            .flat_map(|completion| completion.arguments.iter().map(String::as_str))
+            .collect();
+        assert_eq!(
+            offered,
+            [TOGGLE_ON, TOGGLE_OFF, TOGGLE_ON, TOGGLE_OFF],
+            "the fish completions offer a toggle value set the parser does not accept"
+        );
+    }
+
+    /// The FILES section names two paths whose last component lives in the
+    /// modules that build them, so either can move without the page noticing.
+    #[test]
+    fn the_man_page_names_the_files_spectral_actually_uses() {
+        let man = unescape_roff(include_str!("../assets/spectral.1"));
+        let files = man_section(&man, ".SH FILES");
+        for name in [persistence::SETTINGS_FILE_NAME, ipc::SOCKET_FILE_NAME] {
+            assert!(
+                files.contains(name),
+                "`{name}` is missing from the spectral.1 FILES block"
+            );
+        }
+    }
+
+    /// The man page and docs/CLI.md restate the `--mic-name` rule in their own
+    /// wording — roff markup and a table cell — where they cannot interpolate
+    /// [`mic_name_rule`] the way [`help`] does. Relaxing the rule would
+    /// otherwise leave both advertising a limit the parser no longer applies,
+    /// which is exactly what the constant exists to prevent.
+    ///
+    /// Both halves of the rule are pinned. The length has a constant behind
+    /// it; the character class is prose in [`mic_name_rule`] and hand-copied
+    /// into both files, so it is lifted back out of the rule rather than
+    /// spelled again here — allowing `.` or dropping `-` would otherwise
+    /// update `--help` alone and leave both references advertising the old
+    /// class.
+    #[test]
+    fn the_references_restate_the_current_mic_name_rule() {
+        let man = unescape_roff(include_str!("../assets/spectral.1"));
+        let doc = include_str!("../docs/CLI.md");
+        let rule = mic_name_rule();
+        let class = rule
+            .split_once('[')
+            .and_then(|(_, rest)| rest.split_once(']'))
+            .map(|(class, _)| format!("[{class}]"))
+            .expect("mic_name_rule must name the character class it enforces");
+
+        assert!(
+            man.contains(&format!("1-{MIC_NAME_MAX_LEN} characters")),
+            "spectral.1 does not carry the current mic-name limit"
+        );
+        assert!(
+            doc.contains(&format!("at most {MIC_NAME_MAX_LEN} characters")),
+            "docs/CLI.md does not carry the current mic-name limit"
+        );
+        assert!(
+            man.contains(&class),
+            "spectral.1 does not carry the current mic-name character class {class}"
+        );
+        assert!(
+            doc.contains(&class),
+            "docs/CLI.md does not carry the current mic-name character class {class}"
+        );
+    }
+
+    /// The man page's `.TH` line carries the version, so it is one of the
+    /// spots `packaging/bump-version.sh` moves; this is the check that fails
+    /// the release if it ever stops moving with the rest.
+    ///
+    /// Anchored to that line rather than searched for anywhere in the file.
+    /// An unanchored match is satisfied by any body text quoting the version
+    /// — an EXAMPLES transcript of `spectral --version` would do it — while
+    /// the header itself keeps the old number and `man`'s footer lies.
+    #[test]
+    fn the_man_page_version_matches_the_crate() {
+        let man = include_str!("../assets/spectral.1");
+        let th = man
+            .lines()
+            .next()
+            .expect("spectral.1 must open with its .TH line");
+        assert!(
+            th.starts_with(".TH SPECTRAL 1 "),
+            "spectral.1 no longer opens with a .TH line: {th}"
+        );
+        let version = env!("CARGO_PKG_VERSION");
+        let expected = format!("\"spectral {version}\"");
+        assert!(
+            th.contains(&expected),
+            "the spectral.1 .TH line does not carry {expected}"
+        );
+    }
+
+    /// The other direction: a flag added to any surface but not to
     /// [`ENABLE_FLAGS`] fails here, so the table cannot fall behind the prose
     /// the way docs/CLI.md fell behind the exit codes.
     #[test]
-    fn neither_reference_documents_a_flag_the_table_does_not_carry() {
-        let help = help();
-        let doc = include_str!("../docs/CLI.md");
-        for (source, text) in [("--help", help.as_str()), ("docs/CLI.md", doc)] {
+    fn no_surface_documents_a_flag_the_table_does_not_carry() {
+        for (source, text) in surfaces() {
             for word in text.split_whitespace() {
                 let flag = word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-');
                 // Split on `=` the way `parse` does: both spellings name the
@@ -870,6 +1423,105 @@ mod tests {
     fn duplicate_and_valueless_flags_are_rejected() {
         assert!(p(&["enable", "--device", "1", "--device", "2"]).is_err());
         assert!(p(&["enable", "--device"]).is_err());
+    }
+
+    #[test]
+    fn a_near_miss_is_offered_the_spelling_it_probably_meant() {
+        assert_eq!(
+            p(&["enalbe"]),
+            Err("unknown command 'enalbe'; did you mean 'enable'?".to_string())
+        );
+        assert_eq!(
+            p(&["enable", "--devcie", "3"]),
+            Err("unexpected argument '--devcie'; did you mean '--device'?".to_string())
+        );
+        // First position parses `--help` and `--version` too, so a typo of
+        // either is a near miss there even though `enable` never sees them.
+        assert_eq!(
+            p(&["--hlep"]),
+            Err("unknown command '--hlep'; did you mean '--help'?".to_string())
+        );
+        assert_eq!(
+            p(&["--verison"]),
+            Err("unknown command '--verison'; did you mean '--version'?".to_string())
+        );
+    }
+
+    #[test]
+    fn a_word_too_far_from_any_command_is_offered_nothing() {
+        // Far enough away that a hint would be a guess, not a correction.
+        assert_eq!(
+            p(&["frobnicate"]),
+            Err("unknown command 'frobnicate'".to_string())
+        );
+        // Short inputs get a budget of 1, so two edits is already too many.
+        assert_eq!(p(&["stat"]), Err("unknown command 'stat'".to_string()));
+        assert_eq!(
+            p(&["enable", "--zzz"]),
+            Err("unexpected argument '--zzz'".to_string())
+        );
+    }
+
+    /// A budget read off the input alone grows with it, so a long flag
+    /// nobody recognizes can reach a candidate that means something else
+    /// entirely. These sit four and three edits away — far enough that the
+    /// hint would send the reader to the wrong flag.
+    #[test]
+    fn a_long_unknown_flag_does_not_buy_itself_a_wider_guess() {
+        assert_eq!(
+            p(&["enable", "--device-name", "foo"]),
+            Err("unexpected argument '--device-name'".to_string())
+        );
+        assert_eq!(
+            p(&["enable", "--gate-level", "on"]),
+            Err("unexpected argument '--gate-level'".to_string())
+        );
+    }
+
+    #[test]
+    fn every_subcommand_and_flag_suggests_itself_from_a_single_edit() {
+        for word in SUBCOMMANDS {
+            let typo: String = word
+                .char_indices()
+                .filter(|&(i, _)| i != 1)
+                .map(|(_, c)| c)
+                .collect();
+            assert_eq!(
+                suggest(&typo, &SUBCOMMANDS),
+                Some(word),
+                "dropping a character from `{word}` no longer resolves back to it"
+            );
+        }
+        for flag in ENABLE_FLAGS {
+            let typo: String = flag
+                .char_indices()
+                .filter(|&(i, _)| i != 3)
+                .map(|(_, c)| c)
+                .collect();
+            assert_eq!(
+                suggest(&typo, &ENABLE_FLAGS),
+                Some(flag),
+                "dropping a character from `{flag}` no longer resolves back to it"
+            );
+        }
+    }
+
+    #[test]
+    fn edit_distance_counts_insertions_deletions_and_substitutions() {
+        let cases = [
+            ("", "", 0),
+            ("enable", "enable", 0),
+            ("enable", "", 6),
+            ("", "enable", 6),
+            ("enalbe", "enable", 2),
+            ("kitten", "sitting", 3),
+            // Non-ASCII must count characters, not bytes.
+            ("café", "cafe", 1),
+        ];
+        for (a, b, want) in cases {
+            assert_eq!(edit_distance(a, b), want, "edit_distance({a:?}, {b:?})");
+            assert_eq!(edit_distance(b, a), want, "edit_distance({b:?}, {a:?})");
+        }
     }
 
     #[test]
