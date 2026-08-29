@@ -139,17 +139,25 @@ fn edit_distance(a: &str, b: &str) -> usize {
 /// The nearest candidate to `input`, or `None` when nothing is close enough
 /// to read as a typo rather than a different word.
 ///
-/// The budget is a third of the input's length, so `stat` is left alone —
-/// two edits from `status` on four characters is a different word, and a
-/// wrong guess costs more than no guess — while `--rumble-filtre` still
+/// The budget is a third of the shorter of the two words, capped at two
+/// edits. Both halves of that matter. Measuring the input alone lets a long
+/// unknown flag buy a budget wide enough to reach an unrelated candidate:
+/// `--device-name` is four edits from `--mic-name`, and pointing someone
+/// reaching for the input device at the flag that renames the virtual mic
+/// is worse than saying nothing. Two is the ceiling because a transposition
+/// costs two; past that a hint is a guess. `stat` is still left alone — two
+/// edits from `status` on four characters — while `--rumble-filtre` still
 /// resolves. Ties go to the alphabetically first candidate, so the message
 /// does not depend on table order.
 fn suggest<'a>(input: &str, candidates: &[&'a str]) -> Option<&'a str> {
-    let budget = (input.chars().count() / 3).max(1);
+    let input_len = input.chars().count();
     candidates
         .iter()
-        .map(|&candidate| (edit_distance(input, candidate), candidate))
-        .filter(|&(distance, _)| distance <= budget)
+        .filter_map(|&candidate| {
+            let budget = (input_len.min(candidate.chars().count()) / 3).clamp(1, 2);
+            let distance = edit_distance(input, candidate);
+            (distance <= budget).then_some((distance, candidate))
+        })
         .min()
         .map(|(_, candidate)| candidate)
 }
@@ -1065,6 +1073,22 @@ mod tests {
         assert_eq!(
             p(&["enable", "--zzz"]),
             Err("unexpected argument '--zzz'".to_string())
+        );
+    }
+
+    /// A budget read off the input alone grows with it, so a long flag
+    /// nobody recognizes can reach a candidate that means something else
+    /// entirely. These sit four and three edits away — far enough that the
+    /// hint would send the reader to the wrong flag.
+    #[test]
+    fn a_long_unknown_flag_does_not_buy_itself_a_wider_guess() {
+        assert_eq!(
+            p(&["enable", "--device-name", "foo"]),
+            Err("unexpected argument '--device-name'".to_string())
+        );
+        assert_eq!(
+            p(&["enable", "--gate-level", "on"]),
+            Err("unexpected argument '--gate-level'".to_string())
         );
     }
 
