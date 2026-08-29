@@ -25,8 +25,13 @@ cd "$(git rev-parse --show-toplevel)"
 metainfo=assets/page.codeberg.mmc.Spectral.metainfo.xml
 man_page=assets/spectral.1
 
-# Replace the single line matching an ERE, by line number so neither the
-# pattern nor the replacement goes through awk's -v escape processing.
+# Replace the single line matching an ERE, by line number so the pattern
+# never reaches awk. The replacement travels in the environment rather than
+# through `-v`, which does apply escape-sequence processing: the man page's
+# replacement is roff, where a backslash is the escape character, so `-v`
+# would silently eat the `\-` in the .TH manual title (and a `\n` would
+# split the line outright).
+#
 # Zero matches means the file's shape drifted; more than one means the
 # pattern is no longer unique. Both are errors, not situations to guess in.
 replace_line() {
@@ -34,15 +39,29 @@ replace_line() {
     hits=$(grep -n -E "$pattern" "$file" | cut -d: -f1) || true
     [[ -n "$hits" && $(echo "$hits" | wc -l) -eq 1 ]] \
         || die "$file: expected exactly one line matching '$pattern'"
-    awk -v n="$hits" -v rep="$replacement" \
-        'NR == n { print rep; next } { print }' "$file" > "$file.tmp" \
+    rep="$replacement" awk -v n="$hits" \
+        'NR == n { print ENVIRON["rep"]; next } { print }' "$file" > "$file.tmp" \
         && mv "$file.tmp" "$file"
 }
 
-# Verified, not edited: the release entry is authored prose and it
-# ships inside the tarball, so it must exist before anything moves.
+# Everything this script only reads is checked here, before the first edit,
+# so a drifted file fails the run on an untouched tree rather than leaving
+# a half-bumped one behind for the operator to unpick.
+
+# The metainfo release entry is authored prose and it ships inside the
+# tarball, so it is verified, never written.
 grep -q "<release version=\"$version\" date=\"" "$metainfo" \
     || die "$metainfo has no <release> entry for $version — author it first (it ships in the tarball)"
+
+# The .TH line's other field is the page's own revision date, which is not
+# the release date, so it is carried across rather than rewritten. Captured
+# now because BASH_REMATCH belongs to whichever match ran last.
+th=$(grep -E '^\.TH SPECTRAL 1 ' "$man_page") \
+    || die "$man_page: expected a .TH line"
+[[ "$th" =~ ^(\.TH\ SPECTRAL\ 1\ \"[0-9]{4}-[0-9]{2}-[0-9]{2}\"\ \")spectral\ [0-9]+\.[0-9]+\.[0-9]+(\".*)$ ]] \
+    || die "$man_page: the .TH line no longer carries a version where this script expects one"
+th_prefix=${BASH_REMATCH[1]}
+th_suffix=${BASH_REMATCH[2]}
 
 replace_line Cargo.toml \
     '^version = "[0-9]+\.[0-9]+\.[0-9]+"$' \
@@ -50,15 +69,8 @@ replace_line Cargo.toml \
 replace_line nix/package.nix \
     '^  version = "[0-9]+\.[0-9]+\.[0-9]+";$' \
     "  version = \"$version\";"
-
-# The .TH line's other field is the page's own revision date, which is not
-# the release date, so it is carried across rather than rewritten.
-th=$(grep -E '^\.TH SPECTRAL 1 ' "$man_page") \
-    || die "$man_page: expected a .TH line"
-[[ "$th" =~ ^(\.TH\ SPECTRAL\ 1\ \"[0-9]{4}-[0-9]{2}-[0-9]{2}\"\ \")spectral\ [0-9]+\.[0-9]+\.[0-9]+(\".*)$ ]] \
-    || die "$man_page: the .TH line no longer carries a version where this script expects one"
 replace_line "$man_page" '^\.TH SPECTRAL 1 ' \
-    "${BASH_REMATCH[1]}spectral $version${BASH_REMATCH[2]}"
+    "${th_prefix}spectral $version${th_suffix}"
 
 # Any workspace resolution rewrites the lockfile's own stanza; offline
 # so nothing else can move as a side effect.
