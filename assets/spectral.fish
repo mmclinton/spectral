@@ -7,16 +7,20 @@
 set -l spectral_commands enable disable status devices shutdown
 
 function __spectral_devices
-    # Skip the header row; column 1 is the id, columns 3+ are the display
-    # name (not the node name the daemon remembers a device by).
+    # Skip the header row, then take the id and the display name (not the
+    # node name the daemon remembers a device by) off each row. The name is
+    # whatever follows the channel count, matched as one piece: splitting on
+    # whitespace and rejoining would collapse the runs of spaces inside a
+    # name, and a row whose name came out empty would fall short of the
+    # expected field count and be dropped rather than offered by its id.
     #
     # Bounded because `spectral devices` runs a PipeWire main loop with no
     # deadline of its own: a wedged PipeWire would otherwise hang the shell
     # that pressed Tab, with nothing to do but interrupt it.
     timeout 2 spectral devices 2>/dev/null | tail -n +2 | while read -l line
-        set -l fields (string split -n " " -- $line)
-        test (count $fields) -ge 3
-        and printf '%s\t%s\n' $fields[1] (string join " " $fields[3..])
+        if string match -qr '^\s*(?<id>\d+)\s+\d+\s*(?<name>.*)$' -- $line
+            printf '%s\t%s\n' $id $name
+        end
     end
 end
 
