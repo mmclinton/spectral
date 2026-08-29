@@ -1,4 +1,4 @@
-# Spectral
+# <img src="./assets/spectral.png" alt="" height="28" align="top"> Spectral
 
 **Real-time microphone noise suppression for Linux.**
 
