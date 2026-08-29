@@ -99,6 +99,10 @@ fn get_safe_state_base() -> Result<PathBuf, io::Error> {
     safe_base_dir("XDG_STATE_HOME", &[".local", "state"])
 }
 
+/// Name of the settings file inside the config directory. Public because the
+/// man page names the path and a test pins the two together.
+pub const SETTINGS_FILE_NAME: &str = "state.toml";
+
 /// Path of the settings file, `$XDG_CONFIG_HOME/spectral/state.toml` (or the
 /// `~/.config` fallback).
 ///
@@ -111,7 +115,9 @@ fn get_safe_state_base() -> Result<PathBuf, io::Error> {
 /// settings the daemon acts on — is worth more than the log. A daemon that cannot name a private directory
 /// should decline to persist, not persist somewhere world-writable.
 pub fn get_config_path() -> Result<PathBuf, io::Error> {
-    Ok(get_safe_config_base()?.join("spectral").join("state.toml"))
+    Ok(get_safe_config_base()?
+        .join("spectral")
+        .join(SETTINGS_FILE_NAME))
 }
 
 /// Directory holding the voice-test recordings, under the XDG state dir

@@ -560,6 +560,7 @@ fn run_shutdown() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spectral_lib::platform::{ipc, persistence};
     use spectral_lib::state::MIC_NAME_MAX_LEN;
 
     fn p(args: &[&str]) -> Result<CliCommand, String> {
@@ -730,6 +731,12 @@ mod tests {
     /// read at compile time, so a file that goes missing fails the build
     /// rather than an assertion. Short forms (`-h`, `-V`) go unchecked; the
     /// scan only looks at `--`.
+    ///
+    /// Fish contributes the options its `complete` invocations actually
+    /// register rather than its raw text: a `-l` inside a `-d "..."`
+    /// description would otherwise be read as a flag the file never
+    /// documents, and the scan would fail naming something that does not
+    /// exist.
     fn surfaces() -> [(&'static str, String); 4] {
         [
             ("--help", help()),
@@ -740,7 +747,11 @@ mod tests {
             ),
             (
                 "assets/spectral.fish",
-                expand_fish_long_options(include_str!("../assets/spectral.fish")),
+                fish_completions()
+                    .iter()
+                    .flat_map(|completion| completion.long_options.iter().cloned())
+                    .collect::<Vec<_>>()
+                    .join(" "),
             ),
         ]
     }
@@ -751,27 +762,121 @@ mod tests {
         text.replace("\\-", "-")
     }
 
-    /// Fish spells a long option without its dashes — `-l device` — so a
-    /// scan that only looks at `--` tokens walks straight past every
-    /// completion in the file and the surface contributes nothing. Restoring
-    /// the dashes is what makes it count.
+    /// The body of one man-page section, so an assertion about a reference
+    /// block cannot be satisfied by the surrounding prose — and so deleting
+    /// the block outright fails here rather than going unnoticed.
+    fn man_section(man: &str, heading: &str) -> String {
+        let (_, body) = man
+            .split_once(heading)
+            .unwrap_or_else(|| panic!("spectral.1 must carry a {heading} section"));
+        body.split_once("\n.SH ")
+            .map_or(body, |(section, _)| section)
+            .to_owned()
+    }
+
+    /// One `complete` invocation from assets/spectral.fish, read as shell
+    /// words rather than searched as text.
     ///
-    /// Only `complete` invocations are rewritten, which is why continuation
-    /// lines are joined first: elsewhere `-l` is fish's own `--local`
-    /// (`set -l`, `read -l`), and rewriting those would invent flags the file
-    /// never documents.
-    fn expand_fish_long_options(text: &str) -> String {
-        text.replace("\\\n", " ")
-            .lines()
-            .map(|line| {
-                if line.trim_start().starts_with("complete ") {
-                    line.replace(" -l ", " --")
-                } else {
-                    line.to_owned()
+    /// A substring search over the raw file is satisfied by things that are
+    /// not completions at all: `-l device ` also matches a `set -l device`,
+    /// and `-a status ` survives its own `complete -c spectral -n "..."`
+    /// header being deleted — which orphans the continuation line, so fish
+    /// reports `Unknown command: -a` and drops the completion while the
+    /// assertion stays green. Parsing the invocation is what makes an
+    /// assertion about it mean anything.
+    #[derive(Default)]
+    struct FishCompletion {
+        /// `-a` values, split the way fish splits them.
+        arguments: Vec<String>,
+        /// `-l` names, restored to their `--flag` spelling.
+        long_options: Vec<String>,
+        /// `-d` description, when the invocation carries one.
+        description: Option<String>,
+    }
+
+    /// Splits a fish line into words, keeping a double-quoted run together.
+    /// Only `complete` lines reach this, so fish's quoting corners elsewhere
+    /// in the file are out of scope.
+    fn fish_words(line: &str) -> Vec<String> {
+        let mut words = Vec::new();
+        let mut current = String::new();
+        let mut quoted = false;
+        let mut started = false;
+        for c in line.chars() {
+            match c {
+                '"' => {
+                    quoted = !quoted;
+                    started = true;
                 }
+                c if c.is_whitespace() && !quoted => {
+                    if started {
+                        words.push(std::mem::take(&mut current));
+                        started = false;
+                    }
+                }
+                c => {
+                    current.push(c);
+                    started = true;
+                }
+            }
+        }
+        if started {
+            words.push(current);
+        }
+        words
+    }
+
+    fn fish_value(words: &[String], i: usize) -> &str {
+        words
+            .get(i + 1)
+            .unwrap_or_else(|| panic!("spectral.fish: `{}` is missing its value", words[i]))
+    }
+
+    /// Every `complete` invocation in assets/spectral.fish.
+    ///
+    /// CRLF is normalized before continuation lines are joined: a `complete`
+    /// spread over two lines is one invocation, and on a checkout with CRLF
+    /// endings the join would otherwise miss, leaving the second line
+    /// looking like something other than a completion. Both of
+    /// [`GLOBAL_OPTIONS`] sit on such a line, so the surface would quietly
+    /// shrink with no assertion the wiser.
+    fn fish_completions() -> Vec<FishCompletion> {
+        let text = include_str!("../assets/spectral.fish")
+            .replace("\r\n", "\n")
+            .replace("\\\n", " ");
+        text.lines()
+            .filter(|line| line.trim_start().starts_with("complete "))
+            .map(|line| {
+                let words = fish_words(line);
+                let mut completion = FishCompletion::default();
+                let mut i = 1;
+                while i < words.len() {
+                    match words[i].as_str() {
+                        "-a" => {
+                            completion.arguments.extend(
+                                fish_value(&words, i).split_whitespace().map(str::to_owned),
+                            );
+                            i += 2;
+                        }
+                        "-l" => {
+                            completion
+                                .long_options
+                                .push(format!("--{}", fish_value(&words, i)));
+                            i += 2;
+                        }
+                        "-d" => {
+                            completion.description = Some(fish_value(&words, i).to_owned());
+                            i += 2;
+                        }
+                        // The remaining value-taking options, skipped whole
+                        // so a value is never read as an option itself.
+                        "-c" | "-n" | "-s" | "-w" | "-p" => i += 2,
+                        _ => i += 1,
+                    }
+                }
+                completion
             })
-            .collect::<Vec<_>>()
-            .join("\n")
+            .collect()
     }
 
     /// Forces a new [`CliCommand`] to declare whether it is spelled as a
@@ -841,7 +946,7 @@ mod tests {
     #[test]
     fn the_man_page_and_completions_carry_every_subcommand_and_flag() {
         let man = unescape_roff(include_str!("../assets/spectral.1"));
-        let fish = include_str!("../assets/spectral.fish");
+        let completions = fish_completions();
 
         // Anchored to the entry shapes the COMMANDS and OPTIONS blocks use,
         // for the reason the docs/CLI.md check above spells out: every one of
@@ -854,8 +959,10 @@ mod tests {
                 "`{word}` is missing from the spectral.1 COMMANDS block"
             );
             assert!(
-                fish.contains(&format!("-a {word} ")),
-                "`{word}` is missing from the fish completions"
+                completions
+                    .iter()
+                    .any(|completion| completion.arguments.iter().any(|value| value == word)),
+                "`{word}` is offered by no fish completion"
             );
         }
         for flag in ENABLE_FLAGS {
@@ -863,11 +970,111 @@ mod tests {
                 man.contains(&format!("\n.BI {flag} ")),
                 "{flag} is missing from the spectral.1 OPTIONS block"
             );
-            // Fish spells a long option without its dashes: `-l device`.
-            let bare = flag.trim_start_matches('-');
             assert!(
-                fish.contains(&format!("-l {bare} ")),
-                "{flag} is missing from the fish completions"
+                completions
+                    .iter()
+                    .any(|completion| completion.long_options.iter().any(|value| value == flag)),
+                "{flag} is registered by no fish completion"
+            );
+        }
+    }
+
+    /// `spectral_commands` is a second copy of [`SUBCOMMANDS`] living in the
+    /// completions, and it is the one every subcommand gate reads. Drift
+    /// there is invisible to the checks above: leave all ten `complete`
+    /// invocations intact but drop a word from this list and the gate for
+    /// that command never closes, so `spectral shutdown <TAB>` re-offers the
+    /// whole command list and completes `spectral shutdown enable`, which
+    /// the parser rejects.
+    #[test]
+    fn the_fish_subcommand_gate_lists_every_subcommand() {
+        let fish = include_str!("../assets/spectral.fish").replace("\r\n", "\n");
+        let declaration = fish
+            .lines()
+            .find(|line| line.starts_with("set -l spectral_commands "))
+            .expect("spectral.fish must declare the subcommand list its gates read");
+        let listed: Vec<&str> = declaration.split_whitespace().skip(3).collect();
+
+        for word in SUBCOMMANDS {
+            assert!(
+                listed.contains(&word),
+                "`{word}` is missing from spectral.fish's spectral_commands"
+            );
+        }
+        assert_eq!(
+            listed.len(),
+            SUBCOMMANDS.len(),
+            "spectral.fish's spectral_commands carries a word the parser does not: {listed:?}"
+        );
+    }
+
+    /// [`GLOBAL_OPTIONS`] had no forward coverage at all: it appears only as
+    /// an allow-list in the reverse scan, and an allow-list can never fail on
+    /// a missing token. Deleting the man page's whole first-position block,
+    /// or both fish registrations, or the `--help` options stanza left the
+    /// suite green with the shipped surfaces no longer documenting how to
+    /// get help or the version.
+    #[test]
+    fn every_global_option_is_documented_on_every_surface() {
+        let help = help();
+        let doc = include_str!("../docs/CLI.md");
+        let man = unescape_roff(include_str!("../assets/spectral.1"));
+        let options = man_section(&man, ".SS First-position options");
+        let completions = fish_completions();
+
+        for option in GLOBAL_OPTIONS {
+            assert!(
+                p(&[option]).is_ok(),
+                "the parser no longer accepts {option} in first position"
+            );
+            assert!(
+                help.contains(&format!(", {option} ")),
+                "{option} is missing from the --help options stanza"
+            );
+            assert!(
+                doc.contains(&format!("`spectral {option}`")),
+                "{option} is missing from docs/CLI.md"
+            );
+            assert!(
+                options.contains(&format!(" {option}\n")),
+                "{option} is missing from the spectral.1 first-position block"
+            );
+            assert!(
+                completions
+                    .iter()
+                    .any(|completion| completion.long_options.iter().any(|value| value == option)),
+                "{option} is registered by no fish completion"
+            );
+        }
+    }
+
+    /// The man page restates the exit-code table in roff, where it cannot
+    /// interpolate the constants any more than docs/CLI.md can. That table
+    /// has had a test since it fell behind once; this one had nothing, so
+    /// changing a code updated `--help`, failed the docs/CLI.md check, and
+    /// left the page advertising the old number with the gate green.
+    #[test]
+    fn the_man_page_documents_the_same_exit_codes() {
+        let man = unescape_roff(include_str!("../assets/spectral.1"));
+        let table = man_section(&man, ".SH EXIT STATUS");
+        for code in [EXIT_SUCCESS, EXIT_FAILURE, EXIT_USAGE_ERROR] {
+            assert!(
+                table.contains(&format!("\n.TP\n.B {code}\n")),
+                "exit code {code} is missing from the spectral.1 EXIT STATUS block"
+            );
+        }
+    }
+
+    /// The FILES section names two paths whose last component lives in the
+    /// modules that build them, so either can move without the page noticing.
+    #[test]
+    fn the_man_page_names_the_files_spectral_actually_uses() {
+        let man = unescape_roff(include_str!("../assets/spectral.1"));
+        let files = man_section(&man, ".SH FILES");
+        for name in [persistence::SETTINGS_FILE_NAME, ipc::SOCKET_FILE_NAME] {
+            assert!(
+                files.contains(name),
+                "`{name}` is missing from the spectral.1 FILES block"
             );
         }
     }
@@ -877,10 +1084,24 @@ mod tests {
     /// [`mic_name_rule`] the way [`help`] does. Relaxing the rule would
     /// otherwise leave both advertising a limit the parser no longer applies,
     /// which is exactly what the constant exists to prevent.
+    ///
+    /// Both halves of the rule are pinned. The length has a constant behind
+    /// it; the character class is prose in [`mic_name_rule`] and hand-copied
+    /// into both files, so it is lifted back out of the rule rather than
+    /// spelled again here — allowing `.` or dropping `-` would otherwise
+    /// update `--help` alone and leave both references advertising the old
+    /// class.
     #[test]
-    fn the_references_restate_the_current_mic_name_limit() {
+    fn the_references_restate_the_current_mic_name_rule() {
         let man = unescape_roff(include_str!("../assets/spectral.1"));
         let doc = include_str!("../docs/CLI.md");
+        let rule = mic_name_rule();
+        let class = rule
+            .split_once('[')
+            .and_then(|(_, rest)| rest.split_once(']'))
+            .map(|(class, _)| format!("[{class}]"))
+            .expect("mic_name_rule must name the character class it enforces");
+
         assert!(
             man.contains(&format!("1-{MIC_NAME_MAX_LEN} characters")),
             "spectral.1 does not carry the current mic-name limit"
@@ -889,17 +1110,39 @@ mod tests {
             doc.contains(&format!("at most {MIC_NAME_MAX_LEN} characters")),
             "docs/CLI.md does not carry the current mic-name limit"
         );
+        assert!(
+            man.contains(&class),
+            "spectral.1 does not carry the current mic-name character class {class}"
+        );
+        assert!(
+            doc.contains(&class),
+            "docs/CLI.md does not carry the current mic-name character class {class}"
+        );
     }
 
     /// The man page's `.TH` line carries the version, so it is one of the
     /// spots `packaging/bump-version.sh` moves; this is the check that fails
     /// the release if it ever stops moving with the rest.
+    ///
+    /// Anchored to that line rather than searched for anywhere in the file.
+    /// An unanchored match is satisfied by any body text quoting the version
+    /// — an EXAMPLES transcript of `spectral --version` would do it — while
+    /// the header itself keeps the old number and `man`'s footer lies.
     #[test]
     fn the_man_page_version_matches_the_crate() {
         let man = include_str!("../assets/spectral.1");
-        let expected = format!("\"spectral {}\"", env!("CARGO_PKG_VERSION"));
+        let th = man
+            .lines()
+            .next()
+            .expect("spectral.1 must open with its .TH line");
         assert!(
-            man.contains(&expected),
+            th.starts_with(".TH SPECTRAL 1 "),
+            "spectral.1 no longer opens with a .TH line: {th}"
+        );
+        let version = env!("CARGO_PKG_VERSION");
+        let expected = format!("\"spectral {version}\"");
+        assert!(
+            th.contains(&expected),
             "the spectral.1 .TH line does not carry {expected}"
         );
     }
