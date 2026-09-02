@@ -417,6 +417,15 @@ pub(super) fn unsupported_encoding(info: &AudioInfoRaw) -> Option<String> {
     None
 }
 
+/// What a panicking thread carried, for the two payload types `panic!`
+/// produces. Anything else joined says only that the thread died.
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> Option<&str> {
+    payload
+        .downcast_ref::<&'static str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+}
+
 /// First error wins: later failures are usually cascades of the first.
 fn record_failure(slot: &Mutex<Option<String>>, msg: String) {
     let mut guard = lock_or_recover(slot);
@@ -477,7 +486,24 @@ impl NativeAudioPipeline {
                 let _ = pipeline_thread.join();
                 Err(format!("Pipeline setup failed: {e}").into())
             }
-            Err(_) => {
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                // Nothing waited: the sender was dropped unsent, and
+                // `run_pipeline` reports on every path it returns from, so the
+                // thread died carrying its reason in a panic instead. It has
+                // therefore already finished, which makes the join that would
+                // be reckless below safe here and turns a bare "did not become
+                // ready" into the reason.
+                running.store(false, Ordering::SeqCst);
+                let why = match pipeline_thread.join() {
+                    Err(payload) => match panic_message(&*payload) {
+                        Some(msg) => format!("the pipeline thread panicked: {msg}"),
+                        None => "the pipeline thread panicked".to_string(),
+                    },
+                    Ok(()) => "the pipeline thread stopped without reporting".to_string(),
+                };
+                Err(format!("Pipeline setup failed: {why}").into())
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
                 // Don't join: a wedged setup thread would hang the daemon.
                 // No wake sender yet either; a thread that does reach its
                 // loop reads the flag within LOOP_WAKE_BACKSTOP and exits.
