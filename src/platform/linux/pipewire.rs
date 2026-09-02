@@ -957,6 +957,14 @@ fn run_pipeline(
             record_failure(failure, format!("main loop iterate failed: errno {errno}"));
             break;
         }
+        // The stop wake arrives as an ordinary iteration, so without this the
+        // body below still runs once: a due retry would build and connect a
+        // capture stream the teardown two statements later throws away, and
+        // that server round trip lands inside a join the daemon performs
+        // while holding the virtual-mic lock.
+        if !running.load(Ordering::SeqCst) {
+            break;
+        }
         // Classified here rather than in the callback, which cannot see what
         // the capture stream reported in the same iteration. Read `lost`
         // without consuming it — the teardown below owns that.
