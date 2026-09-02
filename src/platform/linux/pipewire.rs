@@ -249,7 +249,9 @@ fn whole_millis_up(d: Duration) -> Duration {
     if sub == 0 {
         d
     } else {
-        d + Duration::from_nanos(u64::from(1_000_000 - sub))
+        // Saturating rather than `+`: the callers stay far below the
+        // ceiling, but a rounding helper is no place to find that out.
+        d.saturating_add(Duration::from_nanos(u64::from(1_000_000 - sub)))
     }
 }
 
@@ -1603,6 +1605,8 @@ mod tests {
             (Duration::from_millis(50), Duration::from_millis(50)),
             (Duration::from_micros(499_300), Duration::from_millis(500)),
             (Duration::from_nanos(1_000_001), Duration::from_millis(2)),
+            // Nothing to round up into: the helper stays total.
+            (Duration::MAX, Duration::MAX),
         ];
         for (input, expected) in cases {
             assert_eq!(whole_millis_up(input), expected, "{input:?}");
