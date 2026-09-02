@@ -82,6 +82,13 @@ const RECONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 /// attempts have to be cheap to repeat without becoming a spin.
 const REATTACH_RETRY_INTERVAL: Duration = Duration::from_millis(500);
 
+/// Longest the pipeline loop blocks with nothing timed to do. Stop and
+/// failures all arrive as loop events, so this is a backstop, not a tick:
+/// it bounds how late a lost wake message can make `stop()` return, at one
+/// wakeup a second. Not unbounded because `iterate` takes a `Duration` and
+/// the C API's "forever" is unreachable through it.
+const LOOP_WAKE_BACKSTOP: Duration = Duration::from_secs(1);
+
 /// `-ENOENT`, which PipeWire reports for a `target.object` that is not there.
 const TARGET_MISSING: i32 = -2;
 
@@ -177,6 +184,19 @@ impl ReattachState {
         } else {
             Reattach::Waiting
         }
+    }
+
+    /// How long the loop may block before this state has something timed
+    /// to do: `None` while attached, otherwise the earlier of the next retry
+    /// and the give-up deadline. Waking early is harmless — `step` derives
+    /// everything from `now` — so this only has to never oversleep.
+    fn wait_for(&self, now: Instant) -> Option<Duration> {
+        let since = self.detached_since?;
+        let deadline = RECONNECT_TIMEOUT.saturating_sub(now.duration_since(since));
+        let retry = self.last_attempt.map_or(REATTACH_RETRY_INTERVAL, |last| {
+            REATTACH_RETRY_INTERVAL.saturating_sub(now.duration_since(last))
+        });
+        Some(deadline.min(retry))
     }
 }
 
@@ -308,6 +328,10 @@ pub struct NativeAudioPipeline {
     running: Arc<AtomicBool>,
     failure: Arc<Mutex<Option<String>>>,
     detached: Arc<AtomicBool>,
+    /// Wakes the loop so it re-reads `running`; the message itself carries
+    /// nothing. The crate's channel is its cross-thread wake — a loop event
+    /// source borrows the loop and cannot leave the thread.
+    wake: pipewire::channel::Sender<()>,
     pipeline_thread: Option<JoinHandle<()>>,
 }
 
@@ -369,6 +393,7 @@ impl NativeAudioPipeline {
         let source_node = source_node.to_string();
         let virtual_name = virtual_name.to_string();
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
+        let (wake, wake_rx) = pipewire::channel::channel::<()>();
 
         let pipeline_thread = thread::spawn(move || {
             if let Err(e) = run_pipeline(
@@ -377,6 +402,7 @@ impl NativeAudioPipeline {
                 &virtual_name,
                 input_channels,
                 &ready_tx,
+                wake_rx,
                 &handles,
             ) {
                 record_failure(&handles.failure, format!("pipeline error: {e}"));
@@ -390,6 +416,7 @@ impl NativeAudioPipeline {
                 running,
                 failure,
                 detached,
+                wake,
                 pipeline_thread: Some(pipeline_thread),
             }),
             Ok(Err(e)) => {
@@ -399,6 +426,7 @@ impl NativeAudioPipeline {
             Err(_) => {
                 // Don't join: a wedged setup thread would hang the daemon.
                 running.store(false, Ordering::SeqCst);
+                let _ = wake.send(());
                 Err(
                     format!("Pipeline did not become ready within {PIPELINE_READY_TIMEOUT:?}")
                         .into(),
@@ -411,6 +439,9 @@ impl NativeAudioPipeline {
     /// a no-op.
     pub fn stop(&mut self) {
         self.running.store(false, Ordering::SeqCst);
+        // A failed send means the thread is already gone; the join below
+        // settles it either way.
+        let _ = self.wake.send(());
 
         if let Some(handle) = self.pipeline_thread.take()
             && handle.join().is_err()
@@ -653,6 +684,7 @@ fn run_pipeline(
     virtual_name: &str,
     input_channels: u32,
     ready_tx: &mpsc::Sender<Result<(), String>>,
+    wake_rx: pipewire::channel::Receiver<()>,
     handles: &PipelineHandles,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let PipelineHandles {
@@ -664,6 +696,9 @@ fn run_pipeline(
     pipewire::init();
 
     let mainloop = MainLoopBox::new(None)?;
+    // Arrival alone is the point: `iterate` returns and the loop condition
+    // re-reads `running`.
+    let _wake = wake_rx.attach(mainloop.loop_(), |()| {});
     let context = ContextBox::new(mainloop.loop_(), None)?;
     let core = context.connect(Some(super::manager_client_properties()))?;
 
@@ -863,9 +898,12 @@ fn run_pipeline(
     let mut ready_sent = false;
 
     while running.load(Ordering::SeqCst) {
-        let res = mainloop
-            .loop_()
-            .iterate(std::time::Duration::from_millis(10));
+        // Blocks until an event: stop and every failure arrive as one, so
+        // the only timed work is the reconnect window's own schedule.
+        let timeout = reattach
+            .wait_for(Instant::now())
+            .unwrap_or(LOOP_WAKE_BACKSTOP);
+        let res = mainloop.loop_().iterate(timeout);
         if res < 0 {
             let errno = -res;
             record_failure(failure, format!("main loop iterate failed: errno {errno}"));
@@ -1371,6 +1409,55 @@ mod tests {
         state.detach(at(base, 100));
         assert_eq!(state.step(at(base, 120), false, false), Reattach::Waiting);
         assert_eq!(state.step(at(base, 130), false, false), Reattach::GiveUp);
+    }
+
+    /// The loop blocks for as long as the state machine has nothing timed
+    /// to do, so an attached pipeline must not name a deadline at all.
+    #[test]
+    fn an_attached_state_has_no_deadline() {
+        let mut state = ReattachState::default();
+        assert_eq!(state.wait_for(Instant::now()), None);
+        state.detach(Instant::now());
+        state.attach();
+        assert_eq!(state.wait_for(Instant::now()), None);
+    }
+
+    /// While detached the wait is whichever comes first: the next retry or
+    /// the give-up deadline. Waking early is harmless, sleeping past either
+    /// is not.
+    #[test]
+    fn a_detached_state_wakes_for_the_earlier_of_retry_and_deadline() {
+        let base = Instant::now();
+        let mut state = ReattachState::default();
+        state.detach(base);
+
+        // No attempt yet: nothing to throttle, so a full interval.
+        assert_eq!(state.wait_for(base), Some(REATTACH_RETRY_INTERVAL));
+
+        // Mid-interval after an attempt: only the remainder.
+        assert_eq!(state.step(base, true, false), Reattach::Retry);
+        assert_eq!(
+            state.wait_for(base + Duration::from_millis(100)),
+            Some(REATTACH_RETRY_INTERVAL - Duration::from_millis(100))
+        );
+
+        // Past the interval: due now.
+        assert_eq!(
+            state.wait_for(base + REATTACH_RETRY_INTERVAL),
+            Some(Duration::ZERO)
+        );
+
+        // Near the deadline the window remainder is shorter than a fresh
+        // retry interval, so the deadline wins.
+        let late = base + RECONNECT_TIMEOUT - Duration::from_millis(50);
+        assert_eq!(
+            state.step(late - Duration::from_millis(10), true, false),
+            Reattach::Retry
+        );
+        assert_eq!(state.wait_for(late), Some(Duration::from_millis(50)));
+
+        // Past the deadline: due now, so `step` can report GiveUp.
+        assert_eq!(state.wait_for(at(base, 31)), Some(Duration::ZERO));
     }
 
     /// Both process callbacks decode with a compiled-in width and rate, so
