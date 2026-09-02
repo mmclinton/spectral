@@ -82,12 +82,14 @@ const RECONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 /// attempts have to be cheap to repeat without becoming a spin.
 const REATTACH_RETRY_INTERVAL: Duration = Duration::from_millis(500);
 
-/// Longest the pipeline loop blocks with nothing timed to do. Stop and
-/// every failure arrive as loop events, so this is not a tick the loop
+/// Longest the pipeline loop blocks, whatever else it has scheduled. Stop
+/// and every failure arrive as loop events, so this is not a tick the loop
 /// depends on. It is finite because `iterate` takes a `Duration` and the
 /// C API's "forever" is unreachable through it; one wakeup a second is
-/// the price, and it also bounds the damage should a future change record
-/// a failure from off the pipeline thread, which nothing does today.
+/// the price. Everything that cannot deliver a wake is bounded by this and
+/// nothing else: a send that fails, a thread orphaned by a `start()` that
+/// timed out, and a future change that records a failure from off the
+/// pipeline thread, which nothing does today.
 const LOOP_WAKE_BACKSTOP: Duration = Duration::from_secs(1);
 
 /// `-ENOENT`, which PipeWire reports for a `target.object` that is not there.
@@ -932,14 +934,17 @@ fn run_pipeline(
 
     while running.load(Ordering::SeqCst) {
         // Blocks until an event: stop and every failure arrive as one, so
-        // the only timed work is the reconnect window's own schedule.
+        // the only timed work is the reconnect window's own schedule. The
+        // backstop caps that schedule rather than merely standing in for it,
+        // because the window's next deadline can be the whole RECONNECT_TIMEOUT
+        // away and a loop nobody can wake has to notice `running` regardless.
         let timeout = reattach
             .wait_for(
                 Instant::now(),
                 target_node_id.get().is_some(),
                 capture.is_some(),
             )
-            .unwrap_or(LOOP_WAKE_BACKSTOP);
+            .map_or(LOOP_WAKE_BACKSTOP, |wait| wait.min(LOOP_WAKE_BACKSTOP));
         let res = mainloop.loop_().iterate(whole_millis_up(timeout));
         if res < 0 {
             let errno = -res;
