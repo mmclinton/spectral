@@ -780,8 +780,8 @@ fn run_pipeline(
     pipewire::init();
 
     let mainloop = MainLoopBox::new(None)?;
-    // Arrival alone is the point: `iterate` returns and the loop condition
-    // re-reads `running`.
+    // Binding the attached receiver is load-bearing: dropping it detaches the
+    // source from the loop, and every send would then reach nothing.
     let (wake, wake_rx) = pipewire::channel::channel::<()>();
     let _wake = wake_rx.attach(mainloop.loop_(), |()| {});
     let context = ContextBox::new(mainloop.loop_(), None)?;
@@ -1509,8 +1509,8 @@ mod tests {
         assert_eq!(state.step(at(base, 130), false, false), Reattach::GiveUp);
     }
 
-    /// The loop blocks for as long as the state machine has nothing timed
-    /// to do, so an attached pipeline must not name a deadline at all.
+    /// An attached pipeline has nothing timed to do, so it must not name a
+    /// deadline at all — the loop then sleeps for the whole backstop.
     #[test]
     fn an_attached_state_has_no_deadline() {
         let mut state = ReattachState::default();
