@@ -293,8 +293,8 @@ impl PipelineData {
         let output_capacity = OUTPUT_BUFFER_CAP + MAX_QUANTUM + RNNOISE_FRAME_SIZE;
         Self {
             processor,
-            input_buffer: Vec::with_capacity(input_capacity),
-            output_buffer: Vec::with_capacity(output_capacity),
+            input_buffer: prefaulted(input_capacity),
+            output_buffer: prefaulted(output_capacity),
             mono_scratch: vec![0.0; RNNOISE_FRAME_SIZE],
             processed_scratch: vec![0.0; RNNOISE_FRAME_SIZE],
         }
@@ -1144,6 +1144,20 @@ fn process_capture_buffer(
     }
 }
 
+/// An empty `Vec` whose whole capacity is already resident.
+///
+/// Both rings are larger than glibc's mmap threshold, so a bare
+/// `with_capacity` returns pages the kernel maps on first write — and the
+/// first write is the RT callback's, one minor fault per page across the
+/// first second of audio. Writing every slot here moves that onto the
+/// pipeline thread. The fill value is non-zero on purpose: a zero fill
+/// lowers to `calloc`, whose fresh mmap pages are likewise left untouched.
+fn prefaulted(capacity: usize) -> Vec<f32> {
+    let mut buf = vec![f32::NAN; capacity];
+    buf.clear();
+    buf
+}
+
 /// Keep only the newest `max` samples; silently drops overflow (backstop
 /// against a stalled consumer side — overflow protection, not flow control).
 fn cap_buffer(buf: &mut Vec<f32>, max: usize) {
@@ -1425,6 +1439,10 @@ mod tests {
         assert!(
             data.output_buffer.capacity() >= OUTPUT_BUFFER_CAP + MAX_QUANTUM + RNNOISE_FRAME_SIZE,
             "output capacity below the cap plus one delivery and its carried frame"
+        );
+        assert!(
+            data.input_buffer.is_empty() && data.output_buffer.is_empty(),
+            "pre-faulting must leave the rings empty, not full of fill values"
         );
     }
 

@@ -82,7 +82,7 @@ Settings persist to `$XDG_CONFIG_HOME/spectral/state.toml`; voice-test recording
 
 ## Threading and real-time constraints
 
-The real-time audio path takes **no locks and makes no allocations**. Stages allocate their buffers in `new` and reuse them; settings reach the audio thread through atomics. Any change to `process_frame` or a stage's `process` must preserve this.
+The real-time audio path takes **no locks and makes no allocations**. Stages allocate their buffers in `new` and reuse them, and a buffer large enough to be mmap-backed is also written to its full capacity there, so the RT thread never takes a first-touch page fault on memory that was merely reserved; settings reach the audio thread through atomics. Any change to `process_frame` or a stage's `process` must preserve this.
 
 Handle structs that own a thread are named `Native*` and follow one lifecycle (`NativeRecorder` is the reference implementation): a `running: Arc<AtomicBool>` flag, a `failure: Arc<Mutex<Option<String>>>` slot, and an `Option<JoinHandle<()>>`. `start()` blocks on an mpsc ready-handshake so callers know the thread is live; `stop()` clears the flag and joins; `Drop` calls `stop()`. Thread bodies are named `run_*`.
 
