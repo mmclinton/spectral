@@ -15,6 +15,7 @@ use pipewire::spa::{
 use pipewire::{
     context::ContextBox,
     link::Link,
+    loop_::Loop,
     main_loop::MainLoopBox,
     node::Node,
     properties::properties,
@@ -215,6 +216,27 @@ impl ReattachState {
             REATTACH_RETRY_INTERVAL.saturating_sub(now.duration_since(last))
         });
         Some(deadline.min(retry))
+    }
+}
+
+/// Runs one iteration of `loop_`, turning the negative errno it returns on
+/// failure into an error the audio loops can report.
+///
+/// `EINTR` is not one of those. `epoll_wait` is never restarted by
+/// `SA_RESTART` (signal(7)), so a signal the daemon handles interrupts
+/// whichever of its loops happens to be waiting, saying nothing about the
+/// graph; PipeWire's own run loop retries rather than reporting it. Nothing
+/// was dispatched in that case, so the caller simply re-reads state that has
+/// not moved.
+pub(crate) fn iterate_once(loop_: &Loop, timeout: Duration) -> Result<(), std::io::Error> {
+    let res = loop_.iterate(timeout);
+    if res >= 0 {
+        return Ok(());
+    }
+    let err = std::io::Error::from_raw_os_error(-res);
+    match err.kind() {
+        std::io::ErrorKind::Interrupted => Ok(()),
+        _ => Err(err),
     }
 }
 
@@ -945,16 +967,8 @@ fn run_pipeline(
                 capture.is_some(),
             )
             .map_or(LOOP_WAKE_BACKSTOP, |wait| wait.min(LOOP_WAKE_BACKSTOP));
-        let res = mainloop.loop_().iterate(whole_millis_up(timeout));
-        if res < 0 {
-            let errno = -res;
-            // A signal or a ptrace attach interrupts the wait without
-            // meaning anything about the graph; PipeWire's own run loop
-            // retries the same way.
-            if std::io::Error::from_raw_os_error(errno).kind() == std::io::ErrorKind::Interrupted {
-                continue;
-            }
-            record_failure(failure, format!("main loop iterate failed: errno {errno}"));
+        if let Err(e) = iterate_once(mainloop.loop_(), whole_millis_up(timeout)) {
+            record_failure(failure, format!("main loop iterate failed: {e}"));
             break;
         }
         // The stop wake arrives as an ordinary iteration, so without this the
