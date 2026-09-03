@@ -15,7 +15,7 @@
 //! the graph delivers, with no i16 round-trip.
 
 use super::pipewire::{
-    PIPELINE_READY_TIMEOUT, SAMPLE_RATE, build_audio_format_pod, unsupported_encoding,
+    PIPELINE_READY_TIMEOUT, SAMPLE_RATE, build_audio_format_pod, iterate_once, unsupported_encoding,
 };
 use crate::state::lock_or_recover;
 use pipewire::spa::{
@@ -462,9 +462,8 @@ fn run_recorder(
 
     let mut ready_sent = false;
     while running.load(Ordering::SeqCst) {
-        let res = mainloop.loop_().iterate(Duration::from_millis(10));
-        if res < 0 {
-            record_failure(failure, format!("main loop iterate failed: errno {}", -res));
+        if let Err(e) = iterate_once(mainloop.loop_(), Duration::from_millis(10)) {
+            record_failure(failure, format!("main loop iterate failed: {e}"));
             break;
         }
         if lock_or_recover(failure).is_some() {
@@ -812,10 +811,13 @@ fn run_player(
     )?;
 
     let mut ready_sent = false;
+    // Polls where the pipeline loop blocks: RT_PROCESS puts the process
+    // callback on the data thread, so the `eof` it sets reaches this loop
+    // through no event and the poll interval is what bounds how long a
+    // finished clip keeps the player thread alive.
     while running.load(Ordering::SeqCst) {
-        let res = mainloop.loop_().iterate(Duration::from_millis(10));
-        if res < 0 {
-            record_failure(failure, format!("main loop iterate failed: errno {}", -res));
+        if let Err(e) = iterate_once(mainloop.loop_(), Duration::from_millis(10)) {
+            record_failure(failure, format!("main loop iterate failed: {e}"));
             break;
         }
         if lock_or_recover(failure).is_some() {

@@ -11,6 +11,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Completions for the fish shell, covering the commands and every flag. `--device` completes to the input devices currently on your system, listed with their names, so there is no need to run `spectral devices` first and copy an id; `--rumble-filter` and `--auto-level` complete to `on` and `off`. The Nix package installs both the page and the completions for you; the Flatpak does not, since Flatpak exports neither to the host and its command is named `page.codeberg.mmc.Spectral`.
 - A mistyped command or flag now suggests what you probably meant: `spectral enalbe` answers with "did you mean 'enable'?" instead of only saying the word was not recognized. Nothing is suggested when no command is close enough for the guess to be worth making.
 
+### Changed
+- The daemon's pipeline thread no longer wakes a hundred times a second just to keep the microphone on. It used to poll for a stop request every 10 ms; it now sleeps until something happens, which lets a laptop's CPU rest properly between audio callbacks. Nothing about the audio changes.
+
 ### Fixed
 - The audio thread no longer takes page faults during the first second after enabling the mic. Its staging buffers were reserved but not yet touched, so the kernel mapped them in on the first audio callbacks; they are now written in full before the pipeline starts.
 - An input device that reports an empty name to PipeWire is now listed as "Unknown" rather than with a blank name. It appeared in the device list and in `spectral devices` as a nameless row, which was easy to mistake for a broken listing.

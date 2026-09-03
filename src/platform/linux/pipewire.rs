@@ -15,6 +15,7 @@ use pipewire::spa::{
 use pipewire::{
     context::ContextBox,
     link::Link,
+    loop_::Loop,
     main_loop::MainLoopBox,
     node::Node,
     properties::properties,
@@ -81,6 +82,16 @@ const RECONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 /// appear in the registry a moment before it can actually be connected, so
 /// attempts have to be cheap to repeat without becoming a spin.
 const REATTACH_RETRY_INTERVAL: Duration = Duration::from_millis(500);
+
+/// Longest the pipeline loop blocks, whatever else it has scheduled. Stop
+/// and every failure arrive as loop events, so this is not a tick the loop
+/// depends on. It is finite because `iterate` takes a `Duration` and the
+/// C API's "forever" is unreachable through it; one wakeup a second is
+/// the price. Everything that cannot deliver a wake is bounded by this and
+/// nothing else: a send that fails, a thread orphaned by a `start()` that
+/// timed out, and a future change that records a failure from off the
+/// pipeline thread, which nothing does today.
+const LOOP_WAKE_BACKSTOP: Duration = Duration::from_secs(1);
 
 /// `-ENOENT`, which PipeWire reports for a `target.object` that is not there.
 const TARGET_MISSING: i32 = -2;
@@ -177,6 +188,70 @@ impl ReattachState {
         } else {
             Reattach::Waiting
         }
+    }
+
+    /// How long the loop may block before this state has something timed
+    /// to do: `None` while attached, otherwise the time to the give-up
+    /// deadline, shortened to the next retry only when `step` would
+    /// actually issue one. Takes the same inputs as `step` so the two
+    /// cannot disagree: while the target is absent or an attempt is in
+    /// flight, `step` withholds the retry without touching `last_attempt`,
+    /// and counting the interval down anyway would hand the loop a zero
+    /// timeout on every pass — a busy spin for the rest of the window.
+    /// The target arriving and the stream going live are loop events, so
+    /// nothing timed is missed by waiting for the deadline alone there.
+    /// Waking early is harmless — `step` derives everything from `now`.
+    fn wait_for(
+        &self,
+        now: Instant,
+        target_present: bool,
+        attempt_in_flight: bool,
+    ) -> Option<Duration> {
+        let since = self.detached_since?;
+        let deadline = RECONNECT_TIMEOUT.saturating_sub(now.duration_since(since));
+        if !target_present || attempt_in_flight {
+            return Some(deadline);
+        }
+        let retry = self.last_attempt.map_or(Duration::ZERO, |last| {
+            REATTACH_RETRY_INTERVAL.saturating_sub(now.duration_since(last))
+        });
+        Some(deadline.min(retry))
+    }
+}
+
+/// Runs one iteration of `loop_`, turning the negative errno it returns on
+/// failure into an error the audio loops can report.
+///
+/// `EINTR` is not one of those. `epoll_wait` is never restarted by
+/// `SA_RESTART` (signal(7)), so a signal the daemon handles interrupts
+/// whichever of its loops happens to be waiting, saying nothing about the
+/// graph; PipeWire's own run loop retries rather than reporting it. Nothing
+/// was dispatched in that case, so the caller simply re-reads state that has
+/// not moved.
+pub(crate) fn iterate_once(loop_: &Loop, timeout: Duration) -> Result<(), std::io::Error> {
+    let res = loop_.iterate(timeout);
+    if res >= 0 {
+        return Ok(());
+    }
+    let err = std::io::Error::from_raw_os_error(-res);
+    match err.kind() {
+        std::io::ErrorKind::Interrupted => Ok(()),
+        _ => Err(err),
+    }
+}
+
+/// `Loop::iterate` truncates its timeout to whole milliseconds, so a
+/// remainder under one would become a zero timeout and spin until the
+/// boundary passes. Rounding up oversleeps by less than a millisecond,
+/// which `step` absorbs.
+fn whole_millis_up(d: Duration) -> Duration {
+    let sub = d.subsec_nanos() % 1_000_000;
+    if sub == 0 {
+        d
+    } else {
+        // Saturating rather than `+`: the callers stay far below the
+        // ceiling, but a rounding helper is no place to find that out.
+        d.saturating_add(Duration::from_nanos(u64::from(1_000_000 - sub)))
     }
 }
 
@@ -308,6 +383,10 @@ pub struct NativeAudioPipeline {
     running: Arc<AtomicBool>,
     failure: Arc<Mutex<Option<String>>>,
     detached: Arc<AtomicBool>,
+    /// Wakes the loop so it re-reads `running`; the message itself carries
+    /// nothing. The crate's channel is its cross-thread wake — a loop event
+    /// source borrows the loop and cannot leave the thread.
+    wake: pipewire::channel::Sender<()>,
     pipeline_thread: Option<JoinHandle<()>>,
 }
 
@@ -340,6 +419,15 @@ pub(super) fn unsupported_encoding(info: &AudioInfoRaw) -> Option<String> {
     None
 }
 
+/// What a panicking thread carried, for the two payload types `panic!`
+/// produces. Anything else joined says only that the thread died.
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> Option<&str> {
+    payload
+        .downcast_ref::<&'static str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+}
+
 /// First error wins: later failures are usually cascades of the first.
 fn record_failure(slot: &Mutex<Option<String>>, msg: String) {
     let mut guard = lock_or_recover(slot);
@@ -368,7 +456,10 @@ impl NativeAudioPipeline {
         };
         let source_node = source_node.to_string();
         let virtual_name = virtual_name.to_string();
-        let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
+        // Ready hands back the loop's wake sender: the channel is created
+        // on the pipeline thread, beside the loop it wakes, so its pipe
+        // creation cannot take down this thread.
+        let (ready_tx, ready_rx) = mpsc::channel::<Result<pipewire::channel::Sender<()>, String>>();
 
         let pipeline_thread = thread::spawn(move || {
             if let Err(e) = run_pipeline(
@@ -386,18 +477,38 @@ impl NativeAudioPipeline {
         });
 
         match ready_rx.recv_timeout(PIPELINE_READY_TIMEOUT) {
-            Ok(Ok(())) => Ok(Self {
+            Ok(Ok(wake)) => Ok(Self {
                 running,
                 failure,
                 detached,
+                wake,
                 pipeline_thread: Some(pipeline_thread),
             }),
             Ok(Err(e)) => {
                 let _ = pipeline_thread.join();
                 Err(format!("Pipeline setup failed: {e}").into())
             }
-            Err(_) => {
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                // Nothing waited: the sender was dropped unsent, and
+                // `run_pipeline` reports on every path it returns from, so the
+                // thread died carrying its reason in a panic instead. It has
+                // therefore already finished, which makes the join that would
+                // be reckless below safe here and turns a bare "did not become
+                // ready" into the reason.
+                running.store(false, Ordering::SeqCst);
+                let why = match pipeline_thread.join() {
+                    Err(payload) => match panic_message(&*payload) {
+                        Some(msg) => format!("the pipeline thread panicked: {msg}"),
+                        None => "the pipeline thread panicked".to_string(),
+                    },
+                    Ok(()) => "the pipeline thread stopped without reporting".to_string(),
+                };
+                Err(format!("Pipeline setup failed: {why}").into())
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
                 // Don't join: a wedged setup thread would hang the daemon.
+                // No wake sender yet either; a thread that does reach its
+                // loop reads the flag within LOOP_WAKE_BACKSTOP and exits.
                 running.store(false, Ordering::SeqCst);
                 Err(
                     format!("Pipeline did not become ready within {PIPELINE_READY_TIMEOUT:?}")
@@ -411,6 +522,11 @@ impl NativeAudioPipeline {
     /// a no-op.
     pub fn stop(&mut self) {
         self.running.store(false, Ordering::SeqCst);
+        // Flag first, then wake, so the loop cannot drain the wake and
+        // still read a stale `true`. The result is ignored: the join
+        // settles the thread either way, and a wake that did fail only
+        // delays it by LOOP_WAKE_BACKSTOP.
+        let _ = self.wake.send(());
 
         if let Some(handle) = self.pipeline_thread.take()
             && handle.join().is_err()
@@ -652,7 +768,7 @@ fn run_pipeline(
     source_node: &str,
     virtual_name: &str,
     input_channels: u32,
-    ready_tx: &mpsc::Sender<Result<(), String>>,
+    ready_tx: &mpsc::Sender<Result<pipewire::channel::Sender<()>, String>>,
     handles: &PipelineHandles,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let PipelineHandles {
@@ -664,6 +780,10 @@ fn run_pipeline(
     pipewire::init();
 
     let mainloop = MainLoopBox::new(None)?;
+    // Binding the attached receiver is load-bearing: dropping it detaches the
+    // source from the loop, and every send would then reach nothing.
+    let (wake, wake_rx) = pipewire::channel::channel::<()>();
+    let _wake = wake_rx.attach(mainloop.loop_(), |()| {});
     let context = ContextBox::new(mainloop.loop_(), None)?;
     let core = context.connect(Some(super::manager_client_properties()))?;
 
@@ -863,12 +983,28 @@ fn run_pipeline(
     let mut ready_sent = false;
 
     while running.load(Ordering::SeqCst) {
-        let res = mainloop
-            .loop_()
-            .iterate(std::time::Duration::from_millis(10));
-        if res < 0 {
-            let errno = -res;
-            record_failure(failure, format!("main loop iterate failed: errno {errno}"));
+        // Blocks until an event: stop and every failure arrive as one, so
+        // the only timed work is the reconnect window's own schedule. The
+        // backstop caps that schedule rather than merely standing in for it,
+        // because the window's next deadline can be the whole RECONNECT_TIMEOUT
+        // away and a loop nobody can wake has to notice `running` regardless.
+        let timeout = reattach
+            .wait_for(
+                Instant::now(),
+                target_node_id.get().is_some(),
+                capture.is_some(),
+            )
+            .map_or(LOOP_WAKE_BACKSTOP, |wait| wait.min(LOOP_WAKE_BACKSTOP));
+        if let Err(e) = iterate_once(mainloop.loop_(), whole_millis_up(timeout)) {
+            record_failure(failure, format!("main loop iterate failed: {e}"));
+            break;
+        }
+        // The stop wake arrives as an ordinary iteration, so without this the
+        // body below still runs once: a due retry would build and connect a
+        // capture stream the teardown two statements later throws away, and
+        // that server round trip lands inside a join the daemon performs
+        // while holding the virtual-mic lock.
+        if !running.load(Ordering::SeqCst) {
             break;
         }
         // Classified here rather than in the callback, which cannot see what
@@ -985,7 +1121,7 @@ fn run_pipeline(
 
         if !ready_sent && feed_link.is_some() && ready.capture.get() && ready.feed.get() {
             ready_sent = true;
-            let _ = ready_tx.send(Ok(()));
+            let _ = ready_tx.send(Ok(wake.clone()));
         }
     }
 
@@ -1371,6 +1507,110 @@ mod tests {
         state.detach(at(base, 100));
         assert_eq!(state.step(at(base, 120), false, false), Reattach::Waiting);
         assert_eq!(state.step(at(base, 130), false, false), Reattach::GiveUp);
+    }
+
+    /// An attached pipeline has nothing timed to do, so it must not name a
+    /// deadline at all — the loop then sleeps for the whole backstop.
+    #[test]
+    fn an_attached_state_has_no_deadline() {
+        let mut state = ReattachState::default();
+        assert_eq!(state.wait_for(Instant::now(), true, false), None);
+        state.detach(Instant::now());
+        state.attach();
+        assert_eq!(state.wait_for(Instant::now(), true, true), None);
+    }
+
+    /// While a retry is possible the wait is whichever comes first: the
+    /// next retry or the give-up deadline. Waking early is harmless,
+    /// sleeping past either is not.
+    #[test]
+    fn a_retryable_state_wakes_for_the_earlier_of_retry_and_deadline() {
+        let base = Instant::now();
+        let mut state = ReattachState::default();
+        state.detach(base);
+
+        // Target present, no attempt yet: `step` retries now, so no wait.
+        assert_eq!(state.wait_for(base, true, false), Some(Duration::ZERO));
+
+        // The attempt failed outright (no stream left): the throttle is
+        // all that holds the next one, so only the interval's remainder.
+        assert_eq!(state.step(base, true, false), Reattach::Retry);
+        assert_eq!(
+            state.wait_for(base + Duration::from_millis(100), true, false),
+            Some(REATTACH_RETRY_INTERVAL - Duration::from_millis(100))
+        );
+        assert_eq!(
+            state.wait_for(base + REATTACH_RETRY_INTERVAL, true, false),
+            Some(Duration::ZERO)
+        );
+
+        // Near the deadline the window remainder is shorter than a fresh
+        // retry interval, so the deadline wins.
+        let late = base + RECONNECT_TIMEOUT - Duration::from_millis(50);
+        assert_eq!(
+            state.step(late - Duration::from_millis(10), true, false),
+            Reattach::Retry
+        );
+        assert_eq!(
+            state.wait_for(late, true, false),
+            Some(Duration::from_millis(50))
+        );
+
+        // Past the deadline: due now, so `step` can report GiveUp.
+        assert_eq!(
+            state.wait_for(at(base, 31), true, false),
+            Some(Duration::ZERO)
+        );
+    }
+
+    /// `step` withholds the retry while the target is absent or an attempt
+    /// is still negotiating, and leaves `last_attempt` alone while it does.
+    /// Counting the interval down regardless would hand the loop a zero
+    /// timeout every pass — a busy spin for the rest of the window. Only
+    /// the deadline is timed there; the target arriving and the stream
+    /// going live are events.
+    #[test]
+    fn a_withheld_retry_waits_for_the_deadline_not_the_interval() {
+        let base = Instant::now();
+        let mut state = ReattachState::default();
+        state.detach(base);
+
+        // Target absent, nothing tried: only the window is timed.
+        assert_eq!(state.wait_for(base, false, false), Some(RECONNECT_TIMEOUT));
+
+        // An attempt that is still connecting well past the interval.
+        assert_eq!(state.step(base, true, false), Reattach::Retry);
+        for secs in [1, 2, 5, 10] {
+            assert_eq!(
+                state.wait_for(at(base, secs), true, true),
+                Some(RECONNECT_TIMEOUT - Duration::from_secs(secs)),
+                "an in-flight attempt scheduled a wake after {secs}s"
+            );
+        }
+
+        // The target vanished again after that attempt: same rule.
+        assert_eq!(
+            state.wait_for(at(base, 5), false, false),
+            Some(RECONNECT_TIMEOUT - Duration::from_secs(5))
+        );
+    }
+
+    /// `Loop::iterate` truncates to whole milliseconds, so a sub-millisecond
+    /// remainder must round up rather than become a zero-timeout spin.
+    #[test]
+    fn a_sub_millisecond_wait_rounds_up_to_one() {
+        let cases = [
+            (Duration::ZERO, Duration::ZERO),
+            (Duration::from_micros(700), Duration::from_millis(1)),
+            (Duration::from_millis(50), Duration::from_millis(50)),
+            (Duration::from_micros(499_300), Duration::from_millis(500)),
+            (Duration::from_nanos(1_000_001), Duration::from_millis(2)),
+            // Nothing to round up into: the helper stays total.
+            (Duration::MAX, Duration::MAX),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(whole_millis_up(input), expected, "{input:?}");
+        }
     }
 
     /// Both process callbacks decode with a compiled-in width and rate, so
