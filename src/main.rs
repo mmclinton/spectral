@@ -1512,4 +1512,118 @@ mod tests {
             }
         }
     }
+
+    /// That a button's label looks vertically centered in it.
+    ///
+    /// Slint sizes a `Text` to the font's whole line box and centers that
+    /// box, but the ink of one line does not sit in the middle of its line
+    /// box: the descender space is reserved whether or not the word uses
+    /// it, and the layout rounds ascent and descent to whole pixels
+    /// separately before splitting the remainder. Nothing about that is
+    /// visible from the markup, so the label's offset is only knowable by
+    /// rendering it and looking at where the pixels landed.
+    mod button_label {
+        use slint::PhysicalSize;
+        use slint::platform::software_renderer::{
+            MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType,
+        };
+        use slint::platform::{PlatformError, WindowAdapter};
+        use std::rc::Rc;
+
+        slint::slint! {
+            import { AppButton } from "../ui/controls.slint";
+            import "../ui/fonts/IosevkaAile-Regular.ttf";
+            import "../ui/fonts/IosevkaAile-Medium.ttf";
+            import "../ui/fonts/IosevkaAile-SemiBold.ttf";
+            import "../ui/fonts/IosevkaAile-Bold.ttf";
+            import "../ui/fonts/IosevkaAile-Italic.ttf";
+            import "../ui/fonts/IosevkaAile-BoldItalic.ttf";
+
+            export component ButtonUnderTest inherits Window {
+                in property <string> body;
+
+                default-font-family: "Iosevka Aile";
+                width: 300px;
+                height: 120px;
+                // Black ground and a filled button, so the only red in the
+                // frame is the white label: coverage reads straight off it.
+                background: #000000;
+
+                button := AppButton {
+                    x: 40px;
+                    y: 40px;
+                    width: 160px;
+                    height: 32px;
+                    text: root.body;
+                    primary: true;
+                }
+
+                out property <length> button_y: button.y;
+                out property <length> button_height: button.height;
+            }
+        }
+
+        const W: usize = 300;
+        const H: usize = 120;
+
+        thread_local! {
+            static WINDOW: Rc<MinimalSoftwareWindow> =
+                MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+        }
+
+        struct OffscreenPlatform;
+
+        impl slint::platform::Platform for OffscreenPlatform {
+            fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
+                Ok(WINDOW.with(|w| w.clone()))
+            }
+        }
+
+        /// How far the label's ink rides above the button's center, in
+        /// pixels. Weighted by coverage, so antialiased edges count for
+        /// what they actually cover.
+        fn ink_above_center(ui: &ButtonUnderTest, window: &Rc<MinimalSoftwareWindow>) -> f64 {
+            window.request_redraw();
+            let mut buf = vec![PremultipliedRgbaColor::default(); W * H];
+            window.draw_if_needed(|renderer| {
+                renderer.render(buf.as_mut_slice(), W);
+            });
+
+            let mut mass = 0.0;
+            let mut moment = 0.0;
+            for row in 0..H {
+                let coverage: f64 = (0..W).map(|c| f64::from(buf[row * W + c].red)).sum();
+                mass += coverage;
+                moment += coverage * (row as f64 + 0.5);
+            }
+            assert!(mass > 0.0, "the label drew nothing");
+
+            let center = f64::from(ui.get_button_y() + ui.get_button_height() / 2.0);
+            center - moment / mass
+        }
+
+        #[test]
+        fn a_label_without_descenders_sits_on_the_button_center() {
+            slint::platform::set_platform(Box::new(OffscreenPlatform)).ok();
+            let window = WINDOW.with(|w| w.clone());
+            window.set_size(PhysicalSize::new(W as u32, H as u32));
+
+            let ui = ButtonUnderTest::new().unwrap();
+            ui.show().unwrap();
+
+            // The app's button labels that stay between the baseline and the
+            // cap line. A word with a descender legitimately carries ink
+            // below the baseline, which pulls its centroid down without
+            // looking off-center, so those are not measured this way.
+            for label in ["Rename", "Reset", "Enable", "Disable"] {
+                ui.set_body(label.into());
+                let offset = ink_above_center(&ui, &window);
+                assert!(
+                    offset.abs() <= 0.5,
+                    "{label:?} sits {offset:+.2}px off the button center; the label \
+                     needs its line box re-centered in controls.slint"
+                );
+            }
+        }
+    }
 }
