@@ -18,14 +18,30 @@
 # Rerun after bumping VERSION below, then commit ui/fonts/ and update the
 # Iosevka entry in THIRD-PARTY.md.
 #
-#     nix shell nixpkgs#python3Packages.fonttools -c ./packaging/subset-fonts.sh
+#     ./packaging/subset-fonts.sh
 #
-# Run from anywhere inside the repository. Needs pyftsubset (fonttools),
-# curl, unzip, and sha256sum on PATH.
+# Run from anywhere inside the repository.
 
 set -euo pipefail
 
 die() { echo "subset-fonts: $*" >&2; exit 1; }
+
+# The subsetter and the unpacker exist for this script alone, so they are
+# fetched on demand rather than carried in the dev shell for a file
+# regenerated about once a year. Re-exec instead of wrapping each call:
+# every step below has to run against the same environment, and one
+# invocation is one evaluation.
+if [[ -z "${SUBSET_FONTS_TOOLING:-}" ]]; then
+    self=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/$(basename -- "${BASH_SOURCE[0]}")
+    command -v nix >/dev/null || die "nix is not on PATH; it supplies pyftsubset and unzip"
+    export SUBSET_FONTS_TOOLING=1
+    exec nix shell \
+        nixpkgs#python3Packages.fonttools \
+        nixpkgs#unzip \
+        nixpkgs#curl \
+        nixpkgs#git \
+        --command "$self" "$@"
+fi
 
 VERSION=34.3.0
 ARCHIVE="PkgTTF-Unhinted-IosevkaAile-$VERSION.zip"
@@ -40,7 +56,7 @@ FACES=(Regular Bold Italic)
 # Mathematical Operators, the diameter sign, Box Drawing, Geometric Shapes.
 UNICODES="U+0000-017F,U+2000-206F,U+2190-21FF,U+2200-22FF,U+2300,U+2500-257F,U+25A0-25FF"
 
-for tool in pyftsubset curl unzip sha256sum; do
+for tool in pyftsubset curl unzip sha256sum git; do
     command -v "$tool" >/dev/null || die "$tool is not on PATH"
 done
 
