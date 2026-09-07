@@ -9,10 +9,9 @@ export component HelpPopup inherits ModalPopup {
     title: "Help";
 
     VerticalLayout {
-        // Cards size to their wrapped text (no fixed heights: font
-        // metrics follow the user's monospace family); start keeps
-        // surplus vertical space below them instead of inflating
-        // each card equally.
+        // Cards size to their own wrapped text, which follows the modal's
+        // width; start keeps surplus vertical space below them instead of
+        // inflating each card equally.
         alignment: start;
         spacing: 16px;
         padding: 10px;

@@ -1,13 +1,10 @@
 // Button icons drawn as outlines rather than typed as characters.
 //
 // Slint positions a Text by its font's line box, not by the ink the glyph
-// puts on screen, so a character used as an icon lands wherever that face's
+// puts on screen, so a character used as an icon lands wherever the face's
 // ascent, descent and side bearings happen to put it — off-center by a
-// pixel or three, in a direction that changes with the resolved monospace
-// family. Worse for a character the family lacks (Berkeley Mono has no
-// U+2715): the fallback face picks the offset, and nothing here can predict
-// which face that is. An outline is measured against the element's own box,
-// so it centers exactly whatever font the user has.
+// pixel or three, and by a different amount for each glyph. An outline is
+// measured against the element's own box, so it centers exactly.
 
 // Playback toggle: the stop square while playing, the play triangle otherwise.
 export component PlayStopIcon inherits Path {
