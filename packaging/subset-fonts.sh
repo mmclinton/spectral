@@ -61,6 +61,13 @@ for tool in pyftsubset curl unzip sha256sum git; do
 done
 
 cd "$(git rev-parse --show-toplevel)"
+
+# A font bump moves no lockfile, so the release checklist's THIRD-PARTY.md
+# reconcile never fires for one. Checked here instead, before anything is
+# written: a notice that names the wrong version is worse than none.
+grep -q "^## Iosevka Aile $VERSION " THIRD-PARTY.md \
+    || die "THIRD-PARTY.md does not name Iosevka Aile $VERSION; update its entry first"
+
 out=ui/fonts
 mkdir -p "$out"
 
