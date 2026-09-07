@@ -1459,7 +1459,8 @@ mod tests {
 
             // Every combination the .slint files name: 400 as the window
             // default, 500 on the selected device row, 600 on button labels,
-            // 700 on headings and links, and the two italic links.
+            // 700 on headings and links, and italic at 700 on the one
+            // italic link and at 400 on the device-help tip.
             for (style, weight) in [
                 (FontStyle::Normal, 400.0),
                 (FontStyle::Normal, 500.0),
@@ -1505,7 +1506,7 @@ mod tests {
                     assert!(
                         charmap.map(c).is_some(),
                         "{face} has no glyph for U+{:04X} {c:?}; widen UNICODES in the \
-                         subsetting script or stop drawing it",
+                         subsetting script or stop using it in the markup",
                         c as u32
                     );
                 }
@@ -1604,6 +1605,7 @@ mod tests {
 
         #[test]
         fn a_label_without_descenders_sits_on_the_button_center() {
+            // Already set when another test in this process installed it first.
             slint::platform::set_platform(Box::new(OffscreenPlatform)).ok();
             let window = WINDOW.with(|w| w.clone());
             window.set_size(PhysicalSize::new(W as u32, H as u32));

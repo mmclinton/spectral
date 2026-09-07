@@ -11,9 +11,9 @@ import { HelpPopup } from "help-popup.slint";
 import { ErrorPopup } from "error-popup.slint";
 
 // Embedded so every install renders the same face; packaging/subset-fonts.sh
-// regenerates these from upstream. One file per weight and style used
-// below: Slint answers a request it cannot satisfy with the nearest face
-// it holds rather than synthesizing one.
+// regenerates these from upstream. One file per weight and style the
+// interface uses: Slint answers a request it cannot satisfy with the
+// nearest face it holds rather than synthesizing one.
 import "fonts/IosevkaAile-Regular.ttf";
 import "fonts/IosevkaAile-Medium.ttf";
 import "fonts/IosevkaAile-SemiBold.ttf";
