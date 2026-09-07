@@ -5,8 +5,8 @@
 # same face, but a stock Iosevka file is about 6 MB because it covers
 # thousands of glyphs the interface never draws. This script cuts each face
 # down to the blocks the UI actually uses (Latin plus the punctuation,
-# arrow, math, box-drawing, and geometric-shape blocks the .slint text
-# reaches for), which lands under 100 KB per face. Text outside those
+# arrow, math, and geometric-shape blocks the .slint text reaches for),
+# which lands under 100 KB per face. Text outside those
 # blocks, such as a device name in another script, is drawn by whatever
 # system font can supply the glyph.
 #
@@ -56,8 +56,8 @@ SHA256=258f16de26cfeb539daebf0ecc374dd90cf5eea9afe3163dafc40cd551315dbc
 FACES=(Regular Bold Italic BoldItalic Medium SemiBold)
 
 # Basic Latin and Latin-1, Latin Extended-A, General Punctuation, Arrows,
-# Mathematical Operators, the diameter sign, Box Drawing, Geometric Shapes.
-UNICODES="U+0000-017F,U+2000-206F,U+2190-21FF,U+2200-22FF,U+2300,U+2500-257F,U+25A0-25FF"
+# Mathematical Operators, the diameter sign, Geometric Shapes.
+UNICODES="U+0000-017F,U+2000-206F,U+2190-21FF,U+2200-22FF,U+2300,U+25A0-25FF"
 
 for tool in pyftsubset curl unzip sha256sum git; do
     command -v "$tool" >/dev/null || die "$tool is not on PATH"
