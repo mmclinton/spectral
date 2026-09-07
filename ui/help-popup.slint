@@ -3,6 +3,7 @@
 
 import { Theme } from "theme.slint";
 import { ModalPopup } from "modal-popup.slint";
+import { ThresholdScale } from "threshold-scale.slint";
 
 export component HelpPopup inherits ModalPopup {
     title: "Help";
@@ -66,11 +67,14 @@ export component HelpPopup inherits ModalPopup {
                     wrap: word-wrap;
                 }
 
+                ThresholdScale { }
+
                 Text {
-                    text: "0%          25%          50%          75%         100%\n●────────────┼────────────●────────────┼────────────●\noff                    default                 strict\n(denoise only) ← opens easily · demands clear voice →";
+                    text: "← opens easily · demands clear voice →";
                     font-size: Theme.font_body;
-                    color: Theme.text_primary;
-                    wrap: no-wrap;
+                    color: Theme.text_muted;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
                 }
             }
         }
