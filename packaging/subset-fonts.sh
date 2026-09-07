@@ -48,9 +48,12 @@ ARCHIVE="PkgTTF-Unhinted-IosevkaAile-$VERSION.zip"
 URL="https://github.com/be5invis/Iosevka/releases/download/v$VERSION/$ARCHIVE"
 SHA256=258f16de26cfeb539daebf0ecc374dd90cf5eea9afe3163dafc40cd551315dbc
 
-# Regular, Bold, and Italic are the only faces the interface asks for. The
-# two intermediate weights it names once each fall to the nearest of these.
-FACES=(Regular Bold Italic)
+# Every weight and style the .slint files ask for. A request Slint cannot
+# satisfy exactly is answered with the nearest face in the family and never
+# with a synthesized one, so a face missing here is not a fallback but a
+# silently wrong render: 500 arrives as Regular, 600 as Bold, and an italic
+# link loses its weight entirely because style is matched before weight.
+FACES=(Regular Bold Italic BoldItalic Medium SemiBold)
 
 # Basic Latin and Latin-1, Latin Extended-A, General Punctuation, Arrows,
 # Mathematical Operators, the diameter sign, Box Drawing, Geometric Shapes.
@@ -82,15 +85,18 @@ echo "$SHA256  $work/$ARCHIVE" | sha256sum -c --quiet \
 for face in "${FACES[@]}"; do
     src="IosevkaAile-$face.ttf"
     unzip -q -o "$work/$ARCHIVE" "$src" -d "$work"
-    # The subsetter keeps name IDs 0-6 and drops the rest, which loses the
-    # OFL notice (13) and the license URL (14). THIRD-PARTY.md carries both
-    # for the binary, but a font file that leaves the tree on its own
-    # should still say what it is licensed under.
+    # The subsetter keeps name IDs 0-6 and drops the rest. 13 and 14 are the
+    # OFL notice and the license URL: THIRD-PARTY.md carries both for the
+    # binary, but a font file that leaves the tree on its own should still
+    # say what it is licensed under. 16 is the typographic family, and it is
+    # load-bearing here — Medium and Semibold spell name ID 1 "Iosevka Aile
+    # Medium" and "Iosevka Aile Semibold", so only 16 puts them in the
+    # family the interface names. 17 keeps the matching subfamily.
     pyftsubset "$work/$src" \
         --unicodes="$UNICODES" \
         --layout-features='' \
         --no-hinting \
-        --name-IDs+=13,14 \
+        --name-IDs+=13,14,16,17 \
         --output-file="$out/$src"
     printf '%s: %d KB\n' "$out/$src" "$(( $(stat -c %s "$out/$src") / 1024 ))"
 done

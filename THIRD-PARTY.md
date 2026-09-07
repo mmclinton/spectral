@@ -128,7 +128,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## Iosevka Aile 34.3.0 — OFL-1.1
 
-The interface font, embedded in the `spectral` binary as three faces (Regular, Bold, Italic) under `ui/fonts/`. Each is a subset of the upstream unhinted release cut down to the character blocks the interface draws; `packaging/subset-fonts.sh` is the exact recipe. Iosevka declares no Reserved Font Name, so the subsets keep the family name. The OFL asks that the license text travel with the font, which the notice below does.
+The interface font, embedded in the `spectral` binary as six faces (Regular, Medium, Semibold, Bold, Italic, Bold Italic) under `ui/fonts/`. Each is a subset of the upstream unhinted release cut down to the character blocks the interface draws; `packaging/subset-fonts.sh` is the exact recipe. Iosevka declares no Reserved Font Name, so the subsets keep the family name. The OFL asks that the license text travel with the font, which the notice below does.
 
 - <https://github.com/be5invis/Iosevka>
 
