@@ -6,7 +6,6 @@
 mod cli;
 mod daemon_launch;
 mod diagnostics;
-mod fonts;
 
 use spectral_lib::platform::audio_devices;
 use spectral_lib::platform::ipc::{
@@ -432,10 +431,6 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     // without an app_id so the desktop file (and taskbar icon) can't be matched.
     if let Err(e) = slint::set_xdg_app_id("page.codeberg.mmc.Spectral") {
         eprintln!("warning: failed to set xdg app id (taskbar icon may be generic): {e}");
-    }
-    match fonts::preferred_monospace_family() {
-        Some(family) => ui.set_monospace_font_family(family.into()),
-        None => eprintln!("warning: no monospaced font found; columns may not align"),
     }
     let ui_weak = ui.as_weak();
 

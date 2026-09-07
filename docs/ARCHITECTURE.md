@@ -63,7 +63,6 @@ While the window is open the pipeline's `detached` atomic surfaces as `DaemonSta
 | `src/state.rs` | `AppState` (the daemon's shared state), `AudioDevice`, the `Status` lifecycle enum, mic-name validation, and `lock_or_recover`. |
 | `src/main.rs` | Slint GUI. UI in `ui/`, where `app-window.slint` composes the app bar, threshold band, cards, footer and popups against the shared `theme.slint`; compiled by `build.rs` and bound via `slint::include_modules!()` in the `generated_ui` module (see below). |
 | `src/cli.rs` | Headless subcommand parsing and execution. Bare `spectral` launches the GUI. |
-| `src/fonts.rs` | Resolves the user's preferred monospaced family, which Slint cannot ask for itself. |
 | `src/daemon_launch.rs` | Spawning the daemon and bootstrapping a connection; shared by the GUI and CLI. |
 | `src/diagnostics.rs` | Renders the bug-report dump behind the GUI's error details modal, from in-process state only. |
 | `src/bin/spectral-daemon.rs` | Daemon main loop, connection handlers, and the lock-ordering convention. |

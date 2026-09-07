@@ -4509,7 +4509,6 @@ dependencies = [
 name = "spectral"
 version = "0.9.0"
 dependencies = [
- "fontique",
  "hound",
  "nnnoiseless",
  "pipewire",
