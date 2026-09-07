@@ -1386,4 +1386,130 @@ mod tests {
     fn a_resolved_daemon_error_is_re_cached_so_its_return_shows_again() {
         assert!(should_reconcile_daemon_error(None, Some("stale"), false));
     }
+
+    /// What the embedded faces owe the markup that asks for them.
+    ///
+    /// Neither half of the contract fails loudly on its own: a request Slint
+    /// cannot satisfy is answered with the nearest face rather than an error,
+    /// and a character no face covers is drawn by whichever system font has
+    /// it. Both come out as a render that is merely wrong, which is what a
+    /// bundled font exists to rule out.
+    mod embedded_font {
+        use fontique::{Blob, Collection, CollectionOptions, FontStyle, FontWeight, FontWidth};
+        use std::collections::BTreeSet;
+
+        /// The family name `app-window.slint` sets as `default-font-family`.
+        const FAMILY: &str = "Iosevka Aile";
+
+        const FACES: [(&str, &[u8]); 6] = [
+            (
+                "Regular",
+                include_bytes!("../ui/fonts/IosevkaAile-Regular.ttf"),
+            ),
+            (
+                "Medium",
+                include_bytes!("../ui/fonts/IosevkaAile-Medium.ttf"),
+            ),
+            (
+                "SemiBold",
+                include_bytes!("../ui/fonts/IosevkaAile-SemiBold.ttf"),
+            ),
+            ("Bold", include_bytes!("../ui/fonts/IosevkaAile-Bold.ttf")),
+            (
+                "Italic",
+                include_bytes!("../ui/fonts/IosevkaAile-Italic.ttf"),
+            ),
+            (
+                "BoldItalic",
+                include_bytes!("../ui/fonts/IosevkaAile-BoldItalic.ttf"),
+            ),
+        ];
+
+        fn empty_collection() -> Collection {
+            Collection::new(CollectionOptions {
+                shared: false,
+                system_fonts: false,
+            })
+        }
+
+        #[test]
+        fn every_face_registers_under_the_family_the_window_names() {
+            let mut collection = empty_collection();
+            for (_, data) in FACES {
+                collection.register_fonts(Blob::from(data.to_vec()), None);
+            }
+
+            let families: Vec<String> = collection.family_names().map(str::to_owned).collect();
+            assert_eq!(
+                families,
+                [FAMILY],
+                "the faces have to answer to one family name, not several"
+            );
+            let family = collection.family_by_name(FAMILY).unwrap();
+            assert_eq!(family.fonts().len(), FACES.len());
+        }
+
+        #[test]
+        fn every_weight_and_style_the_markup_asks_for_matches_a_face_exactly() {
+            let mut collection = empty_collection();
+            for (_, data) in FACES {
+                collection.register_fonts(Blob::from(data.to_vec()), None);
+            }
+            let family = collection.family_by_name(FAMILY).unwrap();
+
+            // Every combination the .slint files name: 400 as the window
+            // default, 500 on the selected device row, 600 on button labels,
+            // 700 on headings and links, and the two italic links.
+            for (style, weight) in [
+                (FontStyle::Normal, 400.0),
+                (FontStyle::Normal, 500.0),
+                (FontStyle::Normal, 600.0),
+                (FontStyle::Normal, 700.0),
+                (FontStyle::Italic, 400.0),
+                (FontStyle::Italic, 700.0),
+            ] {
+                let matched = family
+                    .match_font(FontWidth::NORMAL, style, FontWeight::new(weight), false)
+                    .unwrap_or_else(|| panic!("no face answers {style:?} at {weight}"));
+                assert_eq!(matched.style(), style, "style asked for {style:?} {weight}");
+                assert_eq!(
+                    matched.weight().value(),
+                    weight,
+                    "weight asked for {style:?} {weight}"
+                );
+            }
+        }
+
+        #[test]
+        fn every_character_the_markup_draws_is_in_every_face() {
+            let ui = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("ui");
+            let mut drawn: BTreeSet<char> = BTreeSet::new();
+            let mut sources = 0;
+            for entry in std::fs::read_dir(&ui).unwrap() {
+                let path = entry.unwrap().path();
+                if path.extension().is_none_or(|e| e != "slint") {
+                    continue;
+                }
+                sources += 1;
+                let markup = std::fs::read_to_string(&path).unwrap();
+                drawn.extend(markup.chars().filter(|c| !c.is_control()));
+            }
+            assert!(sources > 0, "no .slint files under {}", ui.display());
+
+            for (face, data) in FACES {
+                let mut collection = empty_collection();
+                let registered = collection.register_fonts(Blob::from(data.to_vec()), None);
+                let info = &registered[0].1[0];
+                let charmap = info.charmap_index().charmap(data).unwrap();
+                for &c in &drawn {
+                    assert!(
+                        charmap.map(c).is_some(),
+                        "{face} has no glyph for U+{:04X} {c:?}; widen UNICODES in the \
+                         subsetting script or stop drawing it",
+                        c as u32
+                    );
+                }
+            }
+        }
+    }
 }

@@ -66,6 +66,12 @@ signal-hook = "0.3"
 [build-dependencies]
 slint-build = "=1.17.1"
 
+[dev-dependencies]
+# Slint's own font database, used only to assert what the embedded faces
+# offer against what the .slint files ask of them. Already in the graph
+# through slint, and kept in step with it rather than upgraded on its own.
+fontique = "0.10"
+
 [profile.release]
 # panic stays "unwind": lock_or_recover's poisoning recovery and the PipeWire
 # FFI boundary depend on unwinding, never aborting.
