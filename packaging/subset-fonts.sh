@@ -82,10 +82,15 @@ echo "$SHA256  $work/$ARCHIVE" | sha256sum -c --quiet \
 for face in "${FACES[@]}"; do
     src="IosevkaAile-$face.ttf"
     unzip -q -o "$work/$ARCHIVE" "$src" -d "$work"
+    # The subsetter keeps name IDs 0-6 and drops the rest, which loses the
+    # OFL notice (13) and the license URL (14). THIRD-PARTY.md carries both
+    # for the binary, but a font file that leaves the tree on its own
+    # should still say what it is licensed under.
     pyftsubset "$work/$src" \
         --unicodes="$UNICODES" \
         --layout-features='' \
         --no-hinting \
+        --name-IDs+=13,14 \
         --output-file="$out/$src"
     printf '%s: %d KB\n' "$out/$src" "$(( $(stat -c %s "$out/$src") / 1024 ))"
 done
