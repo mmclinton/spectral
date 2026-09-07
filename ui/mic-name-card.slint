@@ -74,10 +74,10 @@ export component MicNameCard inherits Rectangle {
             }
 
             // Both fixed to the same width so the pair reads as one
-            // control: "Rename" sets it at 51px of label plus AppButton's
-            // 12px of padding each side, and "Reset" rides along.
+            // control: 75px is AppButton's own floor for "Rename" (51px of
+            // label plus 12px of padding each side), and "Reset" rides along.
             AppButton {
-                width: 76px;
+                width: 75px;
                 text: "Rename";
                 clicked => {
                     mic_name.clear-focus();
@@ -86,7 +86,7 @@ export component MicNameCard inherits Rectangle {
             }
 
             AppButton {
-                width: 76px;
+                width: 75px;
                 text: "Reset";
                 clicked => {
                     mic_name.clear-focus();
