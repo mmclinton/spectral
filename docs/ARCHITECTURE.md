@@ -113,4 +113,4 @@ Because that socket is opened per command and dropped again, the daemon has no d
 
 ## Testing
 
-Tests are inline `#[cfg(test)] mod tests` blocks. They cover pure logic only — nothing touching PipeWire or sockets — so that the whole suite runs in the nix sandbox. `nix flake check` builds the package and runs formatting, clippy (all warnings denied), and the tests.
+Tests are inline `#[cfg(test)] mod tests` blocks. They stay off PipeWire and sockets — a few reach further, rendering offscreen through Slint's software renderer or reading the tracked sources under `ui/` — so that the whole suite runs in the nix sandbox. `nix flake check` builds the package and runs formatting, clippy (all warnings denied), and the tests.
