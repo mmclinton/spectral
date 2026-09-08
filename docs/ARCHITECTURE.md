@@ -63,7 +63,6 @@ While the window is open the pipeline's `detached` atomic surfaces as `DaemonSta
 | `src/state.rs` | `AppState` (the daemon's shared state), `AudioDevice`, the `Status` lifecycle enum, mic-name validation, and `lock_or_recover`. |
 | `src/main.rs` | Slint GUI. UI in `ui/`, where `app-window.slint` composes the app bar, threshold band, cards, footer and popups against the shared `theme.slint`; compiled by `build.rs` and bound via `slint::include_modules!()` in the `generated_ui` module (see below). |
 | `src/cli.rs` | Headless subcommand parsing and execution. Bare `spectral` launches the GUI. |
-| `src/fonts.rs` | Resolves the user's preferred monospaced family, which Slint cannot ask for itself. |
 | `src/daemon_launch.rs` | Spawning the daemon and bootstrapping a connection; shared by the GUI and CLI. |
 | `src/diagnostics.rs` | Renders the bug-report dump behind the GUI's error details modal, from in-process state only. |
 | `src/bin/spectral-daemon.rs` | Daemon main loop, connection handlers, and the lock-ordering convention. |
@@ -77,6 +76,8 @@ While the window is open the pipeline's `detached` atomic surfaces as `DaemonSta
 | `src/platform/linux/recorder.rs` | Native PipeWire recorder and player for the voice test. |
 
 Settings persist to `$XDG_CONFIG_HOME/spectral/state.toml`; voice-test recordings live under the XDG state dir at `~/.local/state/spectral/recordings`.
+
+The interface renders in Iosevka Aile, embedded rather than resolved from the system: `ui/app-window.slint` imports one file per weight and style from `ui/fonts/`, and `packaging/subset-fonts.sh` regenerates those files from the upstream release, cut down to the characters the markup draws. A new weight needs both the face and its import; a character outside the subset needs the script's range list widened. A test in `src/main.rs` catches the stray character, but nothing catches the missing weight — that test's list of weights is hand-maintained, so extend it in the same change or the interface renders the nearest face instead. THIRD-PARTY.md carries the font's notice.
 
 `slint::include_modules!()` is wrapped in a `generated_ui` module rather than called at the crate root. slint-build regenerates that code from `ui/` on every build, and it carries its own `#![allow(clippy::all, clippy::pedantic, clippy::nursery)]`, which does not cover the restriction lints Cargo.toml denies — some 1500 generated `unwrap` calls would otherwise fail the build. When a newly adopted lint trips the generated code, allow it on that module; never work around it in `ui/`.
 
@@ -114,4 +115,4 @@ Because that socket is opened per command and dropped again, the daemon has no d
 
 ## Testing
 
-Tests are inline `#[cfg(test)] mod tests` blocks. They cover pure logic only — nothing touching PipeWire or sockets — so that the whole suite runs in the nix sandbox. `nix flake check` builds the package and runs formatting, clippy (all warnings denied), and the tests.
+Tests are inline `#[cfg(test)] mod tests` blocks. They stay off PipeWire and sockets — a few reach further, rendering offscreen through Slint's software renderer or reading the tracked sources under `ui/` — so that the whole suite runs in the nix sandbox. `nix flake check` builds the package and runs formatting, clippy (all warnings denied), and the tests.

@@ -76,4 +76,4 @@ Bug reports and patches are welcome. Development happens on [Codeberg](https://c
 
 ## License
 
-Spectral is licensed under the GPL-3.0-only (see [LICENSE](LICENSE)). Statically linked third-party components are attributed in [THIRD-PARTY.md](THIRD-PARTY.md).
+Spectral is licensed under the GPL-3.0-only (see [LICENSE](LICENSE)). Third-party components shipped in the binaries, including the embedded interface font, are attributed in [THIRD-PARTY.md](THIRD-PARTY.md).

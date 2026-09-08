@@ -50,9 +50,6 @@ slint = { version = "=1.17.1", default-features = false, features = [
     "renderer-software",
 ] }
 pipewire = { version = "0.9", features = ["v0_3_77"] }
-# Slint's own font database, so a family name resolved here is one Slint can
-# look up. Kept in step with slint rather than upgraded independently.
-fontique = "0.10"
 # Pinned to 0.5.1: 0.5.2 deletes the crate's own FFT and swaps rustfft for
 # easyfft, which adds a thread-local HashMap lookup and an extra copy per
 # transform on the audio path, and renormalizes the output — no functional
@@ -68,6 +65,12 @@ signal-hook = "0.3"
 
 [build-dependencies]
 slint-build = "=1.17.1"
+
+[dev-dependencies]
+# Slint's own font database, used only to assert what the embedded faces
+# offer against what the .slint files ask of them. Already in the graph
+# through slint, and kept in step with it rather than upgraded on its own.
+fontique = "0.10"
 
 [profile.release]
 # panic stays "unwind": lock_or_recover's poisoning recovery and the PipeWire

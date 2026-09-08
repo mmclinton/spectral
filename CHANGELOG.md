@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A mistyped command or flag now suggests what you probably meant: `spectral enalbe` answers with "did you mean 'enable'?" instead of only saying the word was not recognized. Nothing is suggested when no command is close enough for the guess to be worth making.
 
 ### Changed
+- The interface now ships its own font, Iosevka Aile, instead of using whichever monospaced family your system prefers. Every install renders the same way, and the face is a quasi-proportional one designed for reading rather than a terminal font. The embedded faces are cut down to the characters the interface draws; a device name in another script still renders, in whatever system font supplies those glyphs.
 - The daemon's pipeline thread no longer wakes a hundred times a second just to keep the microphone on. It used to poll for a stop request every 10 ms; it now sleeps until something happens, which lets a laptop's CPU rest properly between audio callbacks. Nothing about the audio changes.
 
 ### Fixed

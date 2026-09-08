@@ -1,0 +1,76 @@
+// The threshold scale the help modal draws under its explanation: five
+// ticks from off to strict, with the percentages above and the anchors
+// that name them below.
+//
+// Drawn as elements rather than typed as a row of characters. The
+// interface font is quasi-proportional - a space advances 350 units
+// against a digit's 600 and a filled circle's 1000 - so no arrangement of
+// spaces puts a tick under the percentage it belongs to.
+
+import { Theme } from "theme.slint";
+
+export component ThresholdScale inherits Rectangle {
+    // Wide enough for the longest anchor ("default") plus air, and the unit
+    // the tick spacing is measured against: a label is centered on its tick,
+    // so the first and last tick sit half a label in from each edge.
+    property <length> label_width: 64px;
+    property <length> span: self.width - self.label_width;
+    property <length> dot: 8px;
+    property <length> track_y: 20px;
+
+    // Fixed so the card around it sizes to its text instead of to this:
+    // 16 percentage + 4 + 8 dot + 4 + 16 anchor.
+    height: 48px;
+
+    Rectangle {
+        x: root.label_width / 2;
+        y: root.track_y + (root.dot - self.height) / 2;
+        width: root.span;
+        height: 2px;
+        background: Theme.border;
+    }
+
+    for tick[i] in [
+        { percent: "0%", anchor: "off" },
+        { percent: "25%", anchor: "" },
+        { percent: "50%", anchor: "default" },
+        { percent: "75%", anchor: "" },
+        { percent: "100%", anchor: "strict" },
+    ]: Rectangle {
+        x: i * root.span / 4;
+        y: 0px;
+        width: root.label_width;
+        height: parent.height;
+
+        Text {
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            text: tick.percent;
+            font-size: Theme.font_caption;
+            color: tick.anchor == "" ? Theme.text_muted : Theme.text_primary;
+            horizontal-alignment: center;
+        }
+
+        // The anchored ticks are the ones the prose names, so they read as
+        // dots on the track; the quarter marks are hairlines through it.
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: tick.anchor == "" ? root.track_y - 2px : root.track_y;
+            width: tick.anchor == "" ? 2px : root.dot;
+            height: tick.anchor == "" ? root.dot + 4px : root.dot;
+            border-radius: self.width / 2;
+            background: tick.anchor == "" ? Theme.border : Theme.accent;
+        }
+
+        Text {
+            x: 0px;
+            y: root.track_y + root.dot + 4px;
+            width: parent.width;
+            text: tick.anchor;
+            font-size: Theme.font_caption;
+            color: Theme.text_muted;
+            horizontal-alignment: center;
+        }
+    }
+}

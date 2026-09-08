@@ -6,7 +6,6 @@
 mod cli;
 mod daemon_launch;
 mod diagnostics;
-mod fonts;
 
 use spectral_lib::platform::audio_devices;
 use spectral_lib::platform::ipc::{
@@ -432,10 +431,6 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     // without an app_id so the desktop file (and taskbar icon) can't be matched.
     if let Err(e) = slint::set_xdg_app_id("page.codeberg.mmc.Spectral") {
         eprintln!("warning: failed to set xdg app id (taskbar icon may be generic): {e}");
-    }
-    match fonts::preferred_monospace_family() {
-        Some(family) => ui.set_monospace_font_family(family.into()),
-        None => eprintln!("warning: no monospaced font found; columns may not align"),
     }
     let ui_weak = ui.as_weak();
 
@@ -1390,5 +1385,247 @@ mod tests {
     #[test]
     fn a_resolved_daemon_error_is_re_cached_so_its_return_shows_again() {
         assert!(should_reconcile_daemon_error(None, Some("stale"), false));
+    }
+
+    /// What the embedded faces owe the markup that asks for them.
+    ///
+    /// Neither half of the contract fails loudly on its own: a request Slint
+    /// cannot satisfy is answered with the nearest face rather than an error,
+    /// and a character no face covers is drawn by whichever system font has
+    /// it. Both come out as a render that is merely wrong, which is what a
+    /// bundled font exists to rule out.
+    mod embedded_font {
+        use fontique::{Blob, Collection, CollectionOptions, FontStyle, FontWeight, FontWidth};
+        use std::collections::BTreeSet;
+
+        /// The family name `app-window.slint` sets as `default-font-family`.
+        const FAMILY: &str = "Iosevka Aile";
+
+        const FACES: [(&str, &[u8]); 6] = [
+            (
+                "Regular",
+                include_bytes!("../ui/fonts/IosevkaAile-Regular.ttf"),
+            ),
+            (
+                "Medium",
+                include_bytes!("../ui/fonts/IosevkaAile-Medium.ttf"),
+            ),
+            (
+                "SemiBold",
+                include_bytes!("../ui/fonts/IosevkaAile-SemiBold.ttf"),
+            ),
+            ("Bold", include_bytes!("../ui/fonts/IosevkaAile-Bold.ttf")),
+            (
+                "Italic",
+                include_bytes!("../ui/fonts/IosevkaAile-Italic.ttf"),
+            ),
+            (
+                "BoldItalic",
+                include_bytes!("../ui/fonts/IosevkaAile-BoldItalic.ttf"),
+            ),
+        ];
+
+        fn empty_collection() -> Collection {
+            Collection::new(CollectionOptions {
+                shared: false,
+                system_fonts: false,
+            })
+        }
+
+        #[test]
+        fn every_face_registers_under_the_family_the_window_names() {
+            let mut collection = empty_collection();
+            for (_, data) in FACES {
+                collection.register_fonts(Blob::from(data.to_vec()), None);
+            }
+
+            let families: Vec<String> = collection.family_names().map(str::to_owned).collect();
+            assert_eq!(
+                families,
+                [FAMILY],
+                "the faces have to answer to one family name, not several"
+            );
+            let family = collection.family_by_name(FAMILY).unwrap();
+            assert_eq!(family.fonts().len(), FACES.len());
+        }
+
+        #[test]
+        fn every_weight_and_style_the_markup_asks_for_matches_a_face_exactly() {
+            let mut collection = empty_collection();
+            for (_, data) in FACES {
+                collection.register_fonts(Blob::from(data.to_vec()), None);
+            }
+            let family = collection.family_by_name(FAMILY).unwrap();
+
+            // Every combination the .slint files name: 400 as the window
+            // default, 500 on the selected device row, 600 on button labels,
+            // 700 on headings and links, and italic at 700 on the one
+            // italic link and at 400 on the device-help tip.
+            for (style, weight) in [
+                (FontStyle::Normal, 400.0),
+                (FontStyle::Normal, 500.0),
+                (FontStyle::Normal, 600.0),
+                (FontStyle::Normal, 700.0),
+                (FontStyle::Italic, 400.0),
+                (FontStyle::Italic, 700.0),
+            ] {
+                let matched = family
+                    .match_font(FontWidth::NORMAL, style, FontWeight::new(weight), false)
+                    .unwrap_or_else(|| panic!("no face answers {style:?} at {weight}"));
+                assert_eq!(matched.style(), style, "style asked for {style:?} {weight}");
+                assert_eq!(
+                    matched.weight().value(),
+                    weight,
+                    "weight asked for {style:?} {weight}"
+                );
+            }
+        }
+
+        #[test]
+        fn every_character_the_markup_draws_is_in_every_face() {
+            let ui = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("ui");
+            let mut drawn: BTreeSet<char> = BTreeSet::new();
+            let mut sources = 0;
+            for entry in std::fs::read_dir(&ui).unwrap() {
+                let path = entry.unwrap().path();
+                if path.extension().is_none_or(|e| e != "slint") {
+                    continue;
+                }
+                sources += 1;
+                let markup = std::fs::read_to_string(&path).unwrap();
+                drawn.extend(markup.chars().filter(|c| !c.is_control()));
+            }
+            assert!(sources > 0, "no .slint files under {}", ui.display());
+
+            for (face, data) in FACES {
+                let mut collection = empty_collection();
+                let registered = collection.register_fonts(Blob::from(data.to_vec()), None);
+                let info = &registered[0].1[0];
+                let charmap = info.charmap_index().charmap(data).unwrap();
+                for &c in &drawn {
+                    assert!(
+                        charmap.map(c).is_some(),
+                        "{face} has no glyph for U+{:04X} {c:?}; widen UNICODES in the \
+                         subsetting script or stop using it in the markup",
+                        c as u32
+                    );
+                }
+            }
+        }
+    }
+
+    /// That a button's label looks vertically centered in it.
+    ///
+    /// Slint sizes a `Text` to the font's whole line box and centers that
+    /// box, but the ink of one line does not sit in the middle of its line
+    /// box: the descender space is reserved whether or not the word uses
+    /// it, and the layout rounds ascent and descent to whole pixels
+    /// separately before splitting the remainder. Nothing about that is
+    /// visible from the markup, so the label's offset is only knowable by
+    /// rendering it and looking at where the pixels landed.
+    mod button_label {
+        use slint::PhysicalSize;
+        use slint::platform::software_renderer::{
+            MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType,
+        };
+        use slint::platform::{PlatformError, WindowAdapter};
+        use std::rc::Rc;
+
+        slint::slint! {
+            import { AppButton } from "../ui/controls.slint";
+            import "../ui/fonts/IosevkaAile-Regular.ttf";
+            import "../ui/fonts/IosevkaAile-Medium.ttf";
+            import "../ui/fonts/IosevkaAile-SemiBold.ttf";
+            import "../ui/fonts/IosevkaAile-Bold.ttf";
+            import "../ui/fonts/IosevkaAile-Italic.ttf";
+            import "../ui/fonts/IosevkaAile-BoldItalic.ttf";
+
+            export component ButtonUnderTest inherits Window {
+                in property <string> body;
+
+                default-font-family: "Iosevka Aile";
+                width: 300px;
+                height: 120px;
+                // Black ground and a filled button, so the only red in the
+                // frame is the white label: coverage reads straight off it.
+                background: #000000;
+
+                button := AppButton {
+                    x: 40px;
+                    y: 40px;
+                    width: 160px;
+                    height: 32px;
+                    text: root.body;
+                    primary: true;
+                }
+
+                out property <length> button_y: button.y;
+                out property <length> button_height: button.height;
+            }
+        }
+
+        const W: usize = 300;
+        const H: usize = 120;
+
+        thread_local! {
+            static WINDOW: Rc<MinimalSoftwareWindow> =
+                MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+        }
+
+        struct OffscreenPlatform;
+
+        impl slint::platform::Platform for OffscreenPlatform {
+            fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
+                Ok(WINDOW.with(|w| w.clone()))
+            }
+        }
+
+        /// How far the label's ink rides above the button's center, in
+        /// pixels. Weighted by coverage, so antialiased edges count for
+        /// what they actually cover.
+        fn ink_above_center(ui: &ButtonUnderTest, window: &Rc<MinimalSoftwareWindow>) -> f64 {
+            window.request_redraw();
+            let mut buf = vec![PremultipliedRgbaColor::default(); W * H];
+            window.draw_if_needed(|renderer| {
+                renderer.render(buf.as_mut_slice(), W);
+            });
+
+            let mut mass = 0.0;
+            let mut moment = 0.0;
+            for row in 0..H {
+                let coverage: f64 = (0..W).map(|c| f64::from(buf[row * W + c].red)).sum();
+                mass += coverage;
+                moment += coverage * (row as f64 + 0.5);
+            }
+            assert!(mass > 0.0, "the label drew nothing");
+
+            let center = f64::from(ui.get_button_y() + ui.get_button_height() / 2.0);
+            center - moment / mass
+        }
+
+        #[test]
+        fn a_label_without_descenders_sits_on_the_button_center() {
+            // Already set when another test in this process installed it first.
+            slint::platform::set_platform(Box::new(OffscreenPlatform)).ok();
+            let window = WINDOW.with(|w| w.clone());
+            window.set_size(PhysicalSize::new(W as u32, H as u32));
+
+            let ui = ButtonUnderTest::new().unwrap();
+            ui.show().unwrap();
+
+            // The app's button labels that stay between the baseline and the
+            // cap line. A word with a descender legitimately carries ink
+            // below the baseline, which pulls its centroid down without
+            // looking off-center, so those are not measured this way.
+            for label in ["Rename", "Reset", "Enable", "Disable"] {
+                ui.set_body(label.into());
+                let offset = ink_above_center(&ui, &window);
+                assert!(
+                    offset.abs() <= 0.5,
+                    "{label:?} sits {offset:+.2}px off the button center; the label \
+                     needs its line box re-centered in controls.slint"
+                );
+            }
+        }
     }
 }

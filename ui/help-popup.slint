@@ -3,15 +3,15 @@
 
 import { Theme } from "theme.slint";
 import { ModalPopup } from "modal-popup.slint";
+import { ThresholdScale } from "threshold-scale.slint";
 
 export component HelpPopup inherits ModalPopup {
     title: "Help";
 
     VerticalLayout {
-        // Cards size to their wrapped text (no fixed heights: font
-        // metrics follow the user's monospace family); start keeps
-        // surplus vertical space below them instead of inflating
-        // each card equally.
+        // Cards size to their own wrapped text, which follows the modal's
+        // width; start keeps surplus vertical space below them instead of
+        // inflating each card equally.
         alignment: start;
         spacing: 16px;
         padding: 10px;
@@ -66,11 +66,14 @@ export component HelpPopup inherits ModalPopup {
                     wrap: word-wrap;
                 }
 
+                ThresholdScale { }
+
                 Text {
-                    text: "0%          25%          50%          75%         100%\n●────────────┼────────────●────────────┼────────────●\noff                    default                 strict\n(denoise only) ← opens easily · demands clear voice →";
+                    text: "← opens easily · demands clear voice →";
                     font-size: Theme.font_body;
-                    color: Theme.text_primary;
-                    wrap: no-wrap;
+                    color: Theme.text_muted;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
                 }
             }
         }

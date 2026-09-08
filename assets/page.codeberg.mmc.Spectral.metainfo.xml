@@ -23,7 +23,7 @@
   <launchable type="desktop-id">page.codeberg.mmc.Spectral.desktop</launchable>
   <screenshots>
     <screenshot type="default">
-      <image>https://codeberg.org/mmc/spectral/raw/commit/c09246cd59163b109ca66cd6b5638558c5f0582f/assets/screenshot.png</image>
+      <image>https://codeberg.org/mmc/spectral/raw/commit/f5b7992e9f19a4126034edf04e73bee67b0cae83/assets/screenshot.png</image>
       <caption>The main window with the virtual microphone active and an input device selected</caption>
     </screenshot>
   </screenshots>

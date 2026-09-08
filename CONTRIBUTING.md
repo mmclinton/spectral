@@ -26,7 +26,7 @@ Conventional Commits: `<type>(<scope>): <imperative description>`, kept small an
 
 ## Licensing
 
-GPL-3.0-only, inbound = outbound: by submitting a change you agree to license it under GPL-3.0-only. Third-party notices for statically linked components live in THIRD-PARTY.md.
+GPL-3.0-only, inbound = outbound: by submitting a change you agree to license it under GPL-3.0-only. Third-party notices for everything shipped in the binaries — the statically linked crates and the embedded font alike — live in THIRD-PARTY.md.
 
 ## Releases
 

@@ -10,18 +10,26 @@ import { DeviceHelpPopup } from "device-help-popup.slint";
 import { HelpPopup } from "help-popup.slint";
 import { ErrorPopup } from "error-popup.slint";
 
+// Embedded so every install renders the same face; packaging/subset-fonts.sh
+// regenerates these from upstream. One file per weight and style the
+// interface uses: Slint answers a request it cannot satisfy with the
+// nearest face it holds rather than synthesizing one.
+import "fonts/IosevkaAile-Regular.ttf";
+import "fonts/IosevkaAile-Medium.ttf";
+import "fonts/IosevkaAile-SemiBold.ttf";
+import "fonts/IosevkaAile-Bold.ttf";
+import "fonts/IosevkaAile-Italic.ttf";
+import "fonts/IosevkaAile-BoldItalic.ttf";
+
 export { InputDevice }
 
 export component MainWindow inherits Window {
     title: "Spectral";
-    // Resolved from the system font database at startup; empty until then,
-    // which Slint reads as "no preference".
-    in property <string> monospace_font_family;
-    default-font-family: root.monospace_font_family;
+    default-font-family: "Iosevka Aile";
     // The layout's arithmetic floor is ~676x647 (fixed chrome plus the
-    // right-column card minimums); the margin absorbs real font metrics,
-    // which vary with the user-resolved monospace family. The preferred
-    // size is the launch size; the minimums only floor manual resizing.
+    // right-column card minimums); the margin absorbs real font metrics.
+    // The preferred size is the launch size; the minimums only floor
+    // manual resizing.
     min-width: 720px;
     min-height: 680px;
     preferred-width: 920px;
