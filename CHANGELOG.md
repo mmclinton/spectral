@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 - The interface now ships its own font, Iosevka Aile, instead of using whichever monospaced family your system prefers. Every install renders the same way, and the face is a quasi-proportional one designed for reading rather than a terminal font. The embedded faces are cut down to the characters the interface draws; a device name in another script still renders, in whatever system font supplies those glyphs.
 - The daemon's pipeline thread no longer wakes a hundred times a second just to keep the microphone on. It used to poll for a stop request every 10 ms; it now sleeps until something happens, which lets a laptop's CPU rest properly between audio callbacks. Nothing about the audio changes.
+- A new application icon: a silver microphone in a blue cradle on a dark disc. It replaces the orange and teal outline drawing, so Spectral looks different in your launcher and dock after updating.
 
 ### Fixed
 - The audio thread no longer takes page faults during the first second after enabling the mic. Its staging buffers were reserved but not yet touched, so the kernel mapped them in on the first audio callbacks; they are now written in full before the pipeline starts.
