@@ -46,6 +46,7 @@ Manual builds may work but are unsupported. Which of these are published yet, an
 
 ## Screenshot
 
+> [!NOTE]
 > Everything the GUI does is also available from the terminal. The full reference is in [docs/CLI.md](docs/CLI.md).
 
 <div align="center">
