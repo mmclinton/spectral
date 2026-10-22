@@ -69,7 +69,7 @@ If you're coming from **NoiseTorch**: it solved this problem for PulseAudio and 
 
 ## Privacy
 
-All processing happens on your machine. Spectral makes no network connections and has no telemetry. The only audio it writes to disk comes from voice-test recordings you start yourself, under `~/.local/state/spectral/recordings`.
+All processing happens on your machine. Spectral makes no network connections and has no telemetry. The only audio it writes to disk comes from voice-test recordings you start yourself, under `$XDG_STATE_HOME/spectral/recordings` (`~/.local/state/spectral/recordings` unless you have set it).
 
 ## Contributing
 

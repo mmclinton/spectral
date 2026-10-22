@@ -35,7 +35,7 @@ flatpak run --command=cat page.codeberg.mmc.Spectral \
 
 ## Where are my voice-test recordings?
 
-Under `~/.local/state/spectral/recordings`.
+Under `$XDG_STATE_HOME/spectral/recordings`, which is `~/.local/state/spectral/recordings` unless you have set it. A Flatpak install keeps them under `~/.var/app/page.codeberg.mmc.Spectral/.local/state/spectral/recordings`.
 
 ## Known limitations
 
