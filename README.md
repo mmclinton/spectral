@@ -13,7 +13,7 @@ Spectral runs a microphone you choose through the RNNoise neural network and exp
 - A built-in voice test — record yourself and compare original against filtered
 - Two optional voice-processing switches, both off by default: a rumble filter and automatic volume leveling
 - Settings persist across restarts, and your device is remembered by name, so it survives reboots and PipeWire restarts
-- A headless CLI, so usage does not require the GUI
+- A headless CLI that covers everything but the voice test, so day-to-day use does not require the GUI
 
 ## Requirements
 
@@ -44,10 +44,10 @@ Manual builds may work but are unsupported. Which of these are published yet, an
 5. Click "Enable" — the virtual mic is created and becomes the system default input
 6. Applications that pin a specific device can select the virtual mic by name (default "Spectral-Mic"); "Rename"/"Reset" stage a new name, applied on the next Enable/Apply
 
-## Screenshot
-
 > [!NOTE]
-> Everything the GUI does is also available from the terminal. The full reference is in [docs/CLI.md](docs/CLI.md).
+> Everything except the voice test is also available from the terminal. The full reference is in [docs/CLI.md](docs/CLI.md).
+
+## Screenshot
 
 <div align="center">
   <img src="./assets/screenshot.png" width="820" alt="Spectral's main window: an app bar with the status, a full-width input threshold band, then two columns of cards holding the input device list, the virtual mic name, the voice-processing switches and the voice test, above a footer with Disable and Apply">
