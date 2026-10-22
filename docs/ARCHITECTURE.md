@@ -107,7 +107,7 @@ Because that socket is opened per command and dropped again, the daemon has no d
 
 **Adding a DSP stage.** Write it as a struct in `src/platform/linux/stages/`, following the shape of `highpass.rs`: allocate in `new`, expose `process` and `reset`, allocate nothing in `process`. Export it from `stages/mod.rs`, then compose it into `AudioProcessor::process_frame` in the right position — order matters, and the module doc at the top of `audio_processor.rs` records the current chain. If it is user-toggleable, it needs an atomic on `AppState`, a field in `PersistedState`, an `Option` on `DaemonCommand::Enable`, a CLI flag, and a Slint switch.
 
-**Adding a CLI subcommand.** Extend `CliCommand` and the parser in `src/cli.rs`, add the matching `DaemonCommand` variant in `ipc.rs`, and handle it in the daemon's connection loop in `src/bin/spectral-daemon.rs`. A wire format change means bumping `PROTOCOL_VERSION`.
+**Adding a CLI subcommand.** Extend `CliCommand` and the parser in `src/cli.rs`, add the matching `DaemonCommand` variant in `ipc.rs`, and handle it in the daemon's connection loop in `src/bin/spectral-daemon.rs`. A wire format change means bumping `PROTOCOL_VERSION`. The reference surfaces move with it: the command goes in `COMMANDS` (a flag in `ENABLE_FLAGS`) in `src/cli.rs`, which renders `--help`, and in `docs/CLI.md`, `assets/spectral.1` and `assets/spectral.fish`; the tests in `src/cli.rs` fail until all four agree.
 
 **Adding a persisted setting.** Add the field to `PersistedState` in `persistence.rs` with `#[serde(default)]` so that files written by older versions still load — this is a hard requirement, not a style preference — then thread it through `AppState`, the IPC surface, and whichever clients expose it.
 
