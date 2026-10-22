@@ -56,16 +56,17 @@ List input devices with their current PipeWire ids.
 Stop the daemon.
 .SH OPTIONS
 .SS Flags for enable
-Every flag is optional, and an omitted flag keeps whatever the daemon already
-has: the prior setting, or the default on a first run. That is what makes a
-bare
+Every flag is optional except
+.B \-\-device
+on a first run, and an omitted flag keeps whatever the daemon already has: the
+prior setting, or the default on a first run. That is what makes a bare
 .B spectral enable
 a "restore what I had" command.
 .TP
 .BI \-\-device " ID"
 Input device to capture, as listed by
 .BR "spectral devices" .
-Defaults to the remembered device.
+Required the first time; afterwards defaults to the remembered device.
 .TP
 .BI \-\-threshold " 0-100"
 Voice gate threshold.
