@@ -6164,19 +6164,6 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/toml_write/toml_write-0.1.2.crate",
-        "sha256": "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801",
-        "dest": "cargo/vendor/toml_write-0.1.2"
-    },
-    {
-        "type": "inline",
-        "contents": "{\"package\": \"5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801\", \"files\": {}}",
-        "dest": "cargo/vendor/toml_write-0.1.2",
-        "dest-filename": ".cargo-checksum.json"
-    },
-    {
-        "type": "archive",
-        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/toml_writer/toml_writer-1.1.1+spec-1.1.0.crate",
         "sha256": "756daf9b1013ebe47a8776667b466417e2d4c5679d441c26230efd9ef78692db",
         "dest": "cargo/vendor/toml_writer-1.1.1+spec-1.1.0"
