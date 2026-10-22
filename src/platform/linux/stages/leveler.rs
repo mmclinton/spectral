@@ -35,6 +35,12 @@ const CEILING: f32 = 29_206.0;
 // substantially release after a peak.
 const LIMITER_RELEASE: f32 = 1.0 / 4800.0;
 
+// How close to unity the released limiter gain snaps the rest of the way
+// (about -0.002 dB). In f32 the release step `LIMITER_RELEASE * (1 - g)`
+// rounds away to nothing once g is within ~1.43e-4 of 1.0, so the approach
+// stalls short of unity; the snap must sit above that point to ever fire.
+const LIMITER_SNAP: f32 = 2e-4;
+
 /// The auto-level stage: the slow AGC gain plus the fast limiter gain.
 pub struct Leveler {
     gain: f32,
@@ -83,7 +89,7 @@ impl Leveler {
             }
             *sample = amplified * self.limiter_gain;
         }
-        if self.limiter_gain > 1.0 - 1e-9 {
+        if 1.0 - self.limiter_gain < LIMITER_SNAP {
             self.limiter_gain = 1.0;
         }
     }
@@ -186,6 +192,16 @@ mod tests {
         let last = run_frames(&mut leveler, 32768.0, 0.0, 5);
         let peak = last.iter().fold(0.0f32, |m, &s| m.max(s.abs()));
         assert!(peak <= CEILING * 1.001, "peak {peak}");
+    }
+
+    #[test]
+    fn the_limiter_releases_back_to_exact_unity_after_a_peak() {
+        // One full-scale frame engages the limiter; a second of quiet must
+        // hand the signal back untouched, not parked a hair below unity.
+        let mut leveler = Leveler::new();
+        run_frames(&mut leveler, 32768.0, 0.0, 1);
+        run_frames(&mut leveler, 100.0, 0.0, 100);
+        assert_eq!(leveler.limiter_gain, 1.0);
     }
 
     #[test]
