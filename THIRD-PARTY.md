@@ -46,7 +46,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## Slint 1.17.1 — GPL-3.0-only (of its available options)
+## Slint 1.18.1 — GPL-3.0-only (of its available options)
 
 The GUI toolkit. Slint is triple-licensed (GPL-3.0-only, Slint Royalty-Free, Slint Software License); Spectral uses it under the GPL-3.0-only option — the same license as Spectral, whose terms in [LICENSE](LICENSE) already cover the combined work. Listed for transparency, since Slint's licensing is a common question; the GPL imposes no separate attribution-file obligation.
 

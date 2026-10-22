@@ -59,17 +59,6 @@ export component AppButton {
                     : Theme.text_primary;
                 horizontal-alignment: center;
                 vertical-alignment: center;
-                // Centering a Text centers the font's line box, and the ink
-                // does not sit in the middle of that box: the descender space
-                // below the baseline is reserved whether or not the label uses
-                // it, and the text layout rounds ascent and descent to whole
-                // pixels separately before splitting what is left over. For
-                // this face at this size both lean the same way and the label
-                // rides a pixel high, which a 32px button is small enough to
-                // show.
-                // Glyphs are rasterized on whole pixels, so a whole pixel is
-                // also the only correction that moves anything.
-                y: (parent.height - self.height) / 2 + 1px;
             }
 
             touch := TouchArea {

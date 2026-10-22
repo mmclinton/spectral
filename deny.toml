@@ -14,12 +14,10 @@ yanked = "deny"
 # can act on. Vulnerabilities still deny everywhere in the tree.
 #
 # What this actually suppresses, re-derived 2026-10-22 by running with
-# unmaintained = "all": six crates. The first three are final upstream
-# releases with no upgrade to move to, ever.
+# unmaintained = "all": four crates. The first is a final upstream release
+# with no upgrade to move to, ever.
 #
-#   paste 1.0.15      RUSTSEC-2024-0436  proc-macro; no runtime surface
-#   rustybuzz 0.20.1  RUSTSEC-2026-0206  via usvg -> resvg -> i-slint-common
-#   ttf-parser 0.25.1 RUSTSEC-2026-0192  same path, plus ab_glyph -> winit
+#   ttf-parser 0.25.1 RUSTSEC-2026-0192  via ab_glyph -> sctk-adwaita -> winit
 #
 # The other three were folded into zbus 6 rather than abandoned, and arrive
 # through slint's accessibility stack (accesskit_unix -> atspi, zbus 5). They
@@ -29,15 +27,13 @@ yanked = "deny"
 #   zvariant 5.15.0        RUSTSEC-2026-0370
 #   zvariant_derive 5.15.0 RUSTSEC-2026-0372  proc-macro
 #
-# The load-bearing argument is reachability, not upgrade cost. Spectral ships
-# no SVG or bitmap asset — nothing in ui/ or src/ references one — so the
-# whole resvg/usvg decode stack is linked and never fed. ttf-parser is live
-# through winit's Wayland client-side title bar, which reads system fonts
-# from directories no other local user can write, and it is
-# #![forbid(unsafe_code)]. Adding an SVG/image asset, a theming option, or a
-# user-supplied-font feature invalidates this and puts an unmaintained parser
-# on an untrusted-input path with nobody upstream to report to. Prefer a
-# pre-rasterized PNG over an SVG if an asset is ever needed.
+# The load-bearing argument is reachability, not upgrade cost. ttf-parser is
+# live only through winit's Wayland client-side title bar, which reads system
+# fonts from directories no other local user can write, and it is
+# #![forbid(unsafe_code)]. Slint's own text and SVG paths do not use it, so
+# neither an image asset nor a user-chosen font reaches it; only a change
+# that hands the title bar a font from somewhere less trusted would put an
+# unmaintained parser on an untrusted-input path.
 unmaintained = "workspace"
 
 # Unsound advisories fail anywhere in the tree. cargo-deny's default reports
