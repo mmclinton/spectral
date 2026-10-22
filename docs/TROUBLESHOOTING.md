@@ -42,6 +42,7 @@ Under `$XDG_STATE_HOME/spectral/recordings`, which is `~/.local/state/spectral/r
 - Disabling Spectral does not restore your previous default input. When the virtual mic disappears, WirePlumber picks a fallback, which may not be the microphone you started with — re-select it in your sound settings if it matters.
 - Channel handling is validated for mono and stereo inputs only; the multi-channel path described above is untested. Bluetooth microphones work — validated with AirPods Pro 2 — but no other Bluetooth device or codec has been tried.
 - Voice-test recordings are not restored in the UI after relaunching the GUI.
+- The virtual mic does not come back by itself after you log in. Nothing installs a startup service, so open Spectral or run `spectral enable` once you are logged in — from your desktop's autostart, if you want it to happen on its own.
 
 ## Reporting a bug
 
