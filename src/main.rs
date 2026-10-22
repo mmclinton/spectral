@@ -64,9 +64,10 @@ fn device_list_model(devices: &[AudioDevice]) -> ModelRc<InputDevice> {
 
 fn update_ui_status(ui_weak: &Weak<MainWindow>, status: Status) {
     if let Some(ui) = ui_weak.upgrade() {
-        // Pending is GUI-local (staged edits over a daemon-Active mic), so
-        // the pill keeps saying Active; the footer chips carry the drift.
-        // The pill color follows mic_enabled in the .slint layer.
+        // Nothing produces Pending; should it ever arrive, the mic is still
+        // running, so the pill says Active and the footer chips carry any
+        // staged edits. The pill color follows mic_enabled in the .slint
+        // layer.
         let (status_text, mic_enabled) = match status {
             Status::Active | Status::Pending => ("Active", true),
             Status::Inactive => ("Inactive", false),
@@ -251,7 +252,7 @@ fn reresolve_selection(old: &[AudioDevice], old_idx: i32, new: &[AudioDevice]) -
 }
 
 /// The last settings the daemon acknowledged; staged UI edits are compared
-/// against these to drive the Active↔Pending display.
+/// against these to drive the footer's unsaved-changes chips.
 struct AppliedSettings {
     device_node_name: std::cell::RefCell<Option<String>>,
     threshold: std::cell::Cell<i32>,
@@ -311,8 +312,8 @@ fn changed_settings(
 }
 
 /// Recompute the staged-vs-applied diff, publish the footer's chip list, and
-/// report whether everything matches. The chips and the Pending drift both
-/// come from this one evaluation so they cannot disagree.
+/// report whether everything matches. The chips and the no-op Apply guard
+/// both come from this one evaluation so they cannot disagree.
 fn refresh_unsaved_changes(
     ui: &MainWindow,
     devices: &[AudioDevice],
@@ -333,39 +334,6 @@ fn refresh_unsaved_changes(
         ui.set_unsaved_changes(ModelRc::new(Rc::new(VecModel::from(labels))));
     }
     all_match
-}
-
-/// The status to display given the daemon's truth and the local view: staged
-/// but unapplied edits (a local Pending over a daemon Active) survive the
-/// poll; everything else defers to the daemon.
-fn reconcile_status(daemon: Status, local: Status) -> Status {
-    match (daemon, local) {
-        (Status::Active, Status::Pending) => Status::Pending,
-        (daemon, _) => daemon,
-    }
-}
-
-/// The Active↔Pending drift for one staged-settings evaluation: an applied
-/// (Active) mic drifts to Pending when settings diverge, and back to Active
-/// when they realign. `None` means the status stays put.
-fn pending_transition(current: Status, all_match: bool) -> Option<Status> {
-    match current {
-        Status::Active if !all_match => Some(Status::Pending),
-        Status::Pending if all_match => Some(Status::Active),
-        _ => None,
-    }
-}
-
-/// Apply [`pending_transition`] to the shared status cell and the window.
-fn apply_pending_transition(
-    current_status: &std::cell::Cell<Status>,
-    ui_weak: &Weak<MainWindow>,
-    all_match: bool,
-) {
-    if let Some(next) = pending_transition(current_status.get(), all_match) {
-        current_status.set(next);
-        update_ui_status(ui_weak, next);
-    }
 }
 
 fn main() -> std::process::ExitCode {
@@ -506,11 +474,9 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
         let applied = applied.clone();
-        let current_status = current_status.clone();
         move |_idx| {
             if let Some(ui) = ui_weak.upgrade() {
-                let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
-                apply_pending_transition(&current_status, &ui_weak, all_match);
+                refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
             }
         }
     });
@@ -519,11 +485,9 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
         let applied = applied.clone();
-        let current_status = current_status.clone();
         move |_val| {
             if let Some(ui) = ui_weak.upgrade() {
-                let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
-                apply_pending_transition(&current_status, &ui_weak, all_match);
+                refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
             }
         }
     });
@@ -532,11 +496,9 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
         let applied = applied.clone();
-        let current_status = current_status.clone();
         move |_checked| {
             if let Some(ui) = ui_weak.upgrade() {
-                let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
-                apply_pending_transition(&current_status, &ui_weak, all_match);
+                refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
             }
         }
     });
@@ -545,11 +507,9 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
         let applied = applied.clone();
-        let current_status = current_status.clone();
         move |_checked| {
             if let Some(ui) = ui_weak.upgrade() {
-                let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
-                apply_pending_transition(&current_status, &ui_weak, all_match);
+                refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
             }
         }
     });
@@ -558,11 +518,9 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
         let applied = applied.clone();
-        let current_status = current_status.clone();
         move |_new_name| {
             if let Some(ui) = ui_weak.upgrade() {
-                let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
-                apply_pending_transition(&current_status, &ui_weak, all_match);
+                refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
             }
         }
     });
@@ -571,13 +529,11 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
         let applied = applied.clone();
-        let current_status = current_status.clone();
         let last_valid = last_valid_mic_name.clone();
         move |default_name| {
             if let Some(ui) = ui_weak.upgrade() {
                 *last_valid.borrow_mut() = default_name.to_string();
-                let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
-                apply_pending_transition(&current_status, &ui_weak, all_match);
+                refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
             }
         }
     });
@@ -716,17 +672,15 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
         let applied = applied.clone();
-        let current_status = current_status.clone();
         let last_valid = last_valid_mic_name.clone();
         move |text| {
             if is_valid_mic_name_input(&text) {
                 *last_valid.borrow_mut() = text.to_string();
                 // The text field is the staged name — Enable sends it as
-                // typed — so every keystroke must update the chips and the
-                // Pending drift like any other control edit.
+                // typed — so every keystroke must update the chips like any
+                // other control edit.
                 if let Some(ui) = ui_weak.upgrade() {
-                    let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
-                    apply_pending_transition(&current_status, &ui_weak, all_match);
+                    refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
                 }
                 return;
             }
@@ -746,7 +700,6 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
         let applied = applied.clone();
-        let current_status = current_status.clone();
         move || {
             if let Some(ui) = ui_weak.upgrade() {
                 match audio_devices::get_input_devices() {
@@ -773,9 +726,8 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         // The refreshed list can move or drop the applied
                         // device, and a Rust-side selection set fires no
                         // change callback — recompute the diff here or the
-                        // chips and the Pending drift go stale.
-                        let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
-                        apply_pending_transition(&current_status, &ui_weak, all_match);
+                        // chips go stale.
+                        refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
                         clear_error(&ui_weak);
                     }
                     Err(e) => {
@@ -907,14 +859,12 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                             *applied.mic_name.borrow_mut() = state.mic_name.clone();
                         }
 
-                        let display = reconcile_status(state.status, current_status.get());
-                        if display != current_status.get() {
-                            current_status.set(display);
-                            update_ui_status(&ui_weak, display);
+                        if state.status != current_status.get() {
+                            current_status.set(state.status);
+                            update_ui_status(&ui_weak, state.status);
                         }
 
-                        let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
-                        apply_pending_transition(&current_status, &ui_weak, all_match);
+                        refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
 
                         if should_reconcile_daemon_error(
                             state.last_error.as_deref(),
@@ -1262,53 +1212,6 @@ mod tests {
         let some = std::cell::RefCell::new(Some("node.Yeti".to_string()));
         assert!(device_matches_applied(-1, &devices, &none));
         assert!(!device_matches_applied(-1, &devices, &some));
-    }
-
-    #[test]
-    fn poll_reconcile_then_pending_transition_reaches_a_fixed_point_in_one_tick() {
-        // The poll runs reconcile_status then pending_transition every tick;
-        // if one tick's output were not the next tick's fixed point (given
-        // unchanged daemon state and staged diff), the pill would oscillate.
-        use Status::*;
-        for daemon in [Active, Inactive, Pending] {
-            for local in [Active, Inactive, Pending] {
-                for all_match in [false, true] {
-                    let tick = |local: Status| {
-                        let s = reconcile_status(daemon, local);
-                        pending_transition(s, all_match).unwrap_or(s)
-                    };
-                    let once = tick(local);
-                    assert_eq!(
-                        tick(once),
-                        once,
-                        "daemon {daemon:?}, local {local:?}, all_match {all_match}"
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn reconcile_prefers_daemon_truth_except_for_staged_edits() {
-        use Status::*;
-        let cases = [
-            (Active, Active, Active),
-            (Active, Pending, Pending),
-            (Active, Inactive, Active),
-            (Inactive, Active, Inactive),
-            (Inactive, Pending, Inactive),
-            (Inactive, Inactive, Inactive),
-            (Pending, Active, Pending),
-            (Pending, Pending, Pending),
-            (Pending, Inactive, Pending),
-        ];
-        for (daemon, local, expected) in cases {
-            assert_eq!(
-                reconcile_status(daemon, local),
-                expected,
-                "daemon {daemon:?}, local {local:?}"
-            );
-        }
     }
 
     #[test]
