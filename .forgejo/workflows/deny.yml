@@ -1,0 +1,21 @@
+name: deny
+
+# Advisories land in the RustSec DB without any change here, so a weekly
+# run catches what the lockfile already holds; the path filters catch what
+# a change brings in. Scheduled runs only fire from the default branch.
+on:
+  schedule:
+    - cron: '23 5 * * 1'
+  pull_request:
+    branches: [main]
+    paths: [Cargo.toml, Cargo.lock, deny.toml]
+  push:
+    branches: [main]
+    paths: [Cargo.toml, Cargo.lock, deny.toml]
+
+jobs:
+  deny:
+    runs-on: self-hosted
+    steps:
+      - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: nix develop -c cargo deny check

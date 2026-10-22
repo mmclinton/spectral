@@ -1,7 +1,8 @@
 # Supply-chain policy for `cargo deny check`.
-# Advisories fetch the RustSec DB over the network, which is why this is an
-# on-demand gate (after any dependency change, and step 4 of
-# docs/RELEASING.md), not a nix flake check.
+# Advisories fetch the RustSec DB over the network, which is why this runs
+# in its own workflow (.forgejo/workflows/deny.yml: weekly, and on any change
+# to the manifest, the lockfile or this file) and by hand at step 4 of
+# docs/RELEASING.md, not inside nix flake check.
 
 [graph]
 # Only what we ship; drops windows/macos/android arms of slint's dep tree.
