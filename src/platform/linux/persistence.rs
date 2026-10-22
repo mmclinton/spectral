@@ -159,13 +159,18 @@ pub fn get_filtered_recording_path() -> Result<PathBuf, io::Error> {
 
 /// Loads persisted settings, returning defaults when no file exists yet.
 pub fn load_state() -> Result<PersistedState, io::Error> {
-    let path = get_config_path()?;
+    read_state_from(&get_config_path()?)
+}
 
-    if !path.exists() {
-        return Ok(PersistedState::default());
-    }
-
-    let contents = fs::read_to_string(&path)?;
+/// Only a file that is not there means a first run. `Path::exists` would
+/// also answer false for one that is there but unreadable, and so would
+/// quietly start an existing install over from defaults.
+fn read_state_from(path: &Path) -> Result<PersistedState, io::Error> {
+    let contents = match fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(PersistedState::default()),
+        Err(e) => return Err(e),
+    };
     toml::from_str(&contents).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
 }
 
@@ -263,6 +268,26 @@ mod tests {
             toml::from_str(with_a_key_we_do_not_know).expect("an unknown key must not fail load");
         assert_eq!(state.mic_name, "My-Mic");
         assert_eq!(state.threshold, 65);
+    }
+
+    #[test]
+    fn a_missing_settings_file_loads_defaults_but_an_unreadable_one_is_an_error() {
+        let dir = std::env::temp_dir().join(format!(
+            "spectral_persistence_unreadable_{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+
+        let missing = read_state_from(&dir.join("state.toml")).unwrap();
+        assert_eq!(missing.mic_name, PersistedState::default().mic_name);
+
+        // A file where a directory should be fails with ENOTDIR whoever runs
+        // the test; permission bits would not stop root.
+        let blocker = dir.join("blocker");
+        fs::write(&blocker, "").unwrap();
+        assert!(read_state_from(&blocker.join("state.toml")).is_err());
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// Temp files are named per write, so this cannot look for one fixed
