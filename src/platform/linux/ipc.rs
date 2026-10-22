@@ -301,8 +301,29 @@ impl DaemonClient {
         writeln!(self.reader.get_mut(), "{json}")?;
         self.reader.get_mut().flush()?;
 
+        // Both failures otherwise surface as the raw OS or parser text
+        // ("os error 11", "EOF while parsing a value"), which names neither
+        // the daemon nor what it failed to do.
         let mut response_line = String::new();
-        self.reader.read_line(&mut response_line)?;
+        let read = self.reader.read_line(&mut response_line).map_err(|e| {
+            if matches!(
+                e.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            ) {
+                std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    format!("the daemon did not answer within {CONNECTION_READ_TIMEOUT:?}"),
+                )
+            } else {
+                e
+            }
+        })?;
+        if read == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "the daemon closed the connection without answering",
+            ));
+        }
 
         serde_json::from_str(&response_line)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
