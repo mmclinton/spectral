@@ -13,7 +13,7 @@ spectral shutdown             # stop the daemon
 
 `spectral --help` prints the same reference; `spectral --version` prints the version. `man spectral` covers the same ground and adds the file locations.
 
-Fish users get completions for the subcommands and every flag, including live device ids for `--device` and the `on`/`off` values. The Nix package puts them on fish's completion path already; running from a checkout, `source assets/spectral.fish` loads them for the session. A Flatpak install has neither the page nor the completions: Flatpak exports neither to the host, and it names the command `page.codeberg.mmc.Spectral` rather than `spectral`.
+Fish users get completions for the subcommands and every flag, including live device ids for `--device` and the `on`/`off` values. The Nix package puts them on fish's completion path already; running from a checkout, `source assets/spectral.fish` loads them for the session. A Flatpak install has neither the page nor the completions, since Flatpak exports neither to the host; see [Under Flatpak](#under-flatpak) for the name the command takes there.
 
 ## `enable` flags
 
