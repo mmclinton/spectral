@@ -471,6 +471,12 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     let last_daemon_state = Rc::new(std::cell::RefCell::new(
         launch_error.is_none().then(|| daemon_state.clone()),
     ));
+    // Why the launch failed, until a daemon first answers. The poll shows it
+    // in place of the generic unreachable line: a .desktop launch has no
+    // stderr, so the window is the only place the cause is ever seen, and
+    // for a permanent one (a missing daemon binary, a bad XDG_RUNTIME_DIR)
+    // that line's "restart Spectral" is no remedy.
+    let launch_failure = Rc::new(std::cell::RefCell::new(launch_error));
 
     refresh_unsaved_changes(&ui, &filtered_devices.borrow(), &applied);
     update_ui_status(&ui_weak, daemon_state.status);
@@ -479,8 +485,8 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     if let Some(msg) = device_error {
         show_error(&ui_weak, &msg);
     }
-    if let Some(msg) = launch_error {
-        show_error(&ui_weak, &msg);
+    if let Some(msg) = launch_failure.borrow().as_deref() {
+        show_error(&ui_weak, msg);
     }
 
     ui.on_selected_input_index_changed({
@@ -838,8 +844,15 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let last_daemon_error = last_daemon_error.clone();
         let last_daemon_state = last_daemon_state.clone();
         let showing_reconnect = showing_reconnect.clone();
+        let launch_failure = launch_failure.clone();
         move || {
             let Some(ui) = ui_weak.upgrade() else { return };
+            let unreachable = || {
+                launch_failure
+                    .borrow()
+                    .clone()
+                    .unwrap_or_else(|| DAEMON_UNREACHABLE.to_string())
+            };
             match DaemonClient::connect() {
                 Ok(mut c) => match c.send_command(DaemonCommand::GetState) {
                     Ok(DaemonResponse::State(state)) => {
@@ -847,6 +860,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         // must leave the last known good snapshot standing,
                         // since that is the one worth reporting.
                         *last_daemon_state.borrow_mut() = Some(state.clone());
+                        launch_failure.borrow_mut().take();
 
                         // The card drives its own recording display and
                         // counts itself down, so a capture the daemon has
@@ -921,7 +935,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         ui.set_is_recording(false);
                     }
                     Err(_) => {
-                        show_error(&ui_weak, DAEMON_UNREACHABLE);
+                        show_error(&ui_weak, &unreachable());
                         // An unreachable daemon is not playing anything; a
                         // stale true here would also pin the poll timer at
                         // its 250 ms playback interval.
@@ -936,7 +950,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                     // display to Inactive so the controls offer Enable. If the
                     // daemon somehow returns on its own the message lingers —
                     // accepted, nothing auto-restarts it.
-                    show_error(&ui_weak, DAEMON_UNREACHABLE);
+                    show_error(&ui_weak, &unreachable());
                     ui.set_is_playing_original(false);
                     ui.set_is_playing_filtered(false);
                     ui.set_reconnecting(false);
