@@ -112,6 +112,19 @@ fn should_reconcile_daemon_error(
     daemon_error != cached || (line_is_empty && daemon_error.is_some())
 }
 
+/// Whether a daemon error that has since resolved should come off the
+/// window's error line. Another client's Enable or Disable resets the
+/// daemon's `last_error`, and without this the line would go on showing it
+/// beside an Active pill. Only the exact cached text is withdrawn: a local
+/// message that has replaced it since is not the daemon's to retract.
+fn should_withdraw_daemon_error(
+    daemon_error: Option<&str>,
+    cached: Option<&str>,
+    line: &str,
+) -> bool {
+    daemon_error.is_none() && cached == Some(line)
+}
+
 /// Send a command whose only interesting outcome is success or an error
 /// message; failures land in the window's error line, successes clear it.
 /// Returns whether the daemon acknowledged, so callers can roll back UI
@@ -873,6 +886,12 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         ) {
                             if let Some(msg) = &state.last_error {
                                 show_error(&ui_weak, msg);
+                            } else if should_withdraw_daemon_error(
+                                state.last_error.as_deref(),
+                                last_daemon_error.borrow().as_deref(),
+                                &ui.get_error_text(),
+                            ) {
+                                clear_error(&ui_weak);
                             }
                             *last_daemon_error.borrow_mut() = state.last_error;
                         }
@@ -1288,6 +1307,27 @@ mod tests {
     #[test]
     fn a_resolved_daemon_error_is_re_cached_so_its_return_shows_again() {
         assert!(should_reconcile_daemon_error(None, Some("stale"), false));
+    }
+
+    #[test]
+    fn a_daemon_error_resolved_elsewhere_comes_off_the_line_only_if_still_shown() {
+        const DAEMON: &str = "Virtual mic stopped";
+        const LOCAL: &str = "Failed to play";
+        let cases = [
+            // (daemon now, cached, line, withdraw)
+            (None, Some(DAEMON), DAEMON, true),
+            (None, Some(DAEMON), LOCAL, false),
+            (None, Some(DAEMON), "", false),
+            (None, None, LOCAL, false),
+            (Some(DAEMON), Some(DAEMON), DAEMON, false),
+        ];
+        for (daemon, cached, line, withdraw) in cases {
+            assert_eq!(
+                should_withdraw_daemon_error(daemon, cached, line),
+                withdraw,
+                "daemon {daemon:?}, cached {cached:?}, line {line:?}"
+            );
+        }
     }
 
     /// What the embedded faces owe the markup that asks for them.
