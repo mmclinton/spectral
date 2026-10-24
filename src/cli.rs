@@ -1208,8 +1208,9 @@ mod tests {
         );
     }
 
-    /// The FILES section names two paths whose last component lives in the
-    /// modules that build them, so either can move without the page noticing.
+    /// Of the paths the FILES section names, the settings file and the socket
+    /// take their last component from a constant in the module that builds
+    /// them, so either can move without the page noticing.
     #[test]
     fn the_man_page_names_the_files_spectral_actually_uses() {
         let man = unescape_roff(include_str!("../assets/spectral.1"));
