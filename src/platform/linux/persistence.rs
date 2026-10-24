@@ -162,9 +162,10 @@ pub fn load_state() -> Result<PersistedState, io::Error> {
     read_state_from(&get_config_path()?)
 }
 
-/// Only a file that is not there means a first run. `Path::exists` would
-/// also answer false for one that is there but unreadable, and so would
-/// quietly start an existing install over from defaults.
+/// Only `NotFound` from the read itself means a first run. Any other
+/// failure goes back to the caller, even one that leaves the file looking
+/// absent because it cannot be stat'ed, so an existing install is never
+/// quietly treated as a new one.
 fn read_state_from(path: &Path) -> Result<PersistedState, io::Error> {
     let contents = match fs::read_to_string(path) {
         Ok(contents) => contents,
