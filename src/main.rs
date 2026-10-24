@@ -481,7 +481,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     refresh_unsaved_changes(&ui, &filtered_devices.borrow(), &applied);
     update_ui_status(&ui_weak, daemon_state.status);
     // A daemon-launch failure outranks the device one: it implies the
-    // bigger problem, and its message names the remedy.
+    // bigger problem.
     if let Some(msg) = device_error {
         show_error(&ui_weak, &msg);
     }
