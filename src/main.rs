@@ -93,12 +93,13 @@ fn clear_error(ui_weak: &Weak<MainWindow>) {
 /// Whether a poll tick should push the daemon's `last_error` onto the
 /// window's error line and re-cache it.
 ///
-/// Change alone is not enough. A daemon error is sticky — only Enable
-/// clears it — while any local `clear_error` (a device refresh, a
-/// successful voice-test command, a no-op Apply) blanks the line without
-/// touching the cache. Keyed on change alone, such a clear would retire a
-/// still-standing error for good, taking the app-bar chip with it, and the
-/// chip is the only route to the diagnostics dump.
+/// Change alone is not enough. A daemon error is sticky, standing until a
+/// successful enable, disable or voice-test start, while any local
+/// `clear_error` (a device refresh, a successful voice-test command, a
+/// no-op Apply) blanks the line without touching the cache. Keyed on
+/// change alone, such a clear would retire a still-standing error for
+/// good, taking the app-bar chip with it, and the chip is the only route
+/// to the diagnostics dump.
 ///
 /// So an empty line also re-shows: it means "nothing displayed", not
 /// "already displayed". That keeps the property the change test exists for
@@ -456,10 +457,10 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     });
     let current_status = Rc::new(std::cell::Cell::new(daemon_state.status));
     // The poll's cache of the daemon's sticky last_error (display-on-change
-    // only). Shared with the enable/disable handlers: those are the two
-    // commands after which the daemon itself resets last_error to None, so
-    // resetting the cache there re-arms the display for a failure that
-    // recurs with the identical message within one poll tick.
+    // only). Shared with the enable/disable handlers: the daemon itself
+    // resets last_error to None when either succeeds, so resetting the
+    // cache there re-arms the display for a failure that recurs with the
+    // identical message within one poll tick.
     let last_daemon_error = Rc::new(std::cell::RefCell::new(None::<String>));
     // Whether the error line currently carries the reconnect notice, so it
     // can be withdrawn without disturbing a daemon error underneath it.
@@ -913,9 +914,10 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         // The reconnect window is a live condition, not a
                         // sticky daemon error: it is re-derived every tick
                         // and withdrawn the moment the capture stream is
-                        // back, which last_error's cleared-only-by-enable
-                        // contract cannot express. It overlays the line so
-                        // the user sees why the mic is silent right now.
+                        // back. last_error cannot express that: only a
+                        // later enable, disable or voice-test start clears
+                        // it. It overlays the line so the user sees why the
+                        // mic is silent right now.
                         ui.set_reconnecting(state.capture_detached);
                         if state.capture_detached {
                             show_error(&ui_weak, DEVICE_RECONNECTING);
