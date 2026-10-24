@@ -653,9 +653,9 @@ mod tests {
             is_playing_filtered: false,
             last_error: None,
         };
-        // The third status. It reaches clients on every enable and disable, so
-        // its spelling needs a golden of its own; without one, renaming it
-        // would be a wire break the suite passes.
+        // The third status. No component sends it, but it is part of the wire
+        // vocabulary, so its spelling needs a golden of its own; without one,
+        // renaming it would be a wire break the suite passes.
         let pending_state = DaemonState {
             protocol_version: PROTOCOL_VERSION,
             status: Status::Pending,
