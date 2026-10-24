@@ -22,7 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Pressing Ctrl-C in, or closing, the terminal you started the window from no longer takes the virtual mic down with it. A daemon the window started shared the terminal's signals, so whether the mic outlived the window depended on how it had been launched.
 - An error that has been resolved elsewhere, for example by a `spectral enable` or `spectral disable` from a terminal, now leaves the window too. It used to stay on screen next to an Active status, along with its Error chip.
 - When the window opens without being able to start the daemon, the reason now stays on screen. After a second it was replaced with a generic "restart Spectral" message, which cannot help when the cause is permanent, such as a missing `spectral-daemon` binary.
-- A greyed-out button no longer acts on Space or Enter. A button that still had keyboard focus when it was disabled, such as Record after the microphone stopped, went on responding to the keyboard.
+- A grayed-out button no longer acts on Space or Enter. A button that still had keyboard focus when it was disabled, such as Record after the microphone stopped, went on responding to the keyboard.
 - `spectral shutdown` interrupted before it finished no longer leaves the daemon half shut down. The microphone was gone, but the daemon kept running and went on reporting it as Active.
 - When the daemon drops or stalls a request, the command now says so, instead of printing "EOF while parsing a value" or "Resource temporarily unavailable (os error 11)".
 - When the settings file exists but cannot be read, the daemon log now says so. Spectral used to start from defaults as though it were a first run, with nothing to explain why.
