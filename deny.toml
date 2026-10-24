@@ -20,8 +20,10 @@ yanked = "deny"
 #   ttf-parser 0.25.1 RUSTSEC-2026-0192  via ab_glyph -> sctk-adwaita -> winit
 #
 # The other three were folded into zbus 6 rather than abandoned, and arrive
-# through slint's accessibility stack (accesskit_unix -> atspi, zbus 5). They
-# clear when accesskit moves to zbus 6; nothing on our side can move them.
+# with zbus 5, which slint's winit backend reaches two ways: directly, for
+# the XDG desktop-settings portal, and through its accessibility stack
+# (accesskit_unix -> atspi). They clear only once both move to zbus 6;
+# nothing on our side can move them.
 #
 #   zbus_names 4.3.4       RUSTSEC-2026-0371
 #   zvariant 5.15.0        RUSTSEC-2026-0370
