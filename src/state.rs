@@ -44,8 +44,8 @@ pub enum Status {
     Active,
     /// Staged-but-unapplied settings over a running mic. No component
     /// produces it: the daemon reports only Active and Inactive, and the GUI
-    /// shows staged edits as footer chips. It stays in the wire vocabulary
-    /// so a snapshot that carries it still parses.
+    /// shows staged edits as footer chips. It is part of the IPC wire
+    /// vocabulary, whose spelling the wire tests in `ipc.rs` pin.
     Pending,
 }
 
