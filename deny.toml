@@ -1,6 +1,8 @@
 # Supply-chain policy for `cargo deny check`.
-# Advisories fetch the RustSec DB over the network, which is why this is a
-# release-Stage-0 / on-demand gate, not a nix flake check.
+# Advisories fetch the RustSec DB over the network, which is why this runs
+# in its own workflow (.forgejo/workflows/deny.yml: weekly, and on any change
+# to the manifest, the lockfile or this file) and by hand at step 4 of
+# docs/RELEASING.md, not inside nix flake check.
 
 [graph]
 # Only what we ship; drops windows/macos/android arms of slint's dep tree.
@@ -11,30 +13,36 @@ yanked = "deny"
 # Unmaintained-crate advisories only fail for direct dependencies — those we
 # can act on. Vulnerabilities still deny everywhere in the tree.
 #
-# What this actually suppresses, re-derived 2026-08-21 by running with
-# unmaintained = "all": exactly three crates, all final upstream releases
+# What this actually suppresses, re-derived 2026-10-22 by running with
+# unmaintained = "all": four crates. The first is a final upstream release
 # with no upgrade to move to, ever.
 #
-#   paste 1.0.15      RUSTSEC-2024-0436  proc-macro; no runtime surface
-#   rustybuzz 0.20.1  RUSTSEC-2026-0206  via usvg -> resvg -> i-slint-common
-#   ttf-parser 0.25.1 RUSTSEC-2026-0192  same path, plus ab_glyph -> winit
+#   ttf-parser 0.25.1 RUSTSEC-2026-0192  via ab_glyph -> sctk-adwaita -> winit
 #
-# The load-bearing argument is reachability, not upgrade cost. Spectral ships
-# no SVG or bitmap asset — nothing in ui/ or src/ references one — so the
-# whole resvg/usvg decode stack is linked and never fed. ttf-parser is live
-# through winit's Wayland client-side title bar, which reads system fonts
-# from directories no other local user can write, and it is
-# #![forbid(unsafe_code)]. Adding an SVG/image asset, a theming option, or a
-# user-supplied-font feature invalidates this and puts an unmaintained parser
-# on an untrusted-input path with nobody upstream to report to. Prefer a
-# pre-rasterized PNG over an SVG if an asset is ever needed.
+# The other three were folded into zbus 6 rather than abandoned, and arrive
+# with zbus 5, which slint's winit backend reaches two ways: directly, for
+# the XDG desktop-settings portal, and through its accessibility stack
+# (accesskit_unix -> atspi). They clear only once both move to zbus 6;
+# nothing on our side can move them.
+#
+#   zbus_names 4.3.4       RUSTSEC-2026-0371
+#   zvariant 5.15.0        RUSTSEC-2026-0370
+#   zvariant_derive 5.15.0 RUSTSEC-2026-0372  proc-macro
+#
+# The load-bearing argument is reachability, not upgrade cost. ttf-parser is
+# live only through winit's Wayland client-side title bar, which reads system
+# fonts from directories no other local user can write, and it is
+# #![forbid(unsafe_code)]. Slint's own text and SVG paths do not use it, so
+# neither an image asset nor a user-chosen font reaches it; only a change
+# that hands the title bar a font from somewhere less trusted would put an
+# unmaintained parser on an untrusted-input path.
 unmaintained = "workspace"
 
-# Note the reporting gap: cargo-deny has a severity knob for `unmaintained`
-# but none for `unsound` or `notice`, so those pass silently and "advisories
-# ok" is narrower assurance than it reads. memmap2 0.9.10 (RUSTSEC-2026-0186)
-# sat in the tree unreported until a manual sweep found it. Sweep the DB by
-# hand at release Stage 0 rather than trusting the green line alone.
+# Unsound advisories fail anywhere in the tree. cargo-deny's default reports
+# them only for direct dependencies, which left memmap2 0.9.10
+# (RUSTSEC-2026-0186) in the tree unreported until a manual sweep found it.
+# Notice advisories always fail; cargo-deny has no setting for them.
+unsound = "all"
 
 [licenses]
 # The binary is GPL-3.0-only, so any GPL-3.0-compatible license is

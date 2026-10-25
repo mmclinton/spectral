@@ -1476,12 +1476,12 @@ mod tests {
     /// That a button's label looks vertically centered in it.
     ///
     /// Slint sizes a `Text` to the font's whole line box and centers that
-    /// box, but the ink of one line does not sit in the middle of its line
+    /// box, but the ink of one line need not sit in the middle of its line
     /// box: the descender space is reserved whether or not the word uses
-    /// it, and the layout rounds ascent and descent to whole pixels
-    /// separately before splitting the remainder. Nothing about that is
-    /// visible from the markup, so the label's offset is only knowable by
-    /// rendering it and looking at where the pixels landed.
+    /// it, and the software renderer puts the baseline on the nearest whole
+    /// pixel. Nothing about that is visible from the markup, so the label's
+    /// offset is only knowable by rendering it and looking at where the
+    /// pixels landed.
     mod button_label {
         use slint::PhysicalSize;
         use slint::platform::software_renderer::{

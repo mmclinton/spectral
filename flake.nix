@@ -4,6 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     rust-overlay.url = "github:oxalica/rust-overlay";
+    rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
     flake-utils.url = "github:numtide/flake-utils";
     crane.url = "github:ipetkov/crane";
   };
@@ -25,7 +26,7 @@
         nixosModules.spectral = import ./nix/module.nix;
       };
 
-      perSystemOutputs = flake-utils.lib.eachDefaultSystem (
+      perSystemOutputs = flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" ] (
         system:
         let
           pkgs = import nixpkgs { inherit system; };
