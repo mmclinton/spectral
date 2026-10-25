@@ -1,11 +1,11 @@
 # Command-line interface
 
-The `spectral` binary doubles as a command-line client, so nothing about Spectral requires the GUI. Running it without a command opens the control panel; running it with one talks to the daemon and exits. `enable` starts the daemon if none is running, as the GUI does; `disable`, `shutdown` and `status` report that none is running instead, and `devices` reads the PipeWire registry directly and needs no daemon at all.
+The `spectral` binary doubles as a command-line client covering everything but the voice test, which is the one thing that needs the GUI. Running it without a command opens the control panel; running it with one talks to the daemon and exits. `enable` starts the daemon if none is running, as the GUI does; `disable`, `shutdown` and `status` report that none is running instead, and `devices` reads the PipeWire registry directly and needs no daemon at all.
 
 ```bash
 spectral devices              # list input devices: id, channels, name
 spectral enable --device 62   # create the virtual mic
-spectral enable               # re-enable with the remembered settings or defaults
+spectral enable               # re-enable with the remembered settings
 spectral status               # show state, device, mic name, threshold, toggles
 spectral disable              # tear the virtual mic down
 spectral shutdown             # stop the daemon
@@ -13,19 +13,19 @@ spectral shutdown             # stop the daemon
 
 `spectral --help` prints the same reference; `spectral --version` prints the version. `man spectral` covers the same ground and adds the file locations.
 
-Fish users get completions for the subcommands and every flag, including live device ids for `--device` and the `on`/`off` values. The Nix package puts them on fish's completion path already; running from a checkout, `source assets/spectral.fish` loads them for the session. A Flatpak install has neither the page nor the completions: Flatpak exports neither to the host, and it names the command `page.codeberg.mmc.Spectral` rather than `spectral`.
+Fish users get completions for the subcommands and every flag, including live device ids for `--device` and the `on`/`off` values. The Nix package puts them on fish's completion path already; running from a checkout, `source assets/spectral.fish` loads them for the session. A Flatpak install has neither the page nor the completions, since Flatpak exports neither to the host; see [Under Flatpak](#under-flatpak) for the name the command takes there.
 
 ## `enable` flags
 
 | Flag | Meaning |
 | --- | --- |
-| `--device <id>` | Input device id, as listed by `spectral devices`. Defaults to the remembered device. |
+| `--device <id>` | Input device id, as listed by `spectral devices`. Required the first time; afterwards defaults to the remembered device. |
 | `--threshold <0-100>` | Voice gate threshold; `0` means denoise only, with the gate off. Higher values gate more strictly on voice activity. |
 | `--mic-name <name>` | Virtual mic name. `[A-Za-z0-9_-]`, at most 20 characters. |
 | `--rumble-filter <on\|off>` | Cut low-frequency rumble (below ~90 Hz) before denoising. |
 | `--auto-level <on\|off>` | Even out voice volume automatically, with a peak limiter as the safety ceiling. |
 
-Every flag is optional, and an omitted flag keeps whatever the daemon already has — the prior setting, or the default on a first run. That is what makes a bare `spectral enable` a "restore what I had" command.
+Every flag but a first run's `--device` is optional, and an omitted flag keeps whatever the daemon already has — the prior setting, or the default on a first run. That is what makes a bare `spectral enable` a "restore what I had" command.
 
 ## Device ids
 

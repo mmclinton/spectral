@@ -28,8 +28,8 @@
     </screenshot>
   </screenshots>
   <branding>
-    <color type="primary" scheme_preference="light">#6ec8d6</color>
-    <color type="primary" scheme_preference="dark">#1b5560</color>
+    <color type="primary" scheme_preference="light">#9ed0ff</color>
+    <color type="primary" scheme_preference="dark">#1b3756</color>
   </branding>
   <categories>
     <category>AudioVideo</category>

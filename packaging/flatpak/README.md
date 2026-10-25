@@ -72,8 +72,7 @@ Note that `src/platform/linux/mod.rs::manager_client_properties` is what makes t
 
 ## Differences from the native builds
 
-- **No start at login.** True of every Spectral build today — none installs a user service. The daemon outlives the GUI window, so the virtual mic persists for the session, but not across logins.
-- **The CLI answers to the app ID.** Flatpak exports a single command per application, named after the app ID, so it is `page.codeberg.mmc.Spectral` on `$PATH` rather than `spectral`.
+- **The CLI answers to the app ID**, `page.codeberg.mmc.Spectral`, as described under [Build and install](#build-and-install).
 - **Paths move under `~/.var/app/page.codeberg.mmc.Spectral/`.** Settings and voice-test recordings live there rather than under `~/.config` and `~/.local/state`.
 
 ## For Flathub

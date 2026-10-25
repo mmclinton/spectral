@@ -10,7 +10,7 @@ Spectral needs Linux with **PipeWire** and its session manager, **WirePlumber**,
 
 ## NixOS / Nix
 
-Spectral is in nixpkgs as `spectral-mic` — the attribute carries the suffix, the binary it installs is `spectral`. Whether your channel has it yet depends on when that channel branched; `nix search nixpkgs spectral-mic` answers that for the one you are on.
+Spectral is in nixpkgs as `spectral-mic` — the attribute carries the suffix, the binary it installs is `spectral`. Whether your channel has it yet depends on when that channel branched; [search.nixos.org](https://search.nixos.org/packages?query=spectral-mic) shows it per channel.
 
 ```nix
 environment.systemPackages = [ pkgs.spectral-mic ];
