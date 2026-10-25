@@ -12,6 +12,8 @@ Everything is pinned by the nix flake:
 - `nix build` — `result/bin/spectral` and `result/bin/spectral-daemon`
 - `nix run` / `nix run .#daemon` — run the GUI or the daemon directly
 
+A daemon outlives the client that started it, Ctrl-C on that client included, and a new client reuses whichever daemon is already running unless its protocol version differs. Run `spectral shutdown` before trying a rebuilt daemon, or you are testing the old one.
+
 ## Before submitting
 
 `nix flake check` must pass. It builds the package and gates formatting (`rustfmt.toml`), lints, and `cargo test`. The `[lints]` table in Cargo.toml denies every rustc and clippy warning, with the test carve-outs and the project's identifier vocabulary in `clippy.toml`. A bare `cargo build` enforces the rustc half only, because rustc ignores `clippy::` lints; the clippy half needs `cargo clippy`.

@@ -31,7 +31,10 @@ export component AppButton {
         enabled: root.enabled;
 
         key-pressed(event) => {
-            if (event.text == " " || event.text == Key.Return) {
+            // FocusScope's own `enabled` does not stop key delivery to a
+            // scope that already has focus, so a button disabled while it
+            // holds focus would still fire.
+            if (root.enabled && (event.text == " " || event.text == Key.Return)) {
                 root.clicked();
                 return accept;
             }

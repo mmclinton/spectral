@@ -64,9 +64,10 @@ fn device_list_model(devices: &[AudioDevice]) -> ModelRc<InputDevice> {
 
 fn update_ui_status(ui_weak: &Weak<MainWindow>, status: Status) {
     if let Some(ui) = ui_weak.upgrade() {
-        // Pending is GUI-local (staged edits over a daemon-Active mic), so
-        // the pill keeps saying Active; the footer chips carry the drift.
-        // The pill color follows mic_enabled in the .slint layer.
+        // Nothing produces Pending; should it ever arrive, the mic is still
+        // running, so the pill says Active and the footer chips carry any
+        // staged edits. The pill color follows mic_enabled in the .slint
+        // layer.
         let (status_text, mic_enabled) = match status {
             Status::Active | Status::Pending => ("Active", true),
             Status::Inactive => ("Inactive", false),
@@ -92,12 +93,13 @@ fn clear_error(ui_weak: &Weak<MainWindow>) {
 /// Whether a poll tick should push the daemon's `last_error` onto the
 /// window's error line and re-cache it.
 ///
-/// Change alone is not enough. A daemon error is sticky — only Enable
-/// clears it — while any local `clear_error` (a device refresh, a
-/// successful voice-test command, a no-op Apply) blanks the line without
-/// touching the cache. Keyed on change alone, such a clear would retire a
-/// still-standing error for good, taking the app-bar chip with it, and the
-/// chip is the only route to the diagnostics dump.
+/// Change alone is not enough. A daemon error is sticky, standing until a
+/// successful enable, disable or voice-test start, while any local
+/// `clear_error` (a device refresh, a successful voice-test command, a
+/// no-op Apply) blanks the line without touching the cache. Keyed on
+/// change alone, such a clear would retire a still-standing error for
+/// good, taking the app-bar chip with it, and the chip is the only route
+/// to the diagnostics dump.
 ///
 /// So an empty line also re-shows: it means "nothing displayed", not
 /// "already displayed". That keeps the property the change test exists for
@@ -109,6 +111,19 @@ fn should_reconcile_daemon_error(
     line_is_empty: bool,
 ) -> bool {
     daemon_error != cached || (line_is_empty && daemon_error.is_some())
+}
+
+/// Whether a daemon error that has since resolved should come off the
+/// window's error line. Another client's Enable or Disable resets the
+/// daemon's `last_error`, and without this the line would go on showing it
+/// beside an Active pill. Only the exact cached text is withdrawn: a local
+/// message that has replaced it since is not the daemon's to retract.
+fn should_withdraw_daemon_error(
+    daemon_error: Option<&str>,
+    cached: Option<&str>,
+    line: &str,
+) -> bool {
+    daemon_error.is_none() && cached == Some(line)
 }
 
 /// Send a command whose only interesting outcome is success or an error
@@ -251,7 +266,7 @@ fn reresolve_selection(old: &[AudioDevice], old_idx: i32, new: &[AudioDevice]) -
 }
 
 /// The last settings the daemon acknowledged; staged UI edits are compared
-/// against these to drive the Active↔Pending display.
+/// against these to drive the footer's unsaved-changes chips.
 struct AppliedSettings {
     device_node_name: std::cell::RefCell<Option<String>>,
     threshold: std::cell::Cell<i32>,
@@ -311,8 +326,8 @@ fn changed_settings(
 }
 
 /// Recompute the staged-vs-applied diff, publish the footer's chip list, and
-/// report whether everything matches. The chips and the Pending drift both
-/// come from this one evaluation so they cannot disagree.
+/// report whether everything matches. The chips and the no-op Apply guard
+/// both come from this one evaluation so they cannot disagree.
 fn refresh_unsaved_changes(
     ui: &MainWindow,
     devices: &[AudioDevice],
@@ -333,39 +348,6 @@ fn refresh_unsaved_changes(
         ui.set_unsaved_changes(ModelRc::new(Rc::new(VecModel::from(labels))));
     }
     all_match
-}
-
-/// The status to display given the daemon's truth and the local view: staged
-/// but unapplied edits (a local Pending over a daemon Active) survive the
-/// poll; everything else defers to the daemon.
-fn reconcile_status(daemon: Status, local: Status) -> Status {
-    match (daemon, local) {
-        (Status::Active, Status::Pending) => Status::Pending,
-        (daemon, _) => daemon,
-    }
-}
-
-/// The Active↔Pending drift for one staged-settings evaluation: an applied
-/// (Active) mic drifts to Pending when settings diverge, and back to Active
-/// when they realign. `None` means the status stays put.
-fn pending_transition(current: Status, all_match: bool) -> Option<Status> {
-    match current {
-        Status::Active if !all_match => Some(Status::Pending),
-        Status::Pending if all_match => Some(Status::Active),
-        _ => None,
-    }
-}
-
-/// Apply [`pending_transition`] to the shared status cell and the window.
-fn apply_pending_transition(
-    current_status: &std::cell::Cell<Status>,
-    ui_weak: &Weak<MainWindow>,
-    all_match: bool,
-) {
-    if let Some(next) = pending_transition(current_status.get(), all_match) {
-        current_status.set(next);
-        update_ui_status(ui_weak, next);
-    }
 }
 
 fn main() -> std::process::ExitCode {
@@ -475,10 +457,10 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     });
     let current_status = Rc::new(std::cell::Cell::new(daemon_state.status));
     // The poll's cache of the daemon's sticky last_error (display-on-change
-    // only). Shared with the enable/disable handlers: those are the two
-    // commands after which the daemon itself resets last_error to None, so
-    // resetting the cache there re-arms the display for a failure that
-    // recurs with the identical message within one poll tick.
+    // only). Shared with the enable/disable handlers: the daemon itself
+    // resets last_error to None when either succeeds, so resetting the
+    // cache there re-arms the display for a failure that recurs with the
+    // identical message within one poll tick.
     let last_daemon_error = Rc::new(std::cell::RefCell::new(None::<String>));
     // Whether the error line currently carries the reconnect notice, so it
     // can be withdrawn without disturbing a daemon error underneath it.
@@ -490,27 +472,31 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     let last_daemon_state = Rc::new(std::cell::RefCell::new(
         launch_error.is_none().then(|| daemon_state.clone()),
     ));
+    // Why the launch failed, until a daemon first answers. The poll shows it
+    // in place of the generic unreachable line: a .desktop launch has no
+    // stderr, so the window is the only place the cause is ever seen, and
+    // for a permanent one (a missing daemon binary, a bad XDG_RUNTIME_DIR)
+    // that line's "restart Spectral" is no remedy.
+    let launch_failure = Rc::new(std::cell::RefCell::new(launch_error));
 
     refresh_unsaved_changes(&ui, &filtered_devices.borrow(), &applied);
     update_ui_status(&ui_weak, daemon_state.status);
     // A daemon-launch failure outranks the device one: it implies the
-    // bigger problem, and its message names the remedy.
+    // bigger problem.
     if let Some(msg) = device_error {
         show_error(&ui_weak, &msg);
     }
-    if let Some(msg) = launch_error {
-        show_error(&ui_weak, &msg);
+    if let Some(msg) = launch_failure.borrow().as_deref() {
+        show_error(&ui_weak, msg);
     }
 
     ui.on_selected_input_index_changed({
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
         let applied = applied.clone();
-        let current_status = current_status.clone();
         move |_idx| {
             if let Some(ui) = ui_weak.upgrade() {
-                let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
-                apply_pending_transition(&current_status, &ui_weak, all_match);
+                refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
             }
         }
     });
@@ -519,11 +505,9 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
         let applied = applied.clone();
-        let current_status = current_status.clone();
         move |_val| {
             if let Some(ui) = ui_weak.upgrade() {
-                let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
-                apply_pending_transition(&current_status, &ui_weak, all_match);
+                refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
             }
         }
     });
@@ -532,11 +516,9 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
         let applied = applied.clone();
-        let current_status = current_status.clone();
         move |_checked| {
             if let Some(ui) = ui_weak.upgrade() {
-                let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
-                apply_pending_transition(&current_status, &ui_weak, all_match);
+                refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
             }
         }
     });
@@ -545,11 +527,9 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
         let applied = applied.clone();
-        let current_status = current_status.clone();
         move |_checked| {
             if let Some(ui) = ui_weak.upgrade() {
-                let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
-                apply_pending_transition(&current_status, &ui_weak, all_match);
+                refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
             }
         }
     });
@@ -558,11 +538,9 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
         let applied = applied.clone();
-        let current_status = current_status.clone();
         move |_new_name| {
             if let Some(ui) = ui_weak.upgrade() {
-                let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
-                apply_pending_transition(&current_status, &ui_weak, all_match);
+                refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
             }
         }
     });
@@ -571,13 +549,11 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
         let applied = applied.clone();
-        let current_status = current_status.clone();
         let last_valid = last_valid_mic_name.clone();
         move |default_name| {
             if let Some(ui) = ui_weak.upgrade() {
                 *last_valid.borrow_mut() = default_name.to_string();
-                let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
-                apply_pending_transition(&current_status, &ui_weak, all_match);
+                refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
             }
         }
     });
@@ -716,17 +692,15 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
         let applied = applied.clone();
-        let current_status = current_status.clone();
         let last_valid = last_valid_mic_name.clone();
         move |text| {
             if is_valid_mic_name_input(&text) {
                 *last_valid.borrow_mut() = text.to_string();
                 // The text field is the staged name — Enable sends it as
-                // typed — so every keystroke must update the chips and the
-                // Pending drift like any other control edit.
+                // typed — so every keystroke must update the chips like any
+                // other control edit.
                 if let Some(ui) = ui_weak.upgrade() {
-                    let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
-                    apply_pending_transition(&current_status, &ui_weak, all_match);
+                    refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
                 }
                 return;
             }
@@ -746,7 +720,6 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let ui_weak = ui_weak.clone();
         let devices = filtered_devices.clone();
         let applied = applied.clone();
-        let current_status = current_status.clone();
         move || {
             if let Some(ui) = ui_weak.upgrade() {
                 match audio_devices::get_input_devices() {
@@ -773,9 +746,8 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         // The refreshed list can move or drop the applied
                         // device, and a Rust-side selection set fires no
                         // change callback — recompute the diff here or the
-                        // chips and the Pending drift go stale.
-                        let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
-                        apply_pending_transition(&current_status, &ui_weak, all_match);
+                        // chips go stale.
+                        refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
                         clear_error(&ui_weak);
                     }
                     Err(e) => {
@@ -873,8 +845,15 @@ fn run_app() -> Result<(), Box<dyn Error>> {
         let last_daemon_error = last_daemon_error.clone();
         let last_daemon_state = last_daemon_state.clone();
         let showing_reconnect = showing_reconnect.clone();
+        let launch_failure = launch_failure.clone();
         move || {
             let Some(ui) = ui_weak.upgrade() else { return };
+            let unreachable = || {
+                launch_failure
+                    .borrow()
+                    .clone()
+                    .unwrap_or_else(|| DAEMON_UNREACHABLE.to_string())
+            };
             match DaemonClient::connect() {
                 Ok(mut c) => match c.send_command(DaemonCommand::GetState) {
                     Ok(DaemonResponse::State(state)) => {
@@ -882,6 +861,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         // must leave the last known good snapshot standing,
                         // since that is the one worth reporting.
                         *last_daemon_state.borrow_mut() = Some(state.clone());
+                        launch_failure.borrow_mut().take();
 
                         // The card drives its own recording display and
                         // counts itself down, so a capture the daemon has
@@ -907,14 +887,12 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                             *applied.mic_name.borrow_mut() = state.mic_name.clone();
                         }
 
-                        let display = reconcile_status(state.status, current_status.get());
-                        if display != current_status.get() {
-                            current_status.set(display);
-                            update_ui_status(&ui_weak, display);
+                        if state.status != current_status.get() {
+                            current_status.set(state.status);
+                            update_ui_status(&ui_weak, state.status);
                         }
 
-                        let all_match = refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
-                        apply_pending_transition(&current_status, &ui_weak, all_match);
+                        refresh_unsaved_changes(&ui, &devices.borrow(), &applied);
 
                         if should_reconcile_daemon_error(
                             state.last_error.as_deref(),
@@ -923,6 +901,12 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         ) {
                             if let Some(msg) = &state.last_error {
                                 show_error(&ui_weak, msg);
+                            } else if should_withdraw_daemon_error(
+                                state.last_error.as_deref(),
+                                last_daemon_error.borrow().as_deref(),
+                                &ui.get_error_text(),
+                            ) {
+                                clear_error(&ui_weak);
                             }
                             *last_daemon_error.borrow_mut() = state.last_error;
                         }
@@ -930,9 +914,10 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         // The reconnect window is a live condition, not a
                         // sticky daemon error: it is re-derived every tick
                         // and withdrawn the moment the capture stream is
-                        // back, which last_error's cleared-only-by-enable
-                        // contract cannot express. It overlays the line so
-                        // the user sees why the mic is silent right now.
+                        // back. last_error cannot express that: only a
+                        // later enable, disable or voice-test start clears
+                        // it. It overlays the line so the user sees why the
+                        // mic is silent right now.
                         ui.set_reconnecting(state.capture_detached);
                         if state.capture_detached {
                             show_error(&ui_weak, DEVICE_RECONNECTING);
@@ -952,7 +937,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                         ui.set_is_recording(false);
                     }
                     Err(_) => {
-                        show_error(&ui_weak, DAEMON_UNREACHABLE);
+                        show_error(&ui_weak, &unreachable());
                         // An unreachable daemon is not playing anything; a
                         // stale true here would also pin the poll timer at
                         // its 250 ms playback interval.
@@ -967,7 +952,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                     // display to Inactive so the controls offer Enable. If the
                     // daemon somehow returns on its own the message lingers —
                     // accepted, nothing auto-restarts it.
-                    show_error(&ui_weak, DAEMON_UNREACHABLE);
+                    show_error(&ui_weak, &unreachable());
                     ui.set_is_playing_original(false);
                     ui.set_is_playing_filtered(false);
                     ui.set_reconnecting(false);
@@ -1265,53 +1250,6 @@ mod tests {
     }
 
     #[test]
-    fn poll_reconcile_then_pending_transition_reaches_a_fixed_point_in_one_tick() {
-        // The poll runs reconcile_status then pending_transition every tick;
-        // if one tick's output were not the next tick's fixed point (given
-        // unchanged daemon state and staged diff), the pill would oscillate.
-        use Status::*;
-        for daemon in [Active, Inactive, Pending] {
-            for local in [Active, Inactive, Pending] {
-                for all_match in [false, true] {
-                    let tick = |local: Status| {
-                        let s = reconcile_status(daemon, local);
-                        pending_transition(s, all_match).unwrap_or(s)
-                    };
-                    let once = tick(local);
-                    assert_eq!(
-                        tick(once),
-                        once,
-                        "daemon {daemon:?}, local {local:?}, all_match {all_match}"
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn reconcile_prefers_daemon_truth_except_for_staged_edits() {
-        use Status::*;
-        let cases = [
-            (Active, Active, Active),
-            (Active, Pending, Pending),
-            (Active, Inactive, Active),
-            (Inactive, Active, Inactive),
-            (Inactive, Pending, Inactive),
-            (Inactive, Inactive, Inactive),
-            (Pending, Active, Pending),
-            (Pending, Pending, Pending),
-            (Pending, Inactive, Pending),
-        ];
-        for (daemon, local, expected) in cases {
-            assert_eq!(
-                reconcile_status(daemon, local),
-                expected,
-                "daemon {daemon:?}, local {local:?}"
-            );
-        }
-    }
-
-    #[test]
     fn an_idle_window_owes_the_daemon_nothing_on_exit() {
         assert!(exit_stop_commands(false, false, false).is_empty());
     }
@@ -1385,6 +1323,27 @@ mod tests {
     #[test]
     fn a_resolved_daemon_error_is_re_cached_so_its_return_shows_again() {
         assert!(should_reconcile_daemon_error(None, Some("stale"), false));
+    }
+
+    #[test]
+    fn a_daemon_error_resolved_elsewhere_comes_off_the_line_only_if_still_shown() {
+        const DAEMON: &str = "Virtual mic stopped";
+        const LOCAL: &str = "Failed to play";
+        let cases = [
+            // (daemon now, cached, line, withdraw)
+            (None, Some(DAEMON), DAEMON, true),
+            (None, Some(DAEMON), LOCAL, false),
+            (None, Some(DAEMON), "", false),
+            (None, None, LOCAL, false),
+            (Some(DAEMON), Some(DAEMON), DAEMON, false),
+        ];
+        for (daemon, cached, line, withdraw) in cases {
+            assert_eq!(
+                should_withdraw_daemon_error(daemon, cached, line),
+                withdraw,
+                "daemon {daemon:?}, cached {cached:?}, line {line:?}"
+            );
+        }
     }
 
     /// What the embedded faces owe the markup that asks for them.

@@ -42,8 +42,10 @@ pub enum Status {
     Inactive,
     /// The pipeline is running and the virtual mic is available.
     Active,
-    /// Staged-but-unapplied settings over a running mic. Set only by the
-    /// GUI; the daemon never reports it.
+    /// Staged-but-unapplied settings over a running mic. No component
+    /// produces it: the daemon reports only Active and Inactive, and the GUI
+    /// shows staged edits as footer chips. It is part of the IPC wire
+    /// vocabulary, whose spelling the wire tests in `ipc.rs` pin.
     Pending,
 }
 

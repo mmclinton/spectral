@@ -6,6 +6,7 @@ use spectral_lib::platform::ipc::{
     wait_for_daemon_exit,
 };
 use std::error::Error;
+use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 
 /// Spawn `spectral-daemon` from the current executable's directory, logging
@@ -29,10 +30,15 @@ pub fn start_daemon() -> Result<(), Box<dyn Error>> {
         .append(true)
         .open(&log_file)?;
 
+    // Its own process group, so the terminal that launched this client
+    // cannot signal the daemon: Ctrl-C there would otherwise take the
+    // virtual mic down with the window, and closing the terminal would
+    // SIGHUP it without a clean teardown.
     let mut child = Command::new(&daemon_path)
         .stdin(Stdio::null())
         .stdout(log.try_clone()?)
         .stderr(log)
+        .process_group(0)
         .spawn()?;
 
     // The daemon normally outlives this process, but if it crashes or is shut

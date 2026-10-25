@@ -65,7 +65,7 @@ export component ThresholdBand inherits Rectangle {
             minimum: 0;
             maximum: 100;
             changed(value) => {
-                // Don't auto-apply - the GUI recomputes its local pending status
+                // Don't auto-apply - the GUI recomputes its unsaved-changes chips
                 root.threshold_changed(value);
             }
         }

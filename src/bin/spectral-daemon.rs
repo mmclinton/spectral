@@ -688,7 +688,13 @@ fn handle_client(
                             p.stop();
                         }
 
-                        conn.send_response(DaemonResponse::Ok)?;
+                        // The teardown above has already happened, so a
+                        // client that left before reading the ack (Ctrl-C
+                        // on `spectral shutdown`) must not keep alive a
+                        // daemon with no mic and a status still Active.
+                        if let Err(e) = conn.send_response(DaemonResponse::Ok) {
+                            eprintln!("[daemon] could not acknowledge shutdown: {e}");
+                        }
                         std::process::exit(0);
                     }
                 };
