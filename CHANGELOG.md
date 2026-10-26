@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 - A manual page, so `man spectral` now works. It documents the commands, the `enable` flags, the exit codes, and where Spectral keeps your settings, its control socket, its log and your voice-test recordings.
-- Completions for the fish shell, covering the commands and every flag. `--device` completes to the input devices currently on your system, listed with their names, so there is no need to run `spectral devices` first and copy an id; `--rumble-filter` and `--auto-level` complete to `on` and `off`. The Nix package installs both the page and the completions for you; the Flatpak does not, since Flatpak exports neither to the host and its command is named `page.codeberg.mmc.Spectral`.
+- Completions for fish, zsh and bash, covering the commands and every flag. `--device` completes to the input devices currently on your system, so there is no need to run `spectral devices` first and copy an id; fish and zsh list each one with its name, while bash, which has no way to show one, offers the ids alone. `--rumble-filter` and `--auto-level` complete to `on` and `off`. The Nix package installs both the page and the completions for you; the Flatpak does not, since Flatpak exports neither to the host and its command is named `page.codeberg.mmc.Spectral`.
 - A mistyped command or flag now suggests what you probably meant: `spectral enalbe` answers with "did you mean 'enable'?" instead of only saying the word was not recognized. Nothing is suggested when no command is close enough for the guess to be worth making.
 
 ### Changed
