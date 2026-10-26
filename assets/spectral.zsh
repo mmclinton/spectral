@@ -8,6 +8,9 @@
 # names, and the on|off toggles to their values.
 
 _spectral_devices() {
+    # With bashrematch set, =~ fills $BASH_REMATCH and leaves $match empty,
+    # and compinit's option reset does not cover it.
+    setopt localoptions nobashrematch
     local -a devices match mbegin mend
     local line
     # Bounded because `spectral devices` runs a PipeWire main loop with no
