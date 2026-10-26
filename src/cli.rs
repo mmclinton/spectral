@@ -951,18 +951,6 @@ mod tests {
             .collect()
     }
 
-    /// The completion files with no single shape to parse.
-    const BASH_AND_ZSH: [(&str, &str); 2] = [
-        (
-            "assets/spectral.bash",
-            include_str!("../assets/spectral.bash"),
-        ),
-        (
-            "assets/spectral.zsh",
-            include_str!("../assets/spectral.zsh"),
-        ),
-    ];
-
     /// A bash or zsh completion file with its comment lines dropped, so
     /// prose about a flag is not read as the flag, and with the quotes,
     /// brackets and separators that glue a word to its neighbors turned into
@@ -1111,9 +1099,11 @@ mod tests {
     }
 
     /// Bash offers the subcommands and the `enable` flags from one word list
-    /// each, so those lists are what it is held to. Searching the file is
-    /// not enough: every flag also names its own `case` arm, so one dropped
-    /// from `flags` is never offered while the file still mentions it.
+    /// each, and completes a flag's value from the `case $prev` arm naming
+    /// it, so the lists and the arms are what it is held to. Searching the
+    /// file is not enough in either direction: a flag dropped from `flags`
+    /// is still named by its arm, and one dropped from the arms is still in
+    /// `flags`, where it falls through to offering flags as its value.
     #[test]
     fn the_bash_completions_offer_every_subcommand_and_option() {
         let bash = include_str!("../assets/spectral.bash");
@@ -1145,19 +1135,66 @@ mod tests {
                 "spectral.bash does not offer {option} in first position"
             );
         }
+
+        let lines: Vec<&str> = bash.lines().map(str::trim).collect();
+        let arms: Vec<(Vec<&str>, &str)> = lines
+            .iter()
+            .enumerate()
+            .filter_map(|(i, line)| {
+                let flags: Vec<&str> = line.strip_suffix(')')?.split(" | ").collect();
+                flags
+                    .iter()
+                    .all(|flag| flag.starts_with("--"))
+                    .then(|| (flags, lines.get(i + 1).copied().unwrap_or_default()))
+            })
+            .collect();
+        let action = |flag: &str| {
+            arms.iter()
+                .find(|(flags, _)| flags.contains(&flag))
+                .map(|(_, action)| *action)
+                .unwrap_or_else(|| panic!("spectral.bash has no case arm for the value of {flag}"))
+        };
+        for flag in ENABLE_FLAGS {
+            action(flag);
+        }
+        assert!(
+            action("--device").contains("_spectral_devices"),
+            "spectral.bash does not complete --device to the device ids"
+        );
+        let pair = format!("'{TOGGLE_ON} {TOGGLE_OFF}'");
+        for flag in ["--rumble-filter", "--auto-level"] {
+            assert!(
+                action(flag).contains(&pair),
+                "spectral.bash does not complete {flag} to {pair}"
+            );
+        }
     }
 
     /// Zsh has no list to read: each flag is an `_arguments` spec of its own
-    /// and each first-position option one half of a brace pair, so those are
-    /// the shapes it is held to. Its subcommands are held by the summary
-    /// check, which anchors each word to its `_describe` entry.
+    /// carrying its value's completion, and each first-position option one
+    /// half of a brace pair, so those are the shapes it is held to. Its
+    /// subcommands are held by the summary check, which anchors each word to
+    /// its `_describe` entry.
     #[test]
     fn the_zsh_completions_offer_every_option() {
         let zsh = include_str!("../assets/spectral.zsh");
+        let spec = |flag: &str| {
+            zsh.lines()
+                .find(|line| line.contains(&format!("'{flag}=[")))
+                .unwrap_or_else(|| panic!("spectral.zsh has no _arguments spec for {flag}"))
+        };
         for flag in ENABLE_FLAGS {
+            spec(flag);
+        }
+        assert!(
+            spec("--device").contains(":_spectral_devices'"),
+            "spectral.zsh does not complete --device to the devices"
+        );
+        let pair = format!(":({TOGGLE_ON} {TOGGLE_OFF})'");
+        for flag in ["--rumble-filter", "--auto-level"] {
             assert!(
-                zsh.contains(&format!("'{flag}=[")),
-                "spectral.zsh has no _arguments spec for {flag}"
+                spec(flag).contains(&pair),
+                "spectral.zsh does not complete {flag} to {pair}"
             );
         }
         for option in GLOBAL_OPTIONS {
@@ -1310,15 +1347,6 @@ mod tests {
             [TOGGLE_ON, TOGGLE_OFF, TOGGLE_ON, TOGGLE_OFF],
             "the fish completions offer a toggle value set the parser does not accept"
         );
-
-        // Bash and zsh offer the pair as a word list.
-        let pair = format!("{TOGGLE_ON} {TOGGLE_OFF}");
-        for (source, text) in BASH_AND_ZSH {
-            assert!(
-                text.contains(&pair),
-                "{source} does not offer the current on/off vocabulary {pair:?}"
-            );
-        }
     }
 
     /// Of the paths the FILES section names, the settings file and the socket
