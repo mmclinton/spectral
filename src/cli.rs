@@ -1169,14 +1169,24 @@ mod tests {
         }
     }
 
-    /// Zsh has no list to read: each flag is an `_arguments` spec of its own
-    /// carrying its value's completion, and each first-position option one
-    /// half of a brace pair, so those are the shapes it is held to. Its
-    /// subcommands are held by the summary check, which anchors each word to
-    /// its `_describe` entry.
+    /// Zsh offers its subcommands from one `_describe` list, held to
+    /// [`SUBCOMMANDS`] the way bash's is. It has no flag list: each flag is
+    /// an `_arguments` spec of its own carrying its value's completion, and
+    /// each first-position option one half of a brace pair, so those are the
+    /// shapes the rest is held to.
     #[test]
-    fn the_zsh_completions_offer_every_option() {
+    fn the_zsh_completions_offer_every_subcommand_and_option() {
         let zsh = include_str!("../assets/spectral.zsh");
+        let commands: Vec<&str> = zsh
+            .lines()
+            .map(str::trim)
+            .skip_while(|line| *line != "commands=(")
+            .skip(1)
+            .take_while(|line| *line != ")")
+            .filter_map(|entry| Some(entry.strip_prefix('"')?.split_once(':')?.0))
+            .collect();
+        assert_eq!(commands, SUBCOMMANDS, "spectral.zsh's commands list");
+
         let spec = |flag: &str| {
             zsh.lines()
                 .find(|line| line.contains(&format!("'{flag}=[")))
