@@ -29,6 +29,12 @@ _spectral() {
         prev=${COMP_WORDS[COMP_CWORD - 2]}
     fi
 
+    if ((COMP_CWORD == 1)); then
+        mapfile -t COMPREPLY < <(compgen -W "$commands -h --help -V --version" -- "$cur")
+        return
+    fi
+    [[ ${COMP_WORDS[1]} == enable ]] || return
+
     case $prev in
         --device)
             mapfile -t COMPREPLY < <(compgen -W "$(_spectral_devices)" -- "$cur")
@@ -43,20 +49,16 @@ _spectral() {
             ;;
     esac
 
-    if ((COMP_CWORD == 1)); then
-        mapfile -t COMPREPLY < <(compgen -W "$commands -h --help -V --version" -- "$cur")
-    elif [[ ${COMP_WORDS[1]} == enable ]]; then
-        # The parser rejects a flag given twice, so one already on the line
-        # is not offered again.
-        local i used=' ' flag unused=()
-        for ((i = 2; i < COMP_CWORD; i++)); do
-            used+="${COMP_WORDS[i]} "
-        done
-        for flag in $flags; do
-            [[ $used == *" $flag "* ]] || unused+=("$flag")
-        done
-        mapfile -t COMPREPLY < <(compgen -W "${unused[*]}" -- "$cur")
-    fi
+    # The parser rejects a flag given twice, so one already on the line is
+    # not offered again.
+    local i used=' ' flag unused=()
+    for ((i = 2; i < COMP_CWORD; i++)); do
+        used+="${COMP_WORDS[i]} "
+    done
+    for flag in $flags; do
+        [[ $used == *" $flag "* ]] || unused+=("$flag")
+    done
+    mapfile -t COMPREPLY < <(compgen -W "${unused[*]}" -- "$cur")
 }
 
 complete -F _spectral spectral
