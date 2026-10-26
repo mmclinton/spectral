@@ -11,6 +11,7 @@
   rustPlatform,
   pkg-config,
   makeWrapper,
+  installShellFiles,
   libxkbcommon,
   wayland,
   libx11,
@@ -110,7 +111,10 @@ craneLib'.buildPackage (
   // {
     inherit cargoArtifacts;
 
-    nativeBuildInputs = commonArgs.nativeBuildInputs ++ [ makeWrapper ];
+    nativeBuildInputs = commonArgs.nativeBuildInputs ++ [
+      makeWrapper
+      installShellFiles
+    ];
 
     # The tests gate every PR through passthru.tests.unit; running them
     # here as well would rebuild the test targets on every install.
@@ -121,8 +125,8 @@ craneLib'.buildPackage (
       install -Dm644 assets/page.codeberg.mmc.Spectral.metainfo.xml $out/share/metainfo/page.codeberg.mmc.Spectral.metainfo.xml
       install -Dm644 assets/spectral.png $out/share/icons/hicolor/512x512/apps/page.codeberg.mmc.Spectral.png
       install -Dm644 THIRD-PARTY.md $out/share/licenses/spectral/THIRD-PARTY.md
-      install -Dm644 assets/spectral.1 $out/share/man/man1/spectral.1
-      install -Dm644 assets/spectral.fish $out/share/fish/vendor_completions.d/spectral.fish
+      installManPage assets/spectral.1
+      installShellCompletion assets/spectral.{bash,fish,zsh}
 
       # The GUI shells out to xdg-open for its Help links; hosts without
       # xdg-utils would otherwise fail the spawn silently.
