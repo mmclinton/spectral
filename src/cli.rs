@@ -109,9 +109,9 @@ Exit codes:
 /// alongside the parser but something the parser itself reads.
 ///
 /// Each subcommand carries the one-line summary [`help`] renders. The man
-/// page and the completions restate it word for word and cannot
-/// interpolate, so a test holds all three to the same sentence — `status`
-/// had already picked up a second wording on each.
+/// page and the fish and zsh completions restate it word for word and
+/// cannot interpolate, so a test holds them all to the same sentence —
+/// `status` had already picked up a second wording on the page and in fish.
 const COMMANDS: [(&str, &str); 5] = [
     (
         "enable",
@@ -150,9 +150,9 @@ const ENABLE_FLAGS: [&str; 5] = [
 const THRESHOLD_MIN: i32 = 0;
 const THRESHOLD_MAX: i32 = 100;
 
-/// The two words the on/off flags accept, likewise spelled once. Fish
-/// completes to them, so drift here does not merely misdocument the parser:
-/// it offers a value set the parser rejects.
+/// The two words the on/off flags accept, likewise spelled once. Every
+/// shell's completions offer them, so drift here does not merely
+/// misdocument the parser: it completes to a value set the parser rejects.
 const TOGGLE_ON: &str = "on";
 const TOGGLE_OFF: &str = "off";
 
@@ -784,18 +784,18 @@ mod tests {
         }
     }
 
-    /// The four rendered surfaces, each normalized to the `--flag` spelling
-    /// so one scan can walk them all. `help()` is built here; the rest are
-    /// read at compile time, so a file that goes missing fails the build
-    /// rather than an assertion. Short forms (`-h`, `-V`) go unchecked; the
-    /// scan only looks at `--`.
+    /// The rendered surfaces, each normalized to the `--flag` spelling so
+    /// one scan can walk them all. `help()` is built here; the rest are read
+    /// at compile time, so a file that goes missing fails the build rather
+    /// than an assertion. Short forms (`-h`, `-V`) go unchecked; the scan
+    /// only looks at `--`.
     ///
     /// Fish contributes the options its `complete` invocations actually
     /// register rather than its raw text: a `-l` inside a `-d "..."`
     /// description would otherwise be read as a flag the file never
     /// documents, and the scan would fail naming something that does not
-    /// exist.
-    fn surfaces() -> [(&'static str, String); 4] {
+    /// exist. Bash and zsh contribute their code, through [`shell_code`].
+    fn surfaces() -> [(&'static str, String); 6] {
         [
             ("--help", help()),
             ("docs/CLI.md", include_str!("../docs/CLI.md").to_owned()),
@@ -810,6 +810,14 @@ mod tests {
                     .flat_map(|completion| completion.long_options.iter().cloned())
                     .collect::<Vec<_>>()
                     .join(" "),
+            ),
+            (
+                "assets/spectral.bash",
+                shell_code(include_str!("../assets/spectral.bash")),
+            ),
+            (
+                "assets/spectral.zsh",
+                shell_code(include_str!("../assets/spectral.zsh")),
             ),
         ]
     }
@@ -943,6 +951,36 @@ mod tests {
             .collect()
     }
 
+    /// The completion files with no single shape to parse.
+    const BASH_AND_ZSH: [(&str, &str); 2] = [
+        (
+            "assets/spectral.bash",
+            include_str!("../assets/spectral.bash"),
+        ),
+        (
+            "assets/spectral.zsh",
+            include_str!("../assets/spectral.zsh"),
+        ),
+    ];
+
+    /// A bash or zsh completion file with its comment lines dropped, so
+    /// prose about a flag is not read as the flag, and with the quotes,
+    /// brackets and separators that glue a word to its neighbors turned into
+    /// spaces: `'--device=[Input device to capture]'`, `"enable:Create ..."`
+    /// and `flags='--device --threshold'` all give up their words this way.
+    fn shell_code(text: &str) -> String {
+        text.lines()
+            .filter(|line| !line.trim_start().starts_with('#'))
+            .map(|line| {
+                line.replace(
+                    ['\'', '"', '(', ')', '[', ']', '{', '}', ',', ':', '='],
+                    " ",
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     /// Forces a new [`CliCommand`] to declare whether it is spelled as a
     /// subcommand: the match is exhaustive, so the variant will not compile
     /// until its arm names a word or says there is none.
@@ -1072,6 +1110,64 @@ mod tests {
         );
     }
 
+    /// Bash offers the subcommands and the `enable` flags from one word list
+    /// each, so those lists are what it is held to. Searching the file is
+    /// not enough: every flag also names its own `case` arm, so one dropped
+    /// from `flags` is never offered while the file still mentions it.
+    #[test]
+    fn the_bash_completions_offer_every_subcommand_and_option() {
+        let bash = include_str!("../assets/spectral.bash");
+        let list = |name: &str| -> Vec<&str> {
+            let prefix = format!("local {name}='");
+            bash.lines()
+                .find_map(|line| line.trim_start().strip_prefix(&prefix))
+                .and_then(|rest| rest.strip_suffix('\''))
+                .unwrap_or_else(|| panic!("spectral.bash must declare its {name} list"))
+                .split_whitespace()
+                .collect()
+        };
+        assert_eq!(
+            list("commands"),
+            SUBCOMMANDS,
+            "spectral.bash's commands list"
+        );
+        assert_eq!(list("flags"), ENABLE_FLAGS, "spectral.bash's flags list");
+
+        let first_position = bash
+            .lines()
+            .find(|line| line.contains("compgen -W \"$commands "))
+            .expect("spectral.bash must offer the commands in first position");
+        for option in GLOBAL_OPTIONS {
+            assert!(
+                first_position
+                    .split(|c: char| c.is_whitespace() || c == '"')
+                    .any(|word| word == option),
+                "spectral.bash does not offer {option} in first position"
+            );
+        }
+    }
+
+    /// Zsh has no list to read: each flag is an `_arguments` spec of its own
+    /// and each first-position option one half of a brace pair, so those are
+    /// the shapes it is held to. Its subcommands are held by the summary
+    /// check, which anchors each word to its `_describe` entry.
+    #[test]
+    fn the_zsh_completions_offer_every_option() {
+        let zsh = include_str!("../assets/spectral.zsh");
+        for flag in ENABLE_FLAGS {
+            assert!(
+                zsh.contains(&format!("'{flag}=[")),
+                "spectral.zsh has no _arguments spec for {flag}"
+            );
+        }
+        for option in GLOBAL_OPTIONS {
+            assert!(
+                zsh.contains(&format!(",{option}}}'[")),
+                "spectral.zsh has no first-position spec for {option}"
+            );
+        }
+    }
+
     /// [`GLOBAL_OPTIONS`] had no forward coverage at all: it appears only as
     /// an allow-list in the reverse scan, and an allow-list can never fail on
     /// a missing token. Deleting the man page's whole first-position block,
@@ -1130,17 +1226,19 @@ mod tests {
     }
 
     /// The five command summaries are byte-identical across `--help`, the
-    /// man page and the completions, and nothing held them together —
-    /// `status` had already picked up a second wording on the page and a
-    /// third in docs/CLI.md's usage block. `--help` now renders the table,
-    /// so only the two files can drift, and this is what catches that. The
-    /// page may say more than the summary, as its `status` entry does, but
-    /// it has to open with the same sentence.
+    /// man page and the fish and zsh completions, and nothing held them
+    /// together — `status` had already picked up a second wording on the
+    /// page and a third in docs/CLI.md's usage block. `--help` now renders
+    /// the table, so only the files can drift, and this is what catches
+    /// that. The page may say more than the summary, as its `status` entry
+    /// does, but it has to open with the same sentence. Bash shows no
+    /// descriptions, so it has none to hold.
     #[test]
     fn every_command_summary_reads_the_same_on_every_surface() {
         let man = unescape_roff(include_str!("../assets/spectral.1"));
         let commands = man_section(&man, ".SH COMMANDS");
         let completions = fish_completions();
+        let zsh = include_str!("../assets/spectral.zsh");
 
         for (word, summary) in COMMANDS {
             let (_, entry) = commands
@@ -1159,6 +1257,12 @@ mod tests {
                         && completion.description.as_deref() == Some(summary)
                 }),
                 "the fish completion for `{word}` does not carry its summary {summary:?}"
+            );
+            // Anchored to the `_describe` entry shape, so the summary has to
+            // sit beside its own word.
+            assert!(
+                zsh.contains(&format!("\"{word}:{summary}\"")),
+                "the zsh completion for `{word}` does not carry its summary {summary:?}"
             );
         }
     }
@@ -1206,6 +1310,15 @@ mod tests {
             [TOGGLE_ON, TOGGLE_OFF, TOGGLE_ON, TOGGLE_OFF],
             "the fish completions offer a toggle value set the parser does not accept"
         );
+
+        // Bash and zsh offer the pair as a word list.
+        let pair = format!("{TOGGLE_ON} {TOGGLE_OFF}");
+        for (source, text) in BASH_AND_ZSH {
+            assert!(
+                text.contains(&pair),
+                "{source} does not offer the current on/off vocabulary {pair:?}"
+            );
+        }
     }
 
     /// Of the paths the FILES section names, the settings file and the socket

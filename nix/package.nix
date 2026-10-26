@@ -70,7 +70,9 @@ let
     ./../assets/page.codeberg.mmc.Spectral.metainfo.xml
     ./../assets/spectral.png
     ./../assets/spectral.1
+    ./../assets/spectral.bash
     ./../assets/spectral.fish
+    ./../assets/spectral.zsh
     ./../docs/CLI.md
     ./../THIRD-PARTY.md
   ];
