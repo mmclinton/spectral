@@ -110,8 +110,7 @@ Exit codes:
 ///
 /// Each subcommand carries the one-line summary [`help`] renders. The man
 /// page and the fish and zsh completions restate it word for word and
-/// cannot interpolate, so a test holds them all to the same sentence —
-/// `status` had already picked up a second wording on the page and in fish.
+/// cannot interpolate, so a test holds them all to the same sentence.
 const COMMANDS: [(&str, &str); 5] = [
     (
         "enable",
@@ -1262,14 +1261,11 @@ mod tests {
         }
     }
 
-    /// The five command summaries are byte-identical across `--help`, the
-    /// man page and the fish and zsh completions, and nothing held them
-    /// together — `status` had already picked up a second wording on the
-    /// page and a third in docs/CLI.md's usage block. `--help` now renders
-    /// the table, so only the files can drift, and this is what catches
-    /// that. The page may say more than the summary, as its `status` entry
-    /// does, but it has to open with the same sentence. Bash shows no
-    /// descriptions, so it has none to hold.
+    /// The summaries in [`COMMANDS`] are restated by hand on the man page and
+    /// in the fish and zsh completions, which cannot interpolate them the way
+    /// `--help` does, so this holds each to the same sentence. The page may
+    /// say more than the summary, as its `status` entry does, but it has to
+    /// open with it. Bash shows no descriptions, so it has none to hold.
     #[test]
     fn every_command_summary_reads_the_same_on_every_surface() {
         let man = unescape_roff(include_str!("../assets/spectral.1"));
