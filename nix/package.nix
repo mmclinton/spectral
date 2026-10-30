@@ -132,7 +132,7 @@ craneLib'.buildPackage (
       # xdg-utils would otherwise fail the spawn silently.
       wrapProgram $out/bin/spectral \
         --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath dlopenLibs}" \
-        --prefix PATH : "${lib.makeBinPath [ xdg-utils ]}"
+        --suffix PATH : "${lib.makeBinPath [ xdg-utils ]}"
     '';
 
     # Fails the build when the binary's version disagrees with `version`
