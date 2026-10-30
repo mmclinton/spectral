@@ -6,3 +6,7 @@ doc-valid-idents = ["PipeWire", "RNNoise", "WirePlumber", ".."]
 # thread a Result through every assertion for no gain.
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
+
+# By default the lint skips a call that also has an argument it cannot inline,
+# so `format!("{} {}", a.b, c)` would pass with `c` still positional.
+allow-mixed-uninlined-format-args = false
