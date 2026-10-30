@@ -2,7 +2,7 @@
 
 Spectral is licensed under the GNU GPL v3.0 only (see [LICENSE](LICENSE)). Its binaries statically link the components below, and the GUI embeds a font. The BSD-2-Clause and BSD-3-Clause licenses require reproducing their notices with binary distributions; this file satisfies that requirement and should ship alongside the binaries.
 
-Scope: every crate here is linked into a shipped binary. Crates that are BSD-licensed but only run at build time — `bindgen`, `exr`, `lebe`, `ravif`, `rav1e`, `av1-grain`, `v_frame`, `avif-serialize`, `num_enum` — reach the graph through `i-slint-compiler` and carry no binary-distribution duty. Crates offering BSD as one option among several — `zerocopy`, `moxcms`, `pxfm` — are taken under their Apache-2.0 arm.
+Scope: every crate here is linked into a shipped binary. `bindgen` is BSD-licensed but only runs at build time, generating the bindings in `libspa-sys` and `pipewire-sys`, so it carries no binary-distribution duty. Crates offering BSD as one option among several — `zerocopy`, `moxcms`, `pxfm`, `num_enum` — are taken under their Apache-2.0 arm.
 
 ## nnnoiseless 0.5.1 — BSD-3-Clause
 
@@ -247,7 +247,7 @@ not met.
 
 ## Other dependencies
 
-The remaining statically linked Rust dependencies are MIT- and/or Apache-2.0-licensed (see `Cargo.lock` for the full inventory), neither of which requires a per-crate notice here. Their notices are not individually reproduced; a generated full inventory (e.g. via `cargo-about`, restricted to the normal-dependency graph for the two `[graph] targets` in `deny.toml`) would replace this hand-maintained tail and is the durable fix.
+The remaining statically linked Rust dependencies are MIT- and/or Apache-2.0-licensed, apart from the ICU4X crates Slint links (`icu_*`, `zerovec`, `yoke` and their kin) under Unicode-3.0, `libloading` under ISC and `slotmap` and `foldhash` under Zlib; see `Cargo.lock` for the full inventory. Their notices are not individually reproduced; a generated full inventory (e.g. via `cargo-about`, restricted to the normal-dependency graph for the two `[graph] targets` in `deny.toml`) would replace this hand-maintained tail and is the durable fix.
 
 To re-derive the list above after a dependency change:
 

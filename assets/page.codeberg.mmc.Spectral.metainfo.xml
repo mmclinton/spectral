@@ -52,6 +52,25 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.10.0" date="2026-10-30">
+      <description>
+        <p>
+          Spectral now draws its interface in its own font, Iosevka Aile,
+          so it looks the same on every system, and it has a new icon.
+          The command line suggests what you meant when a command or flag
+          is mistyped, and the Nix package adds a manual page and
+          completions for fish, zsh and bash that include your input
+          device ids. While the microphone is on,
+          the daemon no longer wakes a hundred times a second, and the
+          audio thread no longer takes page faults just after enabling.
+          Closing the terminal that started the window, or pressing
+          Ctrl-C in it, no longer takes the virtual microphone down; an
+          error resolved from the command line now leaves the window; a
+          grayed-out button ignores the keyboard; and an interrupted
+          shutdown no longer leaves the daemon half running.
+        </p>
+      </description>
+    </release>
     <release version="0.9.0" date="2026-08-26">
       <description>
         <p>
