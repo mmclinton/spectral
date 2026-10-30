@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-30
+
 ### Added
 - A manual page, so `man spectral` now works. It documents the commands, the `enable` flags, the exit codes, and where Spectral keeps your settings, its control socket, its log and your voice-test recordings.
 - Completions for fish, zsh and bash, covering the commands and every flag. `--device` completes to the input devices currently on your system, so there is no need to run `spectral devices` first and copy an id; fish and zsh list each one with its name, while bash, which has no way to show one, offers the ids alone. `--rumble-filter` and `--auto-level` complete to `on` and `off`. The Nix package installs both the page and the completions for you; the Flatpak does not, since Flatpak exports neither to the host and its command is named `page.codeberg.mmc.Spectral`.
@@ -279,7 +281,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Nix is the only officially supported installation method
 - Requires PipeWire (with the PulseAudio compatibility layer) and WirePlumber
 
-[Unreleased]: https://codeberg.org/mmc/spectral/compare/v0.9.0...main
+[Unreleased]: https://codeberg.org/mmc/spectral/compare/v0.10.0...main
+[0.10.0]: https://codeberg.org/mmc/spectral/compare/v0.9.0...v0.10.0
 [0.9.0]: https://codeberg.org/mmc/spectral/compare/v0.8.0...v0.9.0
 [0.8.0]: https://codeberg.org/mmc/spectral/compare/v0.7.0...v0.8.0
 [0.7.0]: https://codeberg.org/mmc/spectral/compare/v0.6.2...v0.7.0
