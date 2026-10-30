@@ -395,9 +395,10 @@ fn exit_status(code: ExitCode, written: io::Result<()>) -> ExitCode {
     }
 }
 
-/// A command's result channel. A write error is held rather than returned,
-/// so it cannot replace the exit status the command chooses, and writes
-/// after a failed one are dropped.
+/// A command's result channel; results never go through `println!`, which
+/// panics once the reader has closed the pipe. A write error is held rather
+/// than returned, so the command still runs to its own exit status, and
+/// writes after a failed one are dropped.
 struct Output<W> {
     writer: W,
     error: Option<io::Error>,
@@ -418,7 +419,7 @@ impl<W: Write> Output<W> {
         }
     }
 
-    /// Flushes, and yields the first write error if there was one.
+    /// Yields the first write error, or else the result of flushing.
     fn finish(mut self) -> io::Result<()> {
         match self.error.take() {
             Some(e) => Err(e),
@@ -809,10 +810,10 @@ mod tests {
         assert_eq!(EXIT_USAGE_ERROR, 2);
     }
 
-    /// The two arms that reach `run_to` without touching the daemon socket.
-    /// `Gui` is deliberately absent: `main` intercepts it before delegating,
-    /// so its arm here is unreachable and pinning it would only suggest
-    /// otherwise.
+    /// The two commands `run_to` can execute without PipeWire or the daemon
+    /// socket. `Gui` is deliberately absent: `main` intercepts it before
+    /// delegating, so its arm in `execute` is unreachable and pinning it would
+    /// only suggest otherwise.
     #[test]
     fn help_and_version_exit_with_success() {
         assert_eq!(run_to(CliCommand::Help, Vec::new()), ExitCode::SUCCESS);
