@@ -964,7 +964,7 @@ mod tests {
     /// Pid-scoped like the persistence tests' directories: two concurrent
     /// cargo runs must not share one fixed /tmp name.
     fn tmp_wav_path(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("spectral_recorder_{}_{}", std::process::id(), name))
+        std::env::temp_dir().join(format!("spectral_recorder_{}_{name}", std::process::id()))
     }
 
     fn slot() -> Rc<RefCell<CaptureSlot>> {
