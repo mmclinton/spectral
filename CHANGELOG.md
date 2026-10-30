@@ -28,7 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - When the daemon drops or stalls a request, the command now says so, instead of printing "EOF while parsing a value" or "Resource temporarily unavailable (os error 11)".
 - When the settings file exists but cannot be read, the daemon log now says so. Spectral used to start from defaults as though it were a first run, with nothing to explain why.
 - The Help view now gives the Flatpak's location for voice-test recordings, alongside the usual one.
-- Piping a command into something that stops reading early, such as `spectral status | head -1`, no longer ends in a panic and exit status 101. The command stops writing and exits with success.
+- Piping a command into something that stops reading early, such as `spectral status | head -1`, no longer ends in a panic and exit status 101. The command stops writing and exits as it would have with all its output read.
 
 ## [0.9.0] - 2026-08-26
 

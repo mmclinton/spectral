@@ -10,6 +10,7 @@ use spectral_lib::platform::ipc::{
 };
 use spectral_lib::state::{AudioDevice, Status, is_valid_mic_name, mic_name_rule};
 use std::ffi::OsString;
+use std::fmt;
 use std::io::{self, Write};
 use std::process::ExitCode;
 
@@ -371,18 +372,22 @@ where
 /// Executes any non-GUI command, mapping outcomes to the exit codes the
 /// help text documents.
 pub fn run(command: CliCommand) -> ExitCode {
-    let mut out = io::stdout().lock();
-    let written = execute(command, &mut out).and_then(|code| out.flush().map(|()| code));
-    exit_code(written)
+    run_to(command, io::stdout().lock())
+}
+
+fn run_to(command: CliCommand, writer: impl Write) -> ExitCode {
+    let mut out = Output::new(writer);
+    let code = execute(command, &mut out);
+    exit_status(code, out.finish())
 }
 
 /// A closed pipe means the reader has taken all it wanted, as in
-/// `spectral status | head -1`, so it ends the command quietly and
-/// successfully. Any other write error lost output the caller asked for.
-fn exit_code(written: io::Result<ExitCode>) -> ExitCode {
+/// `spectral status | head -1`, so the command's own status stands. Any
+/// other write error lost output the caller asked for.
+fn exit_status(code: ExitCode, written: io::Result<()>) -> ExitCode {
     match written {
-        Ok(code) => code,
-        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
+        Ok(()) => code,
+        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => code,
         Err(e) => {
             eprintln!("spectral: cannot write output: {e}");
             ExitCode::FAILURE
@@ -390,18 +395,50 @@ fn exit_code(written: io::Result<ExitCode>) -> ExitCode {
     }
 }
 
-fn execute(command: CliCommand, out: &mut impl Write) -> io::Result<ExitCode> {
+/// A command's result channel. A write error is held rather than returned,
+/// so it cannot replace the exit status the command chooses, and writes
+/// after a failed one are dropped.
+struct Output<W> {
+    writer: W,
+    error: Option<io::Error>,
+}
+
+impl<W: Write> Output<W> {
+    fn new(writer: W) -> Self {
+        Self {
+            writer,
+            error: None,
+        }
+    }
+
+    /// What `writeln!(out, ..)` calls.
+    fn write_fmt(&mut self, args: fmt::Arguments<'_>) {
+        if self.error.is_none() {
+            self.error = self.writer.write_fmt(args).err();
+        }
+    }
+
+    /// Flushes, and yields the first write error if there was one.
+    fn finish(mut self) -> io::Result<()> {
+        match self.error.take() {
+            Some(e) => Err(e),
+            None => self.writer.flush(),
+        }
+    }
+}
+
+fn execute(command: CliCommand, out: &mut Output<impl Write>) -> ExitCode {
     match command {
         // Handled by main(); listed so the match stays exhaustive.
-        CliCommand::Gui => Ok(ExitCode::SUCCESS),
+        CliCommand::Gui => ExitCode::SUCCESS,
         CliCommand::Help => {
             let text = help();
-            writeln!(out, "{text}")?;
-            Ok(ExitCode::SUCCESS)
+            writeln!(out, "{text}");
+            ExitCode::SUCCESS
         }
         CliCommand::Version => {
-            writeln!(out, "spectral {}", env!("CARGO_PKG_VERSION"))?;
-            Ok(ExitCode::SUCCESS)
+            writeln!(out, "spectral {}", env!("CARGO_PKG_VERSION"));
+            ExitCode::SUCCESS
         }
         CliCommand::Devices => run_devices(out),
         CliCommand::Enable {
@@ -424,43 +461,43 @@ fn execute(command: CliCommand, out: &mut impl Write) -> io::Result<ExitCode> {
     }
 }
 
-fn run_devices(out: &mut impl Write) -> io::Result<ExitCode> {
+fn run_devices(out: &mut Output<impl Write>) -> ExitCode {
     match audio_devices::get_input_devices() {
         Ok(devices) if devices.is_empty() => {
-            writeln!(out, "no input devices found")?;
-            Ok(ExitCode::SUCCESS)
+            writeln!(out, "no input devices found");
+            ExitCode::SUCCESS
         }
         Ok(devices) => {
-            writeln!(out, "{:>4}  {:>8}  NAME", "ID", "CHANNELS")?;
+            writeln!(out, "{:>4}  {:>8}  NAME", "ID", "CHANNELS");
             for device in &devices {
                 writeln!(
                     out,
                     "{:>4}  {:>8}  {}",
                     device.id, device.channels, device.name
-                )?;
+                );
             }
-            Ok(ExitCode::SUCCESS)
+            ExitCode::SUCCESS
         }
         Err(e) => {
             eprintln!("spectral: failed to list devices: {e}");
-            Ok(ExitCode::FAILURE)
+            ExitCode::FAILURE
         }
     }
 }
 
 fn run_enable(
-    out: &mut impl Write,
+    out: &mut Output<impl Write>,
     device_id: Option<u32>,
     threshold: Option<i32>,
     mic_name: Option<String>,
     rumble_filter: Option<bool>,
     auto_level: Option<bool>,
-) -> io::Result<ExitCode> {
+) -> ExitCode {
     let (mut client, _) = match daemon_launch::connect_and_fetch_state() {
         Ok(pair) => pair,
         Err(e) => {
             eprintln!("spectral: cannot reach the daemon: {e}");
-            return Ok(ExitCode::FAILURE);
+            return ExitCode::FAILURE;
         }
     };
 
@@ -473,112 +510,111 @@ fn run_enable(
         auto_level,
     }) {
         Ok(DaemonResponse::Ok) => {
-            writeln!(out, "noise suppression enabled")?;
-            Ok(ExitCode::SUCCESS)
+            writeln!(out, "noise suppression enabled");
+            ExitCode::SUCCESS
         }
         Ok(DaemonResponse::Error(e)) => {
             eprintln!("spectral: {e}");
-            Ok(ExitCode::FAILURE)
+            ExitCode::FAILURE
         }
         Ok(DaemonResponse::State(_)) => {
             eprintln!("spectral: unexpected response from daemon");
-            Ok(ExitCode::FAILURE)
+            ExitCode::FAILURE
         }
         Err(e) => {
             eprintln!("spectral: failed to enable: {e}");
-            Ok(ExitCode::FAILURE)
+            ExitCode::FAILURE
         }
     }
 }
 
-fn run_disable(out: &mut impl Write) -> io::Result<ExitCode> {
+fn run_disable(out: &mut Output<impl Write>) -> ExitCode {
     let mut client = match DaemonClient::connect() {
         Ok(client) => client,
         Err(_) => {
-            writeln!(out, "daemon not running; nothing to disable")?;
-            return Ok(ExitCode::SUCCESS);
+            writeln!(out, "daemon not running; nothing to disable");
+            return ExitCode::SUCCESS;
         }
     };
 
     match client.send_command(DaemonCommand::Disable) {
         Ok(DaemonResponse::Ok) => {
-            writeln!(out, "noise suppression disabled")?;
-            Ok(ExitCode::SUCCESS)
+            writeln!(out, "noise suppression disabled");
+            ExitCode::SUCCESS
         }
         Ok(DaemonResponse::Error(e)) => {
             eprintln!("spectral: {e}");
-            Ok(ExitCode::FAILURE)
+            ExitCode::FAILURE
         }
         Ok(DaemonResponse::State(_)) => {
             eprintln!("spectral: unexpected response from daemon");
-            Ok(ExitCode::FAILURE)
+            ExitCode::FAILURE
         }
         Err(e) => {
             eprintln!("spectral: failed to disable: {e}");
-            Ok(ExitCode::FAILURE)
+            ExitCode::FAILURE
         }
     }
 }
 
-fn run_status(out: &mut impl Write) -> io::Result<ExitCode> {
+fn run_status(out: &mut Output<impl Write>) -> ExitCode {
     let mut client = match DaemonClient::connect() {
         Ok(client) => client,
         Err(_) => {
-            writeln!(out, "daemon not running")?;
-            return Ok(ExitCode::FAILURE);
+            writeln!(out, "daemon not running");
+            return ExitCode::FAILURE;
         }
     };
 
     match client.send_command(DaemonCommand::GetState) {
         Ok(DaemonResponse::State(state)) if state.protocol_version != PROTOCOL_VERSION => {
             eprintln!("spectral: the daemon is an old version — `spectral enable` replaces it");
-            Ok(ExitCode::FAILURE)
+            ExitCode::FAILURE
         }
         Ok(DaemonResponse::State(state)) => {
-            print_status(out, &state)?;
-            Ok(ExitCode::SUCCESS)
+            print_status(out, &state);
+            ExitCode::SUCCESS
         }
         Ok(_) => {
             eprintln!("spectral: unexpected response from daemon");
-            Ok(ExitCode::FAILURE)
+            ExitCode::FAILURE
         }
         Err(e) => {
             eprintln!(
                 "spectral: the daemon did not answer (an old version?): {e} — `spectral enable` replaces it"
             );
-            Ok(ExitCode::FAILURE)
+            ExitCode::FAILURE
         }
     }
 }
 
-fn print_status(out: &mut impl Write, state: &DaemonState) -> io::Result<()> {
+fn print_status(out: &mut Output<impl Write>, state: &DaemonState) {
     let status = match state.status {
         Status::Active => "Active",
         Status::Pending => "Pending",
         Status::Inactive => "Inactive",
     };
     if state.capture_detached {
-        writeln!(out, "status:           {status} (reconnecting)")?;
+        writeln!(out, "status:           {status} (reconnecting)");
     } else {
-        writeln!(out, "status:           {status}")?;
+        writeln!(out, "status:           {status}");
     }
-    writeln!(out, "device:           {}", describe_device(state))?;
-    writeln!(out, "mic name:         {}", state.mic_name)?;
-    writeln!(out, "threshold:        {}%", state.threshold)?;
+    writeln!(out, "device:           {}", describe_device(state));
+    writeln!(out, "mic name:         {}", state.mic_name);
+    writeln!(out, "threshold:        {}%", state.threshold);
     writeln!(
         out,
         "rumble filter:    {}",
         if state.rumble_filter { "on" } else { "off" }
-    )?;
+    );
     writeln!(
         out,
         "auto level:       {}",
         if state.auto_level { "on" } else { "off" }
-    )?;
+    );
     if let Some(error) = &state.last_error {
-        writeln!(out, "last error:       {error}")?;
+        writeln!(out, "last error:       {error}");
     }
-    Ok(())
 }
 
 /// Best-effort human description of the daemon's device; enumeration
@@ -613,35 +649,35 @@ fn resolve_device_label(state: &DaemonState, devices: &[AudioDevice]) -> String 
     }
 }
 
-fn run_shutdown(out: &mut impl Write) -> io::Result<ExitCode> {
+fn run_shutdown(out: &mut Output<impl Write>) -> ExitCode {
     let mut client = match DaemonClient::connect() {
         Ok(client) => client,
         Err(_) => {
-            writeln!(out, "daemon not running")?;
-            return Ok(ExitCode::SUCCESS);
+            writeln!(out, "daemon not running");
+            return ExitCode::SUCCESS;
         }
     };
 
     match client.send_command(DaemonCommand::Shutdown) {
         Ok(DaemonResponse::Error(e)) => {
             eprintln!("spectral: {e}");
-            return Ok(ExitCode::FAILURE);
+            return ExitCode::FAILURE;
         }
         Ok(_) => {}
         Err(e) => {
             eprintln!("spectral: failed to send shutdown: {e}");
-            return Ok(ExitCode::FAILURE);
+            return ExitCode::FAILURE;
         }
     }
 
     match wait_for_daemon_exit() {
         Ok(()) => {
-            writeln!(out, "daemon stopped")?;
-            Ok(ExitCode::SUCCESS)
+            writeln!(out, "daemon stopped");
+            ExitCode::SUCCESS
         }
         Err(e) => {
             eprintln!("spectral: daemon did not exit: {e}");
-            Ok(ExitCode::FAILURE)
+            ExitCode::FAILURE
         }
     }
 }
@@ -773,14 +809,14 @@ mod tests {
         assert_eq!(EXIT_USAGE_ERROR, 2);
     }
 
-    /// The two arms that reach `run` without touching the daemon socket.
+    /// The two arms that reach `run_to` without touching the daemon socket.
     /// `Gui` is deliberately absent: `main` intercepts it before delegating,
     /// so its arm here is unreachable and pinning it would only suggest
     /// otherwise.
     #[test]
     fn help_and_version_exit_with_success() {
-        assert_eq!(run(CliCommand::Help), ExitCode::SUCCESS);
-        assert_eq!(run(CliCommand::Version), ExitCode::SUCCESS);
+        assert_eq!(run_to(CliCommand::Help, Vec::new()), ExitCode::SUCCESS);
+        assert_eq!(run_to(CliCommand::Version, Vec::new()), ExitCode::SUCCESS);
     }
 
     struct FailingWriter(io::ErrorKind);
@@ -796,21 +832,30 @@ mod tests {
     }
 
     #[test]
-    fn a_reader_closing_the_pipe_ends_the_command_with_success() {
-        let written = execute(
-            CliCommand::Version,
-            &mut FailingWriter(io::ErrorKind::BrokenPipe),
-        );
-        assert_eq!(exit_code(written), ExitCode::SUCCESS);
+    fn a_reader_closing_the_pipe_leaves_the_exit_status_alone() {
+        for code in [ExitCode::SUCCESS, ExitCode::FAILURE] {
+            let mut out = Output::new(FailingWriter(io::ErrorKind::BrokenPipe));
+            writeln!(out, "daemon not running");
+            assert_eq!(exit_status(code, out.finish()), code);
+        }
     }
 
     #[test]
     fn any_other_write_error_exits_with_failure() {
-        let written = execute(
-            CliCommand::Help,
-            &mut FailingWriter(io::ErrorKind::StorageFull),
+        let mut out = Output::new(FailingWriter(io::ErrorKind::StorageFull));
+        writeln!(out, "noise suppression enabled");
+        assert_eq!(
+            exit_status(ExitCode::SUCCESS, out.finish()),
+            ExitCode::FAILURE
         );
-        assert_eq!(exit_code(written), ExitCode::FAILURE);
+    }
+
+    #[test]
+    fn a_command_settles_its_exit_status_from_what_its_writer_reports() {
+        let closed = FailingWriter(io::ErrorKind::BrokenPipe);
+        assert_eq!(run_to(CliCommand::Version, closed), ExitCode::SUCCESS);
+        let full = FailingWriter(io::ErrorKind::StorageFull);
+        assert_eq!(run_to(CliCommand::Help, full), ExitCode::FAILURE);
     }
 
     #[test]
