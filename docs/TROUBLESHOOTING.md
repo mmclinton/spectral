@@ -46,7 +46,7 @@ Under `$XDG_STATE_HOME/spectral/recordings`, which is `~/.local/state/spectral/r
 
 ## Reporting a bug
 
-Issues go to [Codeberg](https://codeberg.org/mmc/spectral/issues). A useful report includes:
+Issues go to [GitHub](https://github.com/mmclinton/spectral/issues). A useful report includes:
 
 - your distribution;
 - your PipeWire and WirePlumber versions (`pipewire --version`, `wireplumber --version`);

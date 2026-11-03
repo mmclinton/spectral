@@ -73,7 +73,7 @@ All processing happens on your machine. Spectral makes no network connections an
 
 ## Contributing
 
-Bug reports and patches are welcome. Development happens on [Codeberg](https://codeberg.org/mmc/spectral); see [CONTRIBUTING.md](CONTRIBUTING.md) for the build, the required checks, and the commit conventions, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a map of the codebase. What makes a bug report useful is listed under [Reporting a bug](docs/TROUBLESHOOTING.md#reporting-a-bug).
+Bug reports and patches are welcome as [issues](https://github.com/mmclinton/spectral/issues) and pull requests on GitHub; see [CONTRIBUTING.md](CONTRIBUTING.md) for the build, the required checks, and the commit conventions, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a map of the codebase. What makes a bug report useful is listed under [Reporting a bug](docs/TROUBLESHOOTING.md#reporting-a-bug).
 
 ## License
 

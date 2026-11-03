@@ -82,7 +82,7 @@ The submission repository holds this manifest with one change — the local sour
 ```yaml
     sources:
       - type: git
-        url: https://codeberg.org/mmc/spectral.git
+        url: https://github.com/mmclinton/spectral.git
         tag: vX.Y.Z
         commit: <the full sha that tag points at>
       - cargo-sources.json

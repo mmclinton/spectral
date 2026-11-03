@@ -27,10 +27,10 @@ The flake in this repository is the other Nix path, and it is not redundant: it 
 
 ```bash
 # Run directly without installing
-nix run git+https://codeberg.org/mmc/spectral
+nix run github:mmclinton/spectral
 
 # Or build and install to your profile
-nix profile add git+https://codeberg.org/mmc/spectral
+nix profile add github:mmclinton/spectral
 ```
 
 ### NixOS, declaratively
@@ -40,7 +40,7 @@ Add to your `flake.nix` inputs:
 ```nix
 {
   inputs = {
-    spectral.url = "git+https://codeberg.org/mmc/spectral";
+    spectral.url = "github:mmclinton/spectral";
   };
 }
 ```
@@ -79,7 +79,7 @@ If you prefer manual control over installation:
 
 ```bash
 flatpak install -y flathub org.flatpak.Builder
-git clone https://codeberg.org/mmc/spectral.git
+git clone https://github.com/mmclinton/spectral.git
 cd spectral
 flatpak run --command=flathub-build org.flatpak.Builder --install \
     packaging/flatpak/page.codeberg.mmc.Spectral.yaml

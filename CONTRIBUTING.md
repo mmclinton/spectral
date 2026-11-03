@@ -1,6 +1,6 @@
 # Contributing
 
-Spectral is developed on Codeberg: https://codeberg.org/mmc/spectral. Bug reports and patches are welcome via issues and pull requests there.
+Spectral's public repository is https://github.com/mmclinton/spectral. Bug reports and patches are welcome as issues and pull requests there. The repository mirrors my own forge, so I merge accepted pull requests by hand, and they show as merged once the next sync reaches GitHub.
 
 For a map of the codebase, read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). What makes a bug report useful is listed under [Reporting a bug](docs/TROUBLESHOOTING.md#reporting-a-bug).
 
