@@ -22,7 +22,7 @@ version="${1:-}"
 
 cd "$(git rev-parse --show-toplevel)"
 
-metainfo=assets/page.codeberg.mmc.Spectral.metainfo.xml
+metainfo=assets/io.github.mmclinton.Spectral.metainfo.xml
 man_page=assets/spectral.1
 
 # Replace the single line matching an ERE, by line number so the pattern

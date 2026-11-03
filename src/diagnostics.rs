@@ -292,7 +292,7 @@ mod tests {
     #[test]
     fn packaging_line_says_flatpak_or_native() {
         for (app_id, expected) in [
-            (Some("page.codeberg.mmc.Spectral"), "packaging: flatpak"),
+            (Some("io.github.mmclinton.Spectral"), "packaging: flatpak"),
             (None, "packaging: native"),
         ] {
             let dump = build_diagnostics(
@@ -317,9 +317,9 @@ mod tests {
             &[],
             Some(Path::new("/run/user/1000/spectral-daemon.log")),
             Some(Path::new(
-                "/home/user/.var/app/page.codeberg.mmc.Spectral/config/state.toml",
+                "/home/user/.var/app/io.github.mmclinton.Spectral/config/state.toml",
             )),
-            Some("page.codeberg.mmc.Spectral"),
+            Some("io.github.mmclinton.Spectral"),
         );
 
         assert!(
@@ -327,7 +327,7 @@ mod tests {
         );
         assert!(dump.ends_with(
             "Attach the daemon log named above; from the host, read it with:\n  \
-             flatpak run --command=cat page.codeberg.mmc.Spectral \
+             flatpak run --command=cat io.github.mmclinton.Spectral \
              /run/user/1000/spectral-daemon.log"
         ));
     }
@@ -341,7 +341,7 @@ mod tests {
             &[],
             None,
             Some(Path::new("/tmp/state.toml")),
-            Some("page.codeberg.mmc.Spectral"),
+            Some("io.github.mmclinton.Spectral"),
         );
 
         assert!(!dump.contains("flatpak run"));

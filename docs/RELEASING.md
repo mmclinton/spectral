@@ -43,7 +43,7 @@ Five files carry the version and must move together:
 | `Cargo.lock` | the `spectral` stanza | the script, via cargo |
 | `nix/package.nix` | `version` | the script |
 | `assets/spectral.1` | the `.TH` line's `"spectral X.Y.Z"` field | the script, preserving the page's own revision date |
-| `assets/page.codeberg.mmc.Spectral.metainfo.xml` | `<release>` entry | **authored by hand first** — the script only verifies it exists |
+| `assets/io.github.mmclinton.Spectral.metainfo.xml` | `<release>` entry | **authored by hand first** — the script only verifies it exists |
 
 The in-repo Flatpak manifest builds `main` and carries no version; the versioned manifest lives in the Flathub repository. `nix/package.nix` has a `versionCheckHook`, so `nix flake check` fails a cut whose binary and expression disagree, and a unit test pins the man page's `.TH` version to the crate's, so the same gate catches that spot.
 

@@ -411,7 +411,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     // Must come after MainWindow::new(): until the Slint platform context exists,
     // set_xdg_app_id returns Err and stores nothing, leaving the Wayland surface
     // without an app_id so the desktop file (and taskbar icon) can't be matched.
-    if let Err(e) = slint::set_xdg_app_id("page.codeberg.mmc.Spectral") {
+    if let Err(e) = slint::set_xdg_app_id("io.github.mmclinton.Spectral") {
         eprintln!("warning: failed to set xdg app id (taskbar icon may be generic): {e}");
     }
     let ui_weak = ui.as_weak();

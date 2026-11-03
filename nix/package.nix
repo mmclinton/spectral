@@ -67,8 +67,8 @@ let
   # what stops a typo fix in the man page from re-running the format check;
   # everything else here consumes them.
   dataFiles = lib.fileset.unions [
-    ./../assets/page.codeberg.mmc.Spectral.desktop
-    ./../assets/page.codeberg.mmc.Spectral.metainfo.xml
+    ./../assets/io.github.mmclinton.Spectral.desktop
+    ./../assets/io.github.mmclinton.Spectral.metainfo.xml
     ./../assets/spectral.png
     ./../assets/spectral.1
     ./../assets/spectral.bash
@@ -121,9 +121,9 @@ craneLib'.buildPackage (
     doCheck = false;
 
     postInstall = ''
-      install -Dm644 assets/page.codeberg.mmc.Spectral.desktop $out/share/applications/page.codeberg.mmc.Spectral.desktop
-      install -Dm644 assets/page.codeberg.mmc.Spectral.metainfo.xml $out/share/metainfo/page.codeberg.mmc.Spectral.metainfo.xml
-      install -Dm644 assets/spectral.png $out/share/icons/hicolor/512x512/apps/page.codeberg.mmc.Spectral.png
+      install -Dm644 assets/io.github.mmclinton.Spectral.desktop $out/share/applications/io.github.mmclinton.Spectral.desktop
+      install -Dm644 assets/io.github.mmclinton.Spectral.metainfo.xml $out/share/metainfo/io.github.mmclinton.Spectral.metainfo.xml
+      install -Dm644 assets/spectral.png $out/share/icons/hicolor/512x512/apps/io.github.mmclinton.Spectral.png
       install -Dm644 THIRD-PARTY.md $out/share/licenses/spectral/THIRD-PARTY.md
       installManPage assets/spectral.1
       installShellCompletion assets/spectral.{bash,fish,zsh}

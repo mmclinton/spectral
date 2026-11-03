@@ -29,13 +29,13 @@ An "Error" chip appears in the app bar next to the status. Click it for the full
 On a Flatpak install that path is inside the sandbox, so a host terminal cannot open it. Read it through the sandbox instead:
 
 ```bash
-flatpak run --command=cat page.codeberg.mmc.Spectral \
+flatpak run --command=cat io.github.mmclinton.Spectral \
     /run/user/$(id -u)/spectral-daemon.log
 ```
 
 ## Where are my voice-test recordings?
 
-Under `$XDG_STATE_HOME/spectral/recordings`, which is `~/.local/state/spectral/recordings` unless you have set it. A Flatpak install keeps them under `~/.var/app/page.codeberg.mmc.Spectral/.local/state/spectral/recordings`.
+Under `$XDG_STATE_HOME/spectral/recordings`, which is `~/.local/state/spectral/recordings` unless you have set it. A Flatpak install keeps them under `~/.var/app/io.github.mmclinton.Spectral/.local/state/spectral/recordings`.
 
 ## Known limitations
 

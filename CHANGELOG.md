@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Changed
+- The app ID is now `io.github.mmclinton.Spectral`, replacing `page.codeberg.mmc.Spectral`. The desktop entry, the icon and the running window take the new name, so a launcher or dock that had Spectral pinned needs it pinned again. A Flatpak build's command and its data directory under `~/.var/app/` move to the new name as well.
 - The "Source Code" and license links in the app now open the GitHub repository, and the diagnostics report sends you to GitHub to file an issue. The Codeberg pages they used to open no longer exist.
 
 ## [0.10.0] - 2026-10-30

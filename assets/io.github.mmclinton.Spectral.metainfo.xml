@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>page.codeberg.mmc.Spectral</id>
+  <id>io.github.mmclinton.Spectral</id>
   <name>Spectral</name>
   <summary>Real-time audio noise suppression</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
-  <developer id="page.codeberg.mmc">
+  <developer id="io.github.mmclinton">
     <name>mmc</name>
   </developer>
   <description>
@@ -20,7 +20,7 @@
       <li>Built-in voice test to compare original and filtered audio</li>
     </ul>
   </description>
-  <launchable type="desktop-id">page.codeberg.mmc.Spectral.desktop</launchable>
+  <launchable type="desktop-id">io.github.mmclinton.Spectral.desktop</launchable>
   <screenshots>
     <screenshot type="default">
       <image>https://raw.githubusercontent.com/mmclinton/spectral/3d31d27a7324fc792d3cb8fd9b9ec09c50167a15/assets/screenshot.png</image>

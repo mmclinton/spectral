@@ -41,4 +41,4 @@ Device ids come from PipeWire and are scoped to the running PipeWire instance: t
 
 ## Under Flatpak
 
-A Flatpak install exports the CLI as `page.codeberg.mmc.Spectral` rather than `spectral`; see [INSTALLATION.md](INSTALLATION.md#flatpak).
+A Flatpak install exports the CLI as `io.github.mmclinton.Spectral` rather than `spectral`; see [INSTALLATION.md](INSTALLATION.md#flatpak).

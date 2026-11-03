@@ -1,6 +1,6 @@
 # Flatpak packaging
 
-`page.codeberg.mmc.Spectral.yaml` is the **development** manifest: it builds the checked-out repository so the Flatpak can be tested before anything is published. The Flathub submission uses a near-identical manifest that differs only in its source entry — see [For Flathub](#for-flathub) below.
+`io.github.mmclinton.Spectral.yaml` is the **development** manifest: it builds the checked-out repository so the Flatpak can be tested before anything is published. The Flathub submission uses a near-identical manifest that differs only in its source entry — see [For Flathub](#for-flathub) below.
 
 ## Prerequisites
 
@@ -17,20 +17,20 @@ The manifest builds from `main`, not from the working tree, so commit first.
 
 ```bash
 flatpak run --command=flathub-build org.flatpak.Builder --install \
-    packaging/flatpak/page.codeberg.mmc.Spectral.yaml
-flatpak run page.codeberg.mmc.Spectral
+    packaging/flatpak/io.github.mmclinton.Spectral.yaml
+flatpak run io.github.mmclinton.Spectral
 ```
 
-Flatpak exports one command per application and names it after the app ID, so the CLI is on `$PATH` as `page.codeberg.mmc.Spectral`, never as `spectral`. `flatpak build-finish` chooses which command runs (`--command=`) but cannot name the exported wrapper, and Flathub requires exported files to carry the app ID anyway — a short name is a shell alias on the user's side.
+Flatpak exports one command per application and names it after the app ID, so the CLI is on `$PATH` as `io.github.mmclinton.Spectral`, never as `spectral`. `flatpak build-finish` chooses which command runs (`--command=`) but cannot name the exported wrapper, and Flathub requires exported files to carry the app ID anyway — a short name is a shell alias on the user's side.
 
 ```bash
-page.codeberg.mmc.Spectral status
+io.github.mmclinton.Spectral status
 ```
 
 To reach the daemon binary, which is not the exported command:
 
 ```bash
-flatpak run --command=spectral-daemon page.codeberg.mmc.Spectral
+flatpak run --command=spectral-daemon io.github.mmclinton.Spectral
 ```
 
 **Stop any host daemon first.** The sandbox gets a private `$XDG_RUNTIME_DIR`, so the Flatpak daemon and a natively installed one never see each other's socket — but they will both try to publish a virtual mic under the same node name, which makes any test result ambiguous.
@@ -41,7 +41,7 @@ Both must be clean before submission:
 
 ```bash
 flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest \
-    packaging/flatpak/page.codeberg.mmc.Spectral.yaml
+    packaging/flatpak/io.github.mmclinton.Spectral.yaml
 flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo repo
 ```
 
@@ -72,8 +72,8 @@ Note that `src/platform/linux/mod.rs::manager_client_properties` is what makes t
 
 ## Differences from the native builds
 
-- **The CLI answers to the app ID**, `page.codeberg.mmc.Spectral`, as described under [Build and install](#build-and-install).
-- **Paths move under `~/.var/app/page.codeberg.mmc.Spectral/`.** Settings and voice-test recordings live there rather than under `~/.config` and `~/.local/state`.
+- **The CLI answers to the app ID**, `io.github.mmclinton.Spectral`, as described under [Build and install](#build-and-install).
+- **Paths move under `~/.var/app/io.github.mmclinton.Spectral/`.** Settings and voice-test recordings live there rather than under `~/.config` and `~/.local/state`.
 
 ## For Flathub
 

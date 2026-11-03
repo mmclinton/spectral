@@ -82,14 +82,14 @@ flatpak install -y flathub org.flatpak.Builder
 git clone https://github.com/mmclinton/spectral.git
 cd spectral
 flatpak run --command=flathub-build org.flatpak.Builder --install \
-    packaging/flatpak/page.codeberg.mmc.Spectral.yaml
-flatpak run page.codeberg.mmc.Spectral
+    packaging/flatpak/io.github.mmclinton.Spectral.yaml
+flatpak run io.github.mmclinton.Spectral
 ```
 
-One difference from the native packages is worth knowing before you choose this route: Flatpak exports a single command per application, named after the app ID, so the [headless CLI](CLI.md) answers to `page.codeberg.mmc.Spectral` rather than to `spectral`:
+One difference from the native packages is worth knowing before you choose this route: Flatpak exports a single command per application, named after the app ID, so the [headless CLI](CLI.md) answers to `io.github.mmclinton.Spectral` rather than to `spectral`:
 
 ```bash
-page.codeberg.mmc.Spectral devices
+io.github.mmclinton.Spectral devices
 ```
 
 Alias it if the full name grates — Flatpak has no way to export a shorter one.
