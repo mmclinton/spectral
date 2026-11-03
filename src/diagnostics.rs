@@ -12,7 +12,7 @@ use spectral_lib::platform::ipc::{DaemonState, PROTOCOL_VERSION};
 use spectral_lib::state::{AudioDevice, Status};
 use std::path::Path;
 
-const ISSUE_URL: &str = "https://codeberg.org/mmc/spectral/issues";
+const ISSUE_URL: &str = "https://github.com/mmclinton/spectral/issues";
 
 /// Render the paste-ready dump.
 ///

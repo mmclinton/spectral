@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+- The "Source Code" and license links in the app now open the GitHub repository, and the diagnostics report sends you to GitHub to file an issue. The Codeberg pages they used to open no longer exist.
+
 ## [0.10.0] - 2026-10-30
 
 ### Added
