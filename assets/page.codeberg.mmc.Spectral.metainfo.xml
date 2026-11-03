@@ -23,7 +23,7 @@
   <launchable type="desktop-id">page.codeberg.mmc.Spectral.desktop</launchable>
   <screenshots>
     <screenshot type="default">
-      <image>https://codeberg.org/mmc/spectral/raw/commit/f5b7992e9f19a4126034edf04e73bee67b0cae83/assets/screenshot.png</image>
+      <image>https://raw.githubusercontent.com/mmclinton/spectral/3d31d27a7324fc792d3cb8fd9b9ec09c50167a15/assets/screenshot.png</image>
       <caption>The main window with the virtual microphone active and an input device selected</caption>
     </screenshot>
   </screenshots>
@@ -43,9 +43,9 @@
     <keyword>audio</keyword>
     <keyword>rnnoise</keyword>
   </keywords>
-  <url type="homepage">https://codeberg.org/mmc/spectral</url>
-  <url type="bugtracker">https://codeberg.org/mmc/spectral/issues</url>
-  <url type="vcs-browser">https://codeberg.org/mmc/spectral</url>
+  <url type="homepage">https://github.com/mmclinton/spectral</url>
+  <url type="bugtracker">https://github.com/mmclinton/spectral/issues</url>
+  <url type="vcs-browser">https://github.com/mmclinton/spectral</url>
   <provides>
     <binary>spectral</binary>
     <binary>spectral-daemon</binary>

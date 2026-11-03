@@ -188,12 +188,12 @@ craneLib'.buildPackage (
         It creates a virtual microphone that can be used with any application,
         filtering out background noise in real-time.
       '';
-      homepage = "https://codeberg.org/mmc/spectral";
+      homepage = "https://github.com/mmclinton/spectral";
       license = licenses.gpl3Only;
       maintainers = [
         {
           name = "mmc";
-          email = "codeberg.wilder850@simplelogin.com";
+          email = "github.mmc@pm.me";
         }
       ];
       mainProgram = "spectral";
