@@ -93,7 +93,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## arrayref 0.3.9 — BSD-2-Clause
 
-Fixed-size array references, used by `tiny-skia` 0.12.0.
+Fixed-size array references, used by `tiny-skia` and `tiny-skia-path` in both versions above.
 
 - <https://github.com/droundy/arrayref>
 
