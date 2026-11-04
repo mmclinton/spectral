@@ -16,10 +16,12 @@ flatpak install -y --user flathub org.flatpak.Builder
 The manifest builds from `main`, not from the working tree, so commit first.
 
 ```bash
-flatpak run --command=flathub-build org.flatpak.Builder --install \
-    packaging/flatpak/io.github.mmclinton.Spectral.yaml
+flatpak run org.flatpak.Builder --user --install --install-deps-from=flathub \
+    --force-clean --repo=repo builddir packaging/flatpak/io.github.mmclinton.Spectral.yaml
 flatpak run io.github.mmclinton.Spectral
 ```
+
+Flathub's `flathub-build` wrapper does not work here: it always builds with `--sandbox`, which refuses a source outside the manifest's directory, and this manifest's source is the repository root. `--repo=repo` exports the build for the [lint](#lint) step.
 
 Flatpak exports one command per application and names it after the app ID, so the CLI is on `$PATH` as `io.github.mmclinton.Spectral`, never as `spectral`. `flatpak build-finish` chooses which command runs (`--command=`) but cannot name the exported wrapper, and Flathub requires exported files to carry the app ID anyway — a short name is a shell alias on the user's side.
 
