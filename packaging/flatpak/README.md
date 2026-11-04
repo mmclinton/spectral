@@ -90,7 +90,7 @@ The submission repository holds this manifest with one change — the local sour
       - cargo-sources.json
 ```
 
-A pinned `commit` alongside the `tag` is deliberate: Forgejo's generated archives are not guaranteed to stay byte-identical, so an `archive` source with a `sha256` is the more fragile choice here.
+A pinned `commit` alongside the `tag` is deliberate: GitHub's generated archives are not guaranteed to stay byte-identical, so an `archive` source with a `sha256` is the more fragile choice here.
 
 `cargo-sources.json` is copied across unchanged. Everything else — the app ID, the runtime, the permissions, the module — is identical.
 
