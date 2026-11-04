@@ -16,10 +16,13 @@ flatpak install -y --user flathub org.flatpak.Builder
 The manifest builds from `main`, not from the working tree, so commit first.
 
 ```bash
-flatpak run --command=flathub-build org.flatpak.Builder --install \
-    packaging/flatpak/io.github.mmclinton.Spectral.yaml
+flatpak run org.flatpak.Builder --user --install --install-deps-from=flathub \
+    --force-clean --repo=repo --mirror-screenshots-url=https://dl.flathub.org/media \
+    --compose-url-policy=full builddir packaging/flatpak/io.github.mmclinton.Spectral.yaml
 flatpak run io.github.mmclinton.Spectral
 ```
+
+Flathub's `flathub-build` wrapper does not work here: it always builds with `--sandbox`, which refuses a source outside the manifest's directory, and this manifest's source is the repository root. The other flags are the ones it would have passed that matter for this build: `--repo=repo` exports the build for the [lint](#lint) step, and the two screenshot flags mirror the screenshots and compose the catalog the way Flathub does, which that lint checks.
 
 Flatpak exports one command per application and names it after the app ID, so the CLI is on `$PATH` as `io.github.mmclinton.Spectral`, never as `spectral`. `flatpak build-finish` chooses which command runs (`--command=`) but cannot name the exported wrapper, and Flathub requires exported files to carry the app ID anyway — a short name is a shell alias on the user's side.
 
@@ -88,7 +91,7 @@ The submission repository holds this manifest with one change — the local sour
       - cargo-sources.json
 ```
 
-A pinned `commit` alongside the `tag` is deliberate: Forgejo's generated archives are not guaranteed to stay byte-identical, so an `archive` source with a `sha256` is the more fragile choice here.
+A pinned `commit` alongside the `tag` is deliberate: GitHub's generated archives are not guaranteed to stay byte-identical, so an `archive` source with a `sha256` is the more fragile choice here.
 
 `cargo-sources.json` is copied across unchanged. Everything else — the app ID, the runtime, the permissions, the module — is identical.
 

@@ -32,4 +32,4 @@ GPL-3.0-only, inbound = outbound: by submitting a change you agree to license it
 
 ## Releases
 
-Versioning, channels, and the release pipeline are documented in [docs/RELEASING.md](docs/RELEASING.md). Releases are cut by the maintainer when a coherent user-visible arc has landed; landing on `main` alone ships nothing.
+Versioning, channels, and the release pipeline are documented in [docs/RELEASING.md](docs/RELEASING.md). I cut a release when a coherent user-visible arc has landed; landing on `main` alone ships nothing.

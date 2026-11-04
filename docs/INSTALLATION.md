@@ -78,11 +78,12 @@ If you prefer manual control over installation:
 **Spectral is not on Flathub yet.** Until it is, build the Flatpak yourself — it needs only `flatpak` and the Flathub remote:
 
 ```bash
-flatpak install -y flathub org.flatpak.Builder
+flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install -y --user flathub org.flatpak.Builder
 git clone https://github.com/mmclinton/spectral.git
 cd spectral
-flatpak run --command=flathub-build org.flatpak.Builder --install \
-    packaging/flatpak/io.github.mmclinton.Spectral.yaml
+flatpak run org.flatpak.Builder --user --install --install-deps-from=flathub \
+    --force-clean builddir packaging/flatpak/io.github.mmclinton.Spectral.yaml
 flatpak run io.github.mmclinton.Spectral
 ```
 
