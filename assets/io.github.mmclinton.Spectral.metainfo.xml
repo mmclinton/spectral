@@ -52,6 +52,17 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.11.0" date="2026-11-04">
+      <description>
+        <p>
+          Spectral's app ID is now io.github.mmclinton.Spectral. A
+          launcher or dock that had Spectral pinned needs it pinned
+          again, and a Flatpak build starts over with default settings
+          under the new name. The Source Code and License links and the
+          diagnostics report now lead to the project on GitHub.
+        </p>
+      </description>
+    </release>
     <release version="0.10.0" date="2026-10-30">
       <description>
         <p>

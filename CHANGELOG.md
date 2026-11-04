@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-04
+
 ### Changed
 - The app ID is now `io.github.mmclinton.Spectral`, replacing `page.codeberg.mmc.Spectral`. The desktop entry, the icon and the running window take the new name, so a launcher or dock that had Spectral pinned needs it pinned again. A Flatpak build's command and its data directory under `~/.var/app/` move to the new name as well: the new build starts over with default settings and no voice-test recordings, and the old one stays installed beside it until `flatpak uninstall page.codeberg.mmc.Spectral` removes it. To keep your settings and recordings, first stop both builds, whose daemons outlive their windows, with `flatpak kill page.codeberg.mmc.Spectral` and `flatpak kill io.github.mmclinton.Spectral`, then copy them across: `cp -a ~/.var/app/page.codeberg.mmc.Spectral/. ~/.var/app/io.github.mmclinton.Spectral/`. Other installs keep their settings, which do not depend on the app ID.
 - The "Source Code" and license links in the app now open the GitHub repository, and the diagnostics report sends you to GitHub to file an issue. The Codeberg pages they used to open no longer exist.
@@ -285,7 +287,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Nix is the only officially supported installation method
 - Requires PipeWire (with the PulseAudio compatibility layer) and WirePlumber
 
-[Unreleased]: https://github.com/mmclinton/spectral/compare/v0.10.0...main
+[Unreleased]: https://github.com/mmclinton/spectral/compare/v0.11.0...main
+[0.11.0]: https://github.com/mmclinton/spectral/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/mmclinton/spectral/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/mmclinton/spectral/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/mmclinton/spectral/compare/v0.7.0...v0.8.0
