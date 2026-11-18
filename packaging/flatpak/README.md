@@ -1,30 +1,25 @@
 # Flatpak packaging
 
-`io.github.mmclinton.Spectral.yaml` is the **development** manifest: it builds the checked-out repository so the Flatpak can be tested before anything is published. The Flathub submission uses a near-identical manifest that differs only in its source entry — see [For Flathub](#for-flathub) below.
+`io.github.mmclinton.Spectral.yaml` builds the tree it sits in: a clean export of a commit when built with `cargo xtask package flatpak` (see [../README.md](../README.md)), or a working copy when run by hand.
 
-## Prerequisites
+## Build and install
 
-Flatpak must be enabled on the host (`services.flatpak.enable = true` on NixOS), then:
+Flatpak must be enabled on the host (`services.flatpak.enable = true` on NixOS), with the builder installed once:
 
 ```bash
 flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 flatpak install -y --user flathub org.flatpak.Builder
 ```
 
-## Build and install
-
-The manifest builds from `main`, not from the working tree, so commit first.
+Then build, check and install a commit:
 
 ```bash
-flatpak run org.flatpak.Builder --user --install --install-deps-from=flathub \
-    --force-clean --repo=repo --mirror-screenshots-url=https://dl.flathub.org/media \
-    --compose-url-policy=full builddir packaging/flatpak/io.github.mmclinton.Spectral.yaml
+cargo xtask package flatpak
+flatpak install --user target/packages/flatpak/pkg/io.github.mmclinton.Spectral.flatpak
 flatpak run io.github.mmclinton.Spectral
 ```
 
-Flathub's `flathub-build` wrapper does not work here: it always builds with `--sandbox`, which refuses a source outside the manifest's directory, and this manifest's source is the repository root. The other flags are the ones it would have passed that matter for this build: `--repo=repo` exports the build for the [lint](#lint) step, and the two screenshot flags mirror the screenshots and compose the catalog the way Flathub does, which that lint checks.
-
-Flatpak exports one command per application and names it after the app ID, so the CLI is on `$PATH` as `io.github.mmclinton.Spectral`, never as `spectral`. `flatpak build-finish` chooses which command runs (`--command=`) but cannot name the exported wrapper, and Flathub requires exported files to carry the app ID anyway — a short name is a shell alias on the user's side.
+Flatpak exports one command per application and names it after the app ID, so the CLI is on `$PATH` as `io.github.mmclinton.Spectral`, never as `spectral`. `flatpak build-finish` chooses which command runs (`--command=`) but cannot name the exported wrapper, and Flatpak requires exported files to carry the app ID anyway — a short name is a shell alias on the user's side.
 
 ```bash
 io.github.mmclinton.Spectral status
@@ -38,19 +33,9 @@ flatpak run --command=spectral-daemon io.github.mmclinton.Spectral
 
 **Stop any host daemon first.** The sandbox gets a private `$XDG_RUNTIME_DIR`, so the Flatpak daemon and a natively installed one never see each other's socket — but they will both try to publish a virtual mic under the same node name, which makes any test result ambiguous.
 
-## Lint
-
-Both must be clean before submission:
-
-```bash
-flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest \
-    packaging/flatpak/io.github.mmclinton.Spectral.yaml
-flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo repo
-```
-
 ## Regenerating cargo-sources.json
 
-Flathub builds with no network, so every crate is listed as an explicit source with a checksum. The script fetches everything it needs on demand and leaves nothing behind, so the dev shell carries no tooling for a target it never builds. Whenever `Cargo.lock` changes:
+flatpak-builder builds with no network, so every crate is listed as an explicit source with a checksum. The script fetches everything it needs on demand and leaves nothing behind, so the dev shell carries no tooling for a target it never builds. Whenever `Cargo.lock` changes:
 
 ```bash
 ./packaging/flatpak/generate-sources.sh
@@ -77,22 +62,3 @@ Note that `src/platform/linux/mod.rs::manager_client_properties` is what makes t
 
 - **The CLI answers to the app ID**, `io.github.mmclinton.Spectral`, as described under [Build and install](#build-and-install).
 - **Paths move under `~/.var/app/io.github.mmclinton.Spectral/`.** Settings and voice-test recordings live there rather than under `~/.config` and `~/.local/state`.
-
-## For Flathub
-
-The submission repository holds this manifest with one change — the local source is replaced by the published release:
-
-```yaml
-    sources:
-      - type: git
-        url: https://github.com/mmclinton/spectral.git
-        tag: vX.Y.Z
-        commit: <the full sha that tag points at>
-      - cargo-sources.json
-```
-
-A pinned `commit` alongside the `tag` is deliberate: GitHub's generated archives are not guaranteed to stay byte-identical, so an `archive` source with a `sha256` is the more fragile choice here.
-
-`cargo-sources.json` is copied across unchanged. Everything else — the app ID, the runtime, the permissions, the module — is identical.
-
-The submission process itself is documented at <https://docs.flathub.org/docs/for-app-authors/submission>. Read the [requirements](https://docs.flathub.org/docs/for-app-authors/requirements) first, in particular the generative AI policy.

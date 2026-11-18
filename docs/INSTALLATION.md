@@ -95,7 +95,7 @@ io.github.mmclinton.Spectral devices
 
 Alias it if the full name grates — Flatpak has no way to export a shorter one.
 
-Details, including the full permission set and what a Flathub submission would change, are in [packaging/flatpak](../packaging/flatpak).
+Details, including the full permission set, are in [packaging/flatpak](../packaging/flatpak).
 
 ## What is deliberately not packaged
 

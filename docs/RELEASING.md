@@ -46,7 +46,7 @@ Six files carry the version and must move together:
 | `assets/spectral.1` | the `.TH` line's `"spectral X.Y.Z"` field | the script, preserving the page's own revision date |
 | `assets/io.github.mmclinton.Spectral.metainfo.xml` | `<release>` entry | **authored by hand first** — the script only verifies it exists |
 
-The in-repo Flatpak manifest builds `main` and carries no version; the versioned manifest lives in the Flathub repository. `nix/package.nix` has a `versionCheckHook`, so `nix flake check` fails a cut whose binary and expression disagree, and unit tests pin the man page's `.TH` version and the PKGBUILD's `pkgver` to the crate's, so the same gate catches those spots.
+The Flatpak manifest builds the tree it sits in and carries no version, and the deb's changelog is generated from the crate version, so neither is a spot. `nix/package.nix` has a `versionCheckHook`, so `nix flake check` fails a cut whose binary and expression disagree, and unit tests pin the man page's `.TH` version and the PKGBUILD's `pkgver` to the crate's, so the same gate catches those spots.
 
 ## Cutting a release
 
@@ -54,7 +54,7 @@ The in-repo Flatpak manifest builds `main` and carries no version; the versioned
 2. `./packaging/bump-version.sh X.Y.Z`
 3. Roll CHANGELOG.md: `[Unreleased]` → `[X.Y.Z] - date`, keep an empty `[Unreleased]` above, fix the compare links at the bottom (`/compare/vA...vB`). If `Cargo.lock` moved since the last release, check THIRD-PARTY.md against it (the recipe is at that file's foot) and regenerate `packaging/flatpak/cargo-sources.json` (`./packaging/flatpak/generate-sources.sh`).
 4. Gates: `nix flake check` and, from the dev shell, `cargo deny check` (needs network for the advisory DB). Any advisory hit is triaged before the release commit, never after.
-5. Build the release candidates both ways — `nix build` and the Flatpak dev manifest — and **validate them functionally**: the virtual mic audibly denoises on a real device. No automated check substitutes for this.
+5. Build the release candidates both ways — `nix build` and `cargo xtask package flatpak` (install the bundle it leaves in `target/packages/flatpak/pkg/`) — and **validate them functionally**: the virtual mic audibly denoises on a real device. No automated check substitutes for this.
 6. Commit `chore(release): vX.Y.Z`, tag `git tag -a vX.Y.Z`, verify `git describe --tags` prints exactly `vX.Y.Z` on a clean tree, and push with `git push --follow-tags`.
 
 ## Fan-out
