@@ -11,8 +11,11 @@ pkgdesc="Real-time microphone noise suppression via a virtual PipeWire source (R
 arch=('x86_64')
 url="https://github.com/mmclinton/spectral"
 license=('GPL-3.0-only')
+# namcap sees only what the binaries link, so it calls everything from
+# pipewire down "may not be needed": the services, the font and the
+# libraries winit loads at run time are needed all the same.
 depends=(
-  'gcc-libs'
+  'libgcc'
   'glibc'
   'libpipewire'
   'pipewire'          # the media graph itself (WirePlumber drives it)
