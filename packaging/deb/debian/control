@@ -27,6 +27,7 @@ Depends:
  libxkbcommon-x11-0,
  libwayland-client0,
  libx11-6,
+ libx11-xcb1,
  libxcursor1,
  libxi6,
  libxrandr2,
