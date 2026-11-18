@@ -44,25 +44,28 @@ pub struct Target<'a> {
 }
 
 pub fn run(build: &Build, target: &Target, report: &mut Report) -> Result<(), String> {
-    let image = format!("localhost/spectral-xtask-check-{}", target.name);
-    match install(build, target, &image) {
-        Ok(()) => report.pass("installs with only its declared dependencies"),
+    let image = match install(build, target) {
+        Ok(image) => {
+            report.pass("installs with only its declared dependencies");
+            image
+        }
         Err(e) => {
             report.fail("install", e);
             return Ok(());
         }
-    }
-    version(build, &image, report);
+    };
+    version(build, &image.name, report);
     display_image(build)?;
     for display in [Display::X11, Display::Wayland] {
-        launch(build, &image, display, report);
+        launch(build, &image.name, display, report);
     }
     Ok(())
 }
 
-/// Installs the package in a fresh container and keeps the result as
-/// `image`, so each launch starts from the same installed system.
-fn install(build: &Build, target: &Target, image: &str) -> Result<(), String> {
+/// Installs the package in a fresh container and keeps the result as an
+/// image, so each launch starts from the same installed system.
+fn install(build: &Build, target: &Target) -> Result<Image, String> {
+    let name = format!("localhost/spectral-xtask-check-{}", target.name);
     let container = format!(
         "spectral-xtask-install-{}-{}",
         target.name,
@@ -76,12 +79,36 @@ fn install(build: &Build, target: &Target, image: &str) -> Result<(), String> {
             .args(["bash", "-euo", "pipefail", "-c", target.install_script]),
     );
     let committed = installed.and_then(|()| {
-        cmd::output(Command::new("podman").args(["commit", "--quiet", container.as_str(), image]))
-            .map(drop)
+        cmd::output(Command::new("podman").args([
+            "commit",
+            "--quiet",
+            container.as_str(),
+            name.as_str(),
+        ]))
+        .map(|_| Image { name })
     });
     let removed =
         cmd::output(Command::new("podman").args(["rm", "--force", container.as_str()])).map(drop);
-    committed.and(removed)
+    let image = committed?;
+    removed?;
+    Ok(image)
+}
+
+/// The installed system, removed when dropped: committing onto the same
+/// tag on every run would otherwise leave each earlier image behind,
+/// untagged, at several hundred megabytes apiece.
+struct Image {
+    name: String,
+}
+
+impl Drop for Image {
+    fn drop(&mut self) {
+        if let Err(e) =
+            cmd::output(Command::new("podman").args(["rmi", "--force", self.name.as_str()]))
+        {
+            eprintln!("warning: {e}");
+        }
+    }
 }
 
 fn version(build: &Build, image: &str, report: &mut Report) {
