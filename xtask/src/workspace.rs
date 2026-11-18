@@ -14,9 +14,10 @@ pub fn root() -> PathBuf {
 /// Cargo's target directory, wherever this build put it. xtask runs as
 /// `<target-dir>[/<triple>]/<profile>/xtask`, so two levels up honors
 /// `CARGO_TARGET_DIR`, `build.target-dir` and `build.target`, which apply
-/// to the release build of Spectral as well; a `--target` flag given only
-/// to that build does not reach xtask. (A test binary sits one level
-/// deeper, in `deps/`; no test calls this.)
+/// to the release build of Spectral as well. A `--target` flag given only
+/// to that build does not reach xtask, which is what `install --binaries`
+/// is for. (A test binary sits one level deeper, in `deps/`; no test calls
+/// this.)
 pub fn target_dir() -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| format!("cannot locate xtask itself: {e}"))?;
     exe.parent()

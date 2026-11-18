@@ -13,6 +13,7 @@ use std::process::ExitCode;
 
 const USAGE: &str =
     "usage: cargo xtask install --prefix <dir> [--destdir <dir>] [--licensedir <dir>] [--app-only]
+                           [--binaries <dir>]
        cargo xtask package <format> [--ref <git-ref>]";
 
 fn main() -> ExitCode {

@@ -18,7 +18,7 @@ cargo build --release --locked
 cargo xtask install --destdir "$pkgdir" --prefix /usr
 ```
 
-`--licensedir` moves the license files (default `<prefix>/share/licenses/spectral`), and `--app-only` leaves out the man page and the shell completions. A new file in `assets/` fails the tests until the list installs it or names it as deliberately left out.
+`--licensedir` moves the license files (default `<prefix>/share/licenses/spectral`), and `--app-only` leaves out the man page and the shell completions. The binaries are looked for in the `release/` folder of the target directory xtask itself was built into; a build given `--target <triple>` puts them in `target/<triple>/release` instead, which `--binaries <dir>` names. A new file in `assets/` fails the tests until the list installs it or names it as deliberately left out.
 
 Dependencies are declared per format, because package names differ between distributions. The libraries winit loads at run time (`dlopenLibs` in `nix/package.nix`) are invisible to the tools that work out dependencies from the binary, so the Nix, Arch and deb recipes name them by hand; the Flatpak gets them from its runtime.
 

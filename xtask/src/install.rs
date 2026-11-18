@@ -29,6 +29,7 @@ pub struct Options {
     destdir: Option<PathBuf>,
     licensedir: Option<PathBuf>,
     app_only: bool,
+    binaries: Option<PathBuf>,
 }
 
 impl Options {
@@ -39,6 +40,7 @@ impl Options {
         let mut destdir = None;
         let mut licensedir = None;
         let mut app_only = false;
+        let mut binaries = None;
         let mut args = args.iter();
         while let Some(arg) = args.next() {
             let flag = arg.to_string_lossy();
@@ -50,6 +52,7 @@ impl Options {
                 "--prefix" => &mut prefix,
                 "--destdir" => &mut destdir,
                 "--licensedir" => &mut licensedir,
+                "--binaries" => &mut binaries,
                 other => return Err(format!("install: unknown argument '{other}'")),
             };
             let value = args
@@ -64,6 +67,7 @@ impl Options {
             destdir,
             licensedir,
             app_only,
+            binaries,
         })
     }
 }
@@ -90,7 +94,8 @@ fn checked_dir(flag: &str, value: &OsStr) -> Result<PathBuf, String> {
 /// Where an installed file comes from.
 #[derive(Debug, PartialEq, Eq)]
 enum Source {
-    /// A binary in the target directory's `release/` folder.
+    /// A built binary, in the `--binaries` directory or else the target
+    /// directory's `release/` folder.
     Binary(&'static str),
     /// A file in the source tree, relative to the workspace root.
     Tree(String),
@@ -172,19 +177,24 @@ fn entries(prefix: &Path, licensedir: &Path, app_only: bool) -> Vec<Entry> {
 /// one that is missing.
 pub fn run(options: &Options) -> Result<(), String> {
     let root = workspace::root();
-    let release = workspace::target_dir()?.join("release");
+    let binaries = match &options.binaries {
+        Some(dir) => dir.clone(),
+        None => workspace::target_dir()?.join("release"),
+    };
     let licensedir = options
         .licensedir
         .clone()
         .unwrap_or_else(|| options.prefix.join("share/licenses/spectral"));
     for entry in entries(&options.prefix, &licensedir, options.app_only) {
         let from = match &entry.source {
-            Source::Binary(name) => release.join(name),
+            Source::Binary(name) => binaries.join(name),
             Source::Tree(path) => root.join(path),
         };
         if !from.is_file() {
             let hint = match entry.source {
-                Source::Binary(_) => "; build it first with `cargo build --release`",
+                Source::Binary(_) => {
+                    "; build it first with `cargo build --release`, and name its directory with --binaries if that build was given --target"
+                }
                 Source::Tree(_) => "",
             };
             return Err(format!("install: {} is missing{hint}", from.display()));
@@ -340,6 +350,8 @@ mod tests {
             "--licensedir",
             "/usr/share/doc/x",
             "--app-only",
+            "--binaries",
+            "/build/release",
         ]))
         .unwrap();
         assert_eq!(
@@ -349,8 +361,37 @@ mod tests {
                 destdir: Some("/stage".into()),
                 licensedir: Some("/usr/share/doc/x".into()),
                 app_only: true,
+                binaries: Some("/build/release".into()),
             }
         );
+    }
+
+    #[test]
+    fn binaries_are_taken_from_the_named_directory() {
+        let dir = std::env::temp_dir().join(format!("xtask-binaries-{}", std::process::id()));
+        let built = dir.join("built");
+        let prefix = dir.join("prefix");
+        fs::create_dir_all(&built).unwrap();
+        for name in ["spectral", "spectral-daemon"] {
+            fs::write(built.join(name), name).unwrap();
+        }
+
+        run(&Options {
+            prefix: prefix.clone(),
+            destdir: None,
+            licensedir: None,
+            app_only: false,
+            binaries: Some(built),
+        })
+        .unwrap();
+
+        for name in ["spectral", "spectral-daemon"] {
+            assert_eq!(
+                fs::read_to_string(prefix.join("bin").join(name)).unwrap(),
+                name
+            );
+        }
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
