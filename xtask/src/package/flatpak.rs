@@ -22,10 +22,19 @@ pub fn run(build: &Build, report: &mut Report) -> Result<(), String> {
     let manifest = build.src.join(format!("packaging/flatpak/{APP_ID}.yaml"));
     let builddir = build.out.join("build");
     let repo = build.out.join("repo");
+    // Beside the format's directory rather than in it, so the downloaded
+    // crates and ccache outlive the fresh start every run makes; the build
+    // itself stays clean through --force-clean. Every flatpak-builder call
+    // names it, or the tool falls back to `.flatpak-builder` in the working
+    // directory.
+    let state_dir = format!(
+        "--state-dir={}",
+        build.out.with_file_name("flatpak-state").display()
+    );
     cmd::run(
         builder()
             .args(["--user", "--install-deps-from=flathub", "--force-clean"])
-            .arg(format!("--state-dir={}", build.out.join("state").display()))
+            .arg(&state_dir)
             .arg(format!("--repo={}", repo.display()))
             .arg(&builddir)
             .arg(&manifest),
@@ -55,6 +64,7 @@ pub fn run(build: &Build, report: &mut Report) -> Result<(), String> {
     match cmd::capture(
         builder()
             .arg("--run")
+            .arg(&state_dir)
             .arg(&builddir)
             .arg(&manifest)
             .args(["spectral", "--version"]),
