@@ -21,6 +21,10 @@ override_dh_auto_install:
 		--licensedir /usr/share/doc/spectral-mic
 	# Debian carries the license text in debian/copyright instead.
 	rm $(CURDIR)/debian/spectral-mic/usr/share/doc/spectral-mic/LICENSE
+	# Debian's zsh reads packaged completions from vendor-completions and
+	# leaves site-functions out of its fpath.
+	mv $(CURDIR)/debian/spectral-mic/usr/share/zsh/site-functions \
+		$(CURDIR)/debian/spectral-mic/usr/share/zsh/vendor-completions
 
 # The release profile strips the binaries, leaving dwz nothing to compress.
 override_dh_dwz:
