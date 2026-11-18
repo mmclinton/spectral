@@ -11,7 +11,6 @@
   rustPlatform,
   pkg-config,
   makeWrapper,
-  installShellFiles,
   libxkbcommon,
   wayland,
   libx11,
@@ -51,30 +50,31 @@ let
     libxrandr
   ];
 
-  # Only what the compiler reads. A docs, packaging, or CI commit must not
-  # change the derivation hash and force a recompile.
+  # Only what the compiler reads, which includes the xtask crate: Cargo
+  # cannot load the workspace without the member's manifest, and the
+  # install phase compiles and runs it. A docs or CI commit must not change
+  # the derivation hash and force a recompile.
   buildFiles = lib.fileset.unions [
     ./../src
     ./../ui
+    ./../xtask
     ./../build.rs
     ./../Cargo.toml
     ./../Cargo.lock
+    ./../.cargo/config.toml
   ];
 
-  # Shipped verbatim by postInstall, or read by the test target through
-  # include_str!, or both — but never opened by rustfmt, which parses .rs
-  # files alone and expands no macros. Keeping them out of buildFiles is
-  # what stops a typo fix in the man page from re-running the format check;
-  # everything else here consumes them.
+  # Shipped verbatim by the install phase, or read by the tests, or both —
+  # but never opened by rustfmt, which parses .rs files alone and expands no
+  # macros. Keeping them out of buildFiles is what stops a typo fix in the
+  # man page from re-running the format check; everything else here
+  # consumes them.
   dataFiles = lib.fileset.unions [
-    ./../assets/io.github.mmclinton.Spectral.desktop
-    ./../assets/io.github.mmclinton.Spectral.metainfo.xml
-    ./../assets/spectral.png
-    ./../assets/spectral.1
-    ./../assets/spectral.bash
-    ./../assets/spectral.fish
-    ./../assets/spectral.zsh
+    # Whole, so xtask's test that every asset is either installed or named
+    # as deliberately left out sees the real directory.
+    ./../assets
     ./../docs/CLI.md
+    ./../LICENSE
     ./../THIRD-PARTY.md
   ];
 
@@ -111,23 +111,18 @@ craneLib'.buildPackage (
   // {
     inherit cargoArtifacts;
 
-    nativeBuildInputs = commonArgs.nativeBuildInputs ++ [
-      makeWrapper
-      installShellFiles
-    ];
+    nativeBuildInputs = commonArgs.nativeBuildInputs ++ [ makeWrapper ];
 
     # The tests gate every PR through passthru.tests.unit; running them
     # here as well would rebuild the test targets on every install.
     doCheck = false;
 
-    postInstall = ''
-      install -Dm644 assets/io.github.mmclinton.Spectral.desktop $out/share/applications/io.github.mmclinton.Spectral.desktop
-      install -Dm644 assets/io.github.mmclinton.Spectral.metainfo.xml $out/share/metainfo/io.github.mmclinton.Spectral.metainfo.xml
-      install -Dm644 assets/spectral.png $out/share/icons/hicolor/512x512/apps/io.github.mmclinton.Spectral.png
-      install -Dm644 THIRD-PARTY.md $out/share/licenses/spectral/THIRD-PARTY.md
-      installManPage assets/spectral.1
-      installShellCompletion assets/spectral.{bash,fish,zsh}
+    # Every installed file comes from the one list in xtask/src/install.rs.
+    installPhaseCommand = ''
+      cargo xtask install --prefix "$out"
+    '';
 
+    postInstall = ''
       # The GUI shells out to xdg-open for its Help links; hosts without
       # xdg-utils would otherwise fail the spawn silently.
       wrapProgram $out/bin/spectral \
@@ -149,7 +144,7 @@ craneLib'.buildPackage (
           commonArgs
           // {
             inherit cargoArtifacts;
-            cargoClippyExtraArgs = "--all-targets -- --deny warnings";
+            cargoClippyExtraArgs = "--workspace --all-targets -- --deny warnings";
             # Same reason rustfmt.toml joins the fmt source below: clippy.toml
             # is not a build input, and putting it in buildFiles would make
             # every lint tweak recompile the crate. --all-targets compiles
@@ -165,10 +160,17 @@ craneLib'.buildPackage (
           }
         );
 
-        unit = craneLib'.cargoTest (commonArgs // { inherit cargoArtifacts; });
+        unit = craneLib'.cargoTest (
+          commonArgs
+          // {
+            inherit cargoArtifacts;
+            cargoTestExtraArgs = "--workspace";
+          }
+        );
 
         fmt = craneLib'.cargoFmt {
           inherit pname version;
+          cargoExtraArgs = "--all";
           # rustfmt.toml is not a build input, so it joins the source only
           # here. dataFiles is deliberately absent: this is the one check
           # that reads none of it.
