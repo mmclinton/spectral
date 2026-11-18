@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Bump every in-repo version spot for a release.
 #
-# The release version lives in six files that must move together; this
+# The release version lives in several files that must move together; this
 # script is the authority on that list. It edits the mechanical spots and
 # verifies the authored one (the metainfo <release> entry), so a release
 # cut cannot silently miss a spot. Any file that no longer matches the

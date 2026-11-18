@@ -1,6 +1,6 @@
 # Packaging
 
-Every package of Spectral installs the same files, from one list. The recipes live here, one folder per format, and none of them names a source URL or a hash: whoever builds a recipe exports the wanted commit first, so a recipe inside a release tag builds that tag.
+Every package of Spectral stages its files through one list. The recipes live here, one folder per format, and none of them names a source URL or a hash: whoever builds a recipe exports the wanted commit first, so a recipe inside a release tag builds that tag.
 
 | Format | Recipe | Build and check |
 | --- | --- | --- |
@@ -20,7 +20,7 @@ cargo xtask install --destdir "$pkgdir" --prefix /usr
 
 `--licensedir` moves the license files (default `<prefix>/share/licenses/spectral`), and `--app-only` leaves out the man page and the shell completions. A new file in `assets/` fails the tests until the list installs it or names it as deliberately left out.
 
-Dependencies are declared per format, because package names differ between distributions. The libraries winit loads at run time (`dlopenLibs` in `nix/package.nix`) are invisible to the tools that work out dependencies from the binary, so every recipe names them by hand.
+Dependencies are declared per format, because package names differ between distributions. The libraries winit loads at run time (`dlopenLibs` in `nix/package.nix`) are invisible to the tools that work out dependencies from the binary, so the Nix, Arch and deb recipes name them by hand; the Flatpak gets them from its runtime.
 
 ## Building and checking a package
 
@@ -34,4 +34,4 @@ It needs rootless podman for Arch and deb, and Flatpak with `org.flatpak.Builder
 
 ## Versions
 
-`bump-version.sh` moves the PKGBUILD's `pkgver` with every other version spot. The deb's changelog is generated from the crate version at build time, and the Flatpak manifest carries no version.
+The version spots, and why the deb and the Flatpak have none, are in [docs/RELEASING.md](../docs/RELEASING.md).
