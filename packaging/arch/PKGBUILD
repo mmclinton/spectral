@@ -32,7 +32,10 @@ makedepends=('cargo' 'clang' 'pkgconf')
 # The unrelated AUR package "spectral" (a BSC trace-analysis tool) also
 # ships /usr/bin/spectral.
 conflicts=('spectral')
-options=('!debug')    # the release profile already strips symbols
+# !debug: the release profile already strips symbols. !lto: makepkg's -flto
+# turns libspa-sys's C shim into GCC bitcode the Rust link step cannot
+# resolve; Cargo's own thin LTO, set in [profile.release], still applies.
+options=('!debug' '!lto')
 source=("$pkgname-$pkgver.tar.gz")
 sha256sums=('SKIP')
 
