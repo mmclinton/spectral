@@ -25,7 +25,7 @@ The per-change test:
 
 - **No** — comments, refactors, CI, docs, packaging expressions: land it on `main` and stop. It ships silently inside the next release.
 - **Yes** — it gets a line under `[Unreleased]` in CHANGELOG.md when it lands, and urgency decides the timing. The default is to batch; only breakage and security justify a same-day release. UI wording is user-visible (it is compiled into the binary); a code comment is not.
-- **Packaging-only error** (a package expression or manifest wrong, source fine) — no new tag. nixpkgs: a package-only PR. Flathub: a manifest-only PR in the Flathub repository.
+- **Packaging-only error** (a package expression or manifest wrong, source fine) — no new tag. nixpkgs: a package-only PR. Flathub: a manifest-only PR in the Flathub repository. The recipes in `packaging/` build the tag they sit in, so a fix to one of them ships in a new patch release.
 
 `[Unreleased]` is both the accumulator and the gauge: when it reads like something a user would want, cut the release.
 
@@ -70,7 +70,7 @@ Preflight: one open PR per package, never two.
 
 Fresh update: branch from `upstream/master`, set `version`, set both `src.hash` and `cargoHash` to `lib.fakeHash` (`cargoHash` moves even when `Cargo.lock` looks unchanged — its own version line is enough), and let `nix-build -A spectral-mic` report the real hashes one mismatch at a time. A 404 is not a mismatch — it means the tag is missing. Smoke-test `./result/bin/`, run the tree's formatter and `./ci/nixpkgs-vet.sh master`, commit as `spectral-mic: OLD -> NEW` with the changelog URL (`https://github.com/mmclinton/spectral/blob/vX.Y.Z/CHANGELOG.md`) in the body, and open the PR with only truthful checkboxes. A later force-push or body edit notifies nobody — only a comment does.
 
-**Parity:** general improvements to either package expression are mirrored to the other in the same session. Must stay in sync: runtime and build inputs, `postInstall`, `__structuredAttrs` + `env.` vars, renamed nixpkgs attrs, the `versionCheckHook` block, and `meta`. Intentionally different (do not sync): the builder (`rustPlatform.buildRustPackage` vs crane), the toolchain, `src` (`fetchFromGitHub` vs a fileset), `cargoHash` (crane vendors from the lockfile), where tests run, `pname` (`spectral-mic` vs `spectral`), and the `passthru`/maintainers/fixpoint plumbing.
+**Parity:** general improvements to either package expression are mirrored to the other in the same session. Must stay in sync: runtime and build inputs, the installed files and the `wrapProgram` call, `__structuredAttrs` + `env.` vars, renamed nixpkgs attrs, the `versionCheckHook` block, and `meta`. Intentionally different (do not sync): the builder (`rustPlatform.buildRustPackage` vs crane), how the files are installed (`install` lines in nixpkgs' `postInstall` vs `cargo xtask install`), the toolchain, `src` (`fetchFromGitHub` vs a fileset), `cargoHash` (crane vendors from the lockfile), where tests run, `pname` (`spectral-mic` vs `spectral`), and the `passthru`/maintainers/fixpoint plumbing.
 
 ### Flathub
 
