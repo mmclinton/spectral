@@ -18,6 +18,7 @@ fn builder() -> Command {
     command
 }
 
+/// Builds, lints and bundles the Flatpak, then asks it for its version.
 pub fn run(build: &Build, report: &mut Report) -> Result<(), String> {
     let manifest = build.src.join(format!("packaging/flatpak/{APP_ID}.yaml"));
     let builddir = build.out.join("build");

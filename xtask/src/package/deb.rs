@@ -11,6 +11,7 @@ use crate::workspace;
 
 const BUILD_SCRIPT: &str = include_str!("../../scripts/deb-build.sh");
 
+/// Builds the package in a container, lints it, and install-checks it.
 pub fn run(build: &Build, report: &mut Report) -> Result<(), String> {
     let debian = build.src.join("debian");
     cmd::run(
@@ -62,7 +63,9 @@ pub fn run(build: &Build, report: &mut Report) -> Result<(), String> {
 /// `debian/changelog` for `version`, dated `date` in RFC 2822 form, for
 /// Ubuntu 24.04 (noble), the release it is built on. It is generated so a
 /// release bump never has to touch the deb, and dated with the commit so
-/// the same commit builds the same package.
+/// the same commit builds the same package. The revision is always 1: a
+/// fix to the packaging alone ships as a new patch release, so every
+/// published package is exactly one tag.
 fn changelog(version: &str, date: &str) -> String {
     format!(
         "spectral-mic ({version}-1) noble; urgency=medium\n\n  * Spectral {version}; CHANGELOG.md in the source lists the changes.\n\n -- mmc <github.mmc@pm.me>  {date}\n"

@@ -33,6 +33,7 @@ impl Format {
     }
 }
 
+/// The command line of `cargo xtask package`.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Options {
     format: Format,
@@ -40,6 +41,7 @@ pub struct Options {
 }
 
 impl Options {
+    /// Reads the format and an optional `--ref`, which defaults to `HEAD`.
     pub fn parse(args: &[OsString]) -> Result<Self, String> {
         let mut args = args.iter().map(|arg| arg.to_string_lossy());
         let format = match args.next().as_deref() {
@@ -91,14 +93,18 @@ pub struct Report {
 }
 
 impl Report {
+    /// Records a step that passed.
     pub fn pass(&mut self, step: impl Into<String>) {
         self.steps.push((step.into(), Outcome::Pass));
     }
 
+    /// Records a step whose output is for a person to judge, such as a
+    /// linter's.
     pub fn note(&mut self, step: impl Into<String>) {
         self.steps.push((step.into(), Outcome::Note));
     }
 
+    /// Records a failed step and why; the run then ends in an error.
     pub fn fail(&mut self, step: impl Into<String>, why: impl Into<String>) {
         self.steps.push((step.into(), Outcome::Fail(why.into())));
     }
@@ -127,6 +133,8 @@ impl Report {
     }
 }
 
+/// Exports the ref, hands the export to the format's build, and prints the
+/// report; any failed step makes the result an error.
 pub fn run(options: &Options) -> Result<(), String> {
     let root = workspace::root();
     let commit = cmd::output(

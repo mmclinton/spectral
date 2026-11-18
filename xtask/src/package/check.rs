@@ -41,6 +41,7 @@ const LOAD_ERRORS: [&str; 3] = [
     "panicked",
 ];
 
+/// What the install check needs to know about a distribution.
 pub struct Target<'a> {
     /// Names this format's containers and image: `arch` or `deb`.
     pub name: &'a str,
@@ -51,6 +52,8 @@ pub struct Target<'a> {
     pub install_script: &'a str,
 }
 
+/// Runs the install check, recording each step in `report`; only a failure
+/// to run it at all is an error.
 pub fn run(build: &Build, target: &Target, report: &mut Report) -> Result<(), String> {
     let image = match install(build, target) {
         Ok(image) => {

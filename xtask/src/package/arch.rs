@@ -9,6 +9,7 @@ use crate::workspace;
 
 const BUILD_SCRIPT: &str = include_str!("../../scripts/arch-build.sh");
 
+/// Builds the package in a container, lints it, and install-checks it.
 pub fn run(build: &Build, report: &mut Report) -> Result<(), String> {
     let work = build.out.join("work");
     let pkg = build.out.join("pkg");

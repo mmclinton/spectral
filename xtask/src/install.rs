@@ -10,6 +10,7 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::workspace;
 
+/// The app ID the desktop file, metainfo and icon are named after.
 pub const APP_ID: &str = "io.github.mmclinton.Spectral";
 
 /// Files in `assets/` that are deliberately not installed. Only the test
@@ -20,6 +21,7 @@ const NOT_INSTALLED: [&str; 1] = [
     "screenshot.png",
 ];
 
+/// The command line of `cargo xtask install`.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Options {
     prefix: PathBuf,
@@ -29,6 +31,8 @@ pub struct Options {
 }
 
 impl Options {
+    /// Reads the flags that follow `install`; every directory must be
+    /// absolute.
     pub fn parse(args: &[OsString]) -> Result<Self, String> {
         let mut prefix = None;
         let mut destdir = None;
@@ -163,6 +167,8 @@ fn entries(prefix: &Path, licensedir: &Path, app_only: bool) -> Vec<Entry> {
     entries
 }
 
+/// Copies every file of an installation into place, failing on the first
+/// one that is missing.
 pub fn run(options: &Options) -> Result<(), String> {
     let root = workspace::root();
     let release = workspace::target_dir()?.join("release");
