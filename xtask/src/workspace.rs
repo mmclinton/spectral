@@ -11,11 +11,17 @@ pub fn root() -> PathBuf {
         .map_or_else(|| manifest_dir.to_path_buf(), Path::to_path_buf)
 }
 
-/// Cargo's target directory: `$CARGO_TARGET_DIR` when set (a relative one
-/// is relative to the working directory, as Cargo reads it), otherwise
-/// `target/` in the root.
-pub fn target_dir() -> PathBuf {
-    std::env::var_os("CARGO_TARGET_DIR").map_or_else(|| root().join("target"), PathBuf::from)
+/// Cargo's target directory, wherever this build put it. xtask runs as
+/// `<target-dir>[/<triple>]/<profile>/xtask`, so two levels up honors
+/// `CARGO_TARGET_DIR`, `build.target-dir` and a target triple alike, the
+/// same settings the release build of Spectral was made under. (A test
+/// binary sits one level deeper, in `deps/`; no test calls this.)
+pub fn target_dir() -> Result<PathBuf, String> {
+    let exe = std::env::current_exe().map_err(|e| format!("cannot locate xtask itself: {e}"))?;
+    exe.parent()
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+        .ok_or_else(|| format!("{} is not inside a Cargo target directory", exe.display()))
 }
 
 /// The `[package]` version in `tree`'s `Cargo.toml`.

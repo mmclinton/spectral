@@ -135,7 +135,7 @@ pub fn run(options: &Options) -> Result<(), String> {
     )?
     .trim()
     .to_string();
-    let out = workspace::target_dir()
+    let out = workspace::target_dir()?
         .join("packages")
         .join(options.format.name());
     fresh_dir(&out)?;

@@ -159,7 +159,7 @@ fn entries(prefix: &Path, licensedir: &Path, app_only: bool) -> Vec<Entry> {
 
 pub fn run(options: &Options) -> Result<(), String> {
     let root = workspace::root();
-    let release = workspace::target_dir().join("release");
+    let release = workspace::target_dir()?.join("release");
     let licensedir = options
         .licensedir
         .clone()
