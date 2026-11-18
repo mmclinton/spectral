@@ -1,4 +1,5 @@
 [workspace]
+members = ["xtask"]
 
 [workspace.package]
 edition = "2024"

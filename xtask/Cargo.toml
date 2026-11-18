@@ -1,0 +1,11 @@
+[package]
+name = "xtask"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Packaging tasks for Spectral, run as `cargo xtask`"
+
+[lints]
+workspace = true
