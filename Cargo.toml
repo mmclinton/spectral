@@ -41,7 +41,7 @@ workspace = true
 warnings = { level = "deny", priority = -1 }
 
 [workspace.lints.clippy]
-all ={ level = "deny", priority = -1 }
+all = { level = "deny", priority = -1 }
 # Rules the conventions state in prose, machine-enforced. Each is named
 # individually: `restriction` is not meant to be enabled as a group, and the
 # rest of `pedantic` is a separate decision. Thresholds and the test-only
