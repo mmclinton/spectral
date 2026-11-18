@@ -11,7 +11,7 @@ use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::{Build, Report, cmd, fresh_dir};
+use super::{Build, PULL, Report, cmd, fresh_dir};
 
 /// The display servers live in an image of their own: installed beside the
 /// package, they would bring in the very libraries under test (Xvfb alone
@@ -85,7 +85,7 @@ fn install(build: &Build, target: &Target) -> Result<Image, String> {
     );
     let installed = cmd::run(
         Command::new("podman")
-            .args(["run", "--name", container.as_str(), "--volume"])
+            .args(["run", PULL, "--name", container.as_str(), "--volume"])
             .arg(format!("{}:/pkg:ro", build.out.join("pkg").display()))
             .arg(target.base_image)
             .args(["bash", "-euo", "pipefail", "-c", target.install_script]),
@@ -146,7 +146,7 @@ fn display_image(build: &Build) -> Result<(), String> {
         .map_err(|e| format!("{}: {e}", context.display()))?;
     cmd::output(
         Command::new("podman")
-            .args(["build", "--quiet", "--tag", DISPLAY_IMAGE])
+            .args(["build", PULL, "--quiet", "--tag", DISPLAY_IMAGE])
             .arg(&context),
     )
     .map(drop)

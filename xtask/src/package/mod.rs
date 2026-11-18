@@ -202,11 +202,17 @@ fn export(root: &Path, commit: &str, dest: &Path) -> Result<(), String> {
     fs::remove_file(&tar).map_err(|e| format!("{}: {e}", tar.display()))
 }
 
+/// Refreshes a cached base image when the registry holds a newer one.
+/// podman otherwise never pulls an image it already has, and an Arch image
+/// a few months old no longer trusts the keys today's packages are signed
+/// with. With the registry out of reach the cached image still serves.
+const PULL: &str = "--pull=newer";
+
 /// `podman run --rm` of `script` under `bash -euo pipefail` in `image`, with
 /// each host directory mounted at its guest path (which may carry `:ro`).
 fn podman_script(image: &str, mounts: &[(&Path, &str)], script: &str) -> Command {
     let mut command = Command::new("podman");
-    command.args(["run", "--rm"]);
+    command.args(["run", "--rm", PULL]);
     for (host, guest) in mounts {
         command
             .arg("--volume")
@@ -269,6 +275,7 @@ mod tests {
             [
                 "run",
                 "--rm",
+                "--pull=newer",
                 "--volume",
                 "/host/in:/in:ro",
                 "img",
