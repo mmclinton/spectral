@@ -1,8 +1,8 @@
 //! The install check the Arch and deb packages share: install into a fresh
 //! container through the package manager, so only the declared
 //! dependencies arrive, ask the binary for its version, then launch the GUI
-//! headless against X11 and against Wayland. Between them the two launches
-//! load every library winit dlopens.
+//! headless against X11 and against Wayland and wait for its window.
+//! Between them the two launches load every library winit dlopens.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -15,16 +15,24 @@ use super::{Build, Report, cmd, fresh_dir};
 
 /// The display servers live in an image of their own: installed beside the
 /// package, they would bring in the very libraries under test (Xvfb alone
-/// pulls in libX11).
+/// pulls in libX11). `xwininfo` comes along to look for the X11 window.
 const DISPLAY_IMAGE: &str = "localhost/spectral-xtask-display";
 const DISPLAY_CONTAINERFILE: &str = "FROM docker.io/library/ubuntu:24.04
 RUN apt-get update \\
- && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb weston \\
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb weston x11-utils \\
  && rm -rf /var/lib/apt/lists/*
 ";
 
-/// How long the GUI must stay up to count as started.
-const LAUNCH_SECONDS: u32 = 8;
+/// How long the window may take to appear. The GUI opens it only after
+/// trying the daemon, which with no PipeWire in the container can take the
+/// connection's whole five-second timeout first.
+const WINDOW_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// How long the GUI must keep running once its window is up.
+const SETTLE: Duration = Duration::from_secs(2);
+
+/// The window's title, which both ways of spotting the window look for.
+const TITLE: &str = "Spectral";
 
 /// What the GUI prints when a library it needs cannot be loaded.
 const LOAD_ERRORS: [&str; 3] = [
@@ -201,43 +209,93 @@ impl Display {
     }
 
     /// Points the GUI at the server. `XDG_RUNTIME_DIR` also holds the
-    /// daemon's socket; on Wayland it must be the shared directory.
-    fn client_env(self) -> [&'static str; 2] {
+    /// daemon's socket; on Wayland it must be the shared directory, and
+    /// `WAYLAND_DEBUG` makes the client log the protocol, which is how the
+    /// Wayland window is spotted.
+    fn client_env(self) -> &'static [&'static str] {
         match self {
-            Self::X11 => ["DISPLAY=:99", "XDG_RUNTIME_DIR=/run/xdg"],
-            Self::Wayland => ["WAYLAND_DISPLAY=wayland-1", "XDG_RUNTIME_DIR=/run/xdg"],
+            Self::X11 => &["DISPLAY=:99", "XDG_RUNTIME_DIR=/run/xdg"],
+            Self::Wayland => &[
+                "WAYLAND_DISPLAY=wayland-1",
+                "XDG_RUNTIME_DIR=/run/xdg",
+                "WAYLAND_DEBUG=1",
+            ],
+        }
+    }
+
+    /// Whether the GUI's window is up: on X11 the server lists it, on
+    /// Wayland the client's protocol log shows its toplevel getting the
+    /// title. Either needs winit to have loaded its libraries first.
+    fn window_shown(self, server: &str, client: &str) -> Result<bool, String> {
+        match self {
+            Self::X11 => {
+                let tree = cmd::output(Command::new("podman").args([
+                    "exec",
+                    server,
+                    "xwininfo",
+                    "-display",
+                    ":99",
+                    "-root",
+                    "-children",
+                ]))?;
+                Ok(tree.contains(&format!("\"{TITLE}\"")))
+            }
+            Self::Wayland => {
+                let (_, log) = cmd::capture(Command::new("podman").args(["logs", client]))?;
+                let set_title = format!("set_title(\"{TITLE}\")");
+                Ok(log
+                    .lines()
+                    .any(|line| line.contains("xdg_toplevel") && line.contains(&set_title)))
+            }
         }
     }
 }
 
-/// The GUI counts as started when it is still running after
-/// [`LAUNCH_SECONDS`] (so `timeout` killed it, exit 124) and printed no
-/// load error. With no PipeWire session the daemon cannot create the mic;
-/// the GUI should stay up anyway, showing its error state.
+enum Launch {
+    /// The window appeared and the GUI was still running a moment later.
+    Started,
+    /// The GUI was still running, but no window appeared in time.
+    NoWindow,
+    /// The GUI exited.
+    Exited,
+}
+
+/// The GUI counts as started once its window appears and it is still
+/// running [`SETTLE`] later, with no load error in its output. With no
+/// PipeWire session the daemon cannot create the mic; the GUI should open
+/// anyway, showing its error state.
 fn launch(build: &Build, image: &str, display: Display, report: &mut Report) {
-    let step = format!("GUI starts on {}", display.name());
+    let step = format!("GUI opens its window on {}", display.name());
     match try_launch(build, image, display) {
-        Ok((Some(124), output)) if !LOAD_ERRORS.iter().any(|error| output.contains(error)) => {
+        Ok((Launch::Started, output)) if !LOAD_ERRORS.iter().any(|e| output.contains(e)) => {
             report.pass(step);
         }
-        Ok((code, output)) => report.fail(
+        Ok((Launch::Started, output)) => {
+            report.fail(step, format!("a load error:\n{}", tail(&output)));
+        }
+        Ok((Launch::NoWindow, output)) => report.fail(
             step,
-            format!("exit {code:?} within {LAUNCH_SECONDS}s or a load error:\n{output}"),
+            format!(
+                "no window within {}s:\n{}",
+                WINDOW_TIMEOUT.as_secs(),
+                tail(&output)
+            ),
         ),
+        Ok((Launch::Exited, output)) => {
+            report.fail(step, format!("exited:\n{}", tail(&output)));
+        }
         Err(e) => report.fail(step, e),
     }
 }
 
-fn try_launch(
-    build: &Build,
-    image: &str,
-    display: Display,
-) -> Result<(Option<i32>, String), String> {
+fn try_launch(build: &Build, image: &str, display: Display) -> Result<(Launch, String), String> {
     let pod = Pod::create(&format!(
         "spectral-xtask-{}-{}",
         std::process::id(),
         display.tag()
     ))?;
+    let server = format!("{}-server", pod.name);
+    let client = format!("{}-client", pod.name);
     let shared = build.out.join(format!("display-{}", display.tag()));
     fresh_dir(&shared)?;
     fs::set_permissions(&shared, fs::Permissions::from_mode(0o700))
@@ -246,35 +304,67 @@ fn try_launch(
 
     cmd::output(
         Command::new("podman")
-            .args([
-                "run",
-                "--detach",
-                "--rm",
-                "--pod",
-                pod.name.as_str(),
-                "--volume",
-                volume.as_str(),
-            ])
+            .args(["run", "--detach", "--name", server.as_str()])
+            .args(["--pod", pod.name.as_str(), "--volume", volume.as_str()])
             .args(["--env", "XDG_RUNTIME_DIR=/run/xdg", DISPLAY_IMAGE])
             .args(display.server()),
     )?;
     wait_for(&shared.join(display.socket()))?;
 
-    let script = format!("mkdir -p -m 700 \"$XDG_RUNTIME_DIR\"; timeout {LAUNCH_SECONDS} spectral");
-    let mut client = Command::new("podman");
-    client.args([
-        "run",
-        "--rm",
-        "--pod",
-        pod.name.as_str(),
-        "--volume",
-        volume.as_str(),
-    ]);
+    // Detached and kept after it exits, so its state and output can be
+    // read while it runs and after; the pod removes it.
+    let mut command = Command::new("podman");
+    command
+        .args(["run", "--detach", "--name", client.as_str()])
+        .args(["--pod", pod.name.as_str(), "--volume", volume.as_str()]);
     for variable in display.client_env() {
-        client.args(["--env", variable]);
+        command.args(["--env", variable]);
     }
-    client.args([image, "bash", "-c", script.as_str()]);
-    cmd::capture(&mut client)
+    command.args([
+        image,
+        "bash",
+        "-c",
+        "mkdir -p -m 700 \"$XDG_RUNTIME_DIR\" && exec spectral",
+    ]);
+    cmd::output(&mut command)?;
+
+    let deadline = Instant::now() + WINDOW_TIMEOUT;
+    let launch = loop {
+        if display.window_shown(&server, &client)? {
+            thread::sleep(SETTLE);
+            break if running(&client)? {
+                Launch::Started
+            } else {
+                Launch::Exited
+            };
+        }
+        if !running(&client)? {
+            break Launch::Exited;
+        }
+        if Instant::now() > deadline {
+            break Launch::NoWindow;
+        }
+        thread::sleep(Duration::from_millis(250));
+    };
+    let (_, output) = cmd::capture(Command::new("podman").args(["logs", client.as_str()]))?;
+    Ok((launch, output))
+}
+
+fn running(container: &str) -> Result<bool, String> {
+    let state = cmd::output(Command::new("podman").args([
+        "inspect",
+        "--format",
+        "{{.State.Running}}",
+        container,
+    ]))?;
+    Ok(state.trim() == "true")
+}
+
+/// The last lines of a container's output; the Wayland launch's protocol
+/// log makes the whole of it too long for a report.
+fn tail(output: &str) -> String {
+    let lines: Vec<&str> = output.lines().collect();
+    lines[lines.len().saturating_sub(40)..].join("\n")
 }
 
 fn wait_for(socket: &Path) -> Result<(), String> {
@@ -309,9 +399,15 @@ impl Pod {
 
 impl Drop for Pod {
     fn drop(&mut self) {
-        if let Err(e) =
-            cmd::output(Command::new("podman").args(["pod", "rm", "--force", self.name.as_str()]))
-        {
+        // --time 0: nothing in the pod needs a graceful stop.
+        if let Err(e) = cmd::output(Command::new("podman").args([
+            "pod",
+            "rm",
+            "--force",
+            "--time",
+            "0",
+            self.name.as_str(),
+        ])) {
             eprintln!("warning: {e}");
         }
     }
