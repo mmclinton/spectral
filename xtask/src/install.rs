@@ -17,7 +17,8 @@ pub const APP_ID: &str = "io.github.mmclinton.Spectral";
 /// that every asset is accounted for reads it.
 #[cfg(test)]
 const NOT_INSTALLED: [&str; 1] = [
-    // Referenced by URL from the README and the metainfo, never from disk.
+    // Shown by the README from the repository and by the metainfo through a
+    // URL; nothing installed reads it.
     "screenshot.png",
 ];
 

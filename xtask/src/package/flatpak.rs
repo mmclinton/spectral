@@ -23,11 +23,10 @@ pub fn run(build: &Build, report: &mut Report) -> Result<(), String> {
     let manifest = build.src.join(format!("packaging/flatpak/{APP_ID}.yaml"));
     let builddir = build.out.join("build");
     let repo = build.out.join("repo");
-    // Beside the format's directory rather than in it, so the downloaded
-    // crates and ccache outlive the fresh start every run makes; the build
-    // itself stays clean through --force-clean. Every flatpak-builder call
-    // names it, or the tool falls back to `.flatpak-builder` in the working
-    // directory.
+    // Beside the format's directory, so the downloaded crates outlive the
+    // fresh start every run makes; the build itself stays clean through
+    // --force-clean. Every flatpak-builder call names it, or the tool falls
+    // back to `.flatpak-builder` in the working directory.
     let state_dir = format!(
         "--state-dir={}",
         build.out.with_file_name("flatpak-state").display()

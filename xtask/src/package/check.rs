@@ -24,8 +24,9 @@ RUN apt-get update \\
 ";
 
 /// How long the window may take to appear. The GUI opens it only after
-/// trying the daemon, which with no PipeWire in the container can take the
-/// connection's whole five-second timeout first.
+/// trying the daemon, which with no PipeWire in the container can take all
+/// of the client's connect timeout (`DAEMON_CONNECT_TIMEOUT` in
+/// `src/platform/linux/ipc.rs`) first.
 const WINDOW_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// How long the GUI must keep running once its window is up.
@@ -34,7 +35,7 @@ const SETTLE: Duration = Duration::from_secs(2);
 /// The window's title, which both ways of spotting the window look for.
 const TITLE: &str = "Spectral";
 
-/// What the GUI prints when a library it needs cannot be loaded.
+/// What the GUI prints when it cannot load a library it needs, or panics.
 const LOAD_ERRORS: [&str; 3] = [
     "cannot open shared object",
     "error while loading shared libraries",

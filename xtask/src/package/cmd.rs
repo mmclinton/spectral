@@ -1,5 +1,4 @@
-//! Running the outside programs `package` drives: `git`, `tar`, `podman`
-//! and `flatpak`.
+//! Running the outside programs `package` drives.
 
 use std::process::{Command, Stdio};
 

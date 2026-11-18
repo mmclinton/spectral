@@ -53,8 +53,8 @@ impl Options {
         };
         let git_ref = match (args.next().as_deref(), args.next()) {
             (None, _) => "HEAD".to_string(),
-            // Lossy is safe here: git refs are UTF-8, so a replaced byte
-            // names no ref and `git rev-parse` refuses it.
+            // Lossy is safe here: a replaced byte leaves a name that
+            // resolves to nothing, and `git rev-parse` refuses it.
             (Some("--ref"), Some(value)) => value.into_owned(),
             (Some("--ref"), None) => return Err("package: --ref needs a git ref".to_string()),
             (Some(other), _) => return Err(format!("package: unknown argument '{other}'")),
