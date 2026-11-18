@@ -59,12 +59,13 @@ pub fn run(build: &Build, report: &mut Report) -> Result<(), String> {
     )
 }
 
-/// `debian/changelog` for `version`, dated `date` in RFC 2822 form. It is
-/// generated so a release bump never has to touch the deb, and dated with
-/// the commit so the same commit builds the same package.
+/// `debian/changelog` for `version`, dated `date` in RFC 2822 form, for
+/// Ubuntu 24.04 (noble), the release it is built on. It is generated so a
+/// release bump never has to touch the deb, and dated with the commit so
+/// the same commit builds the same package.
 fn changelog(version: &str, date: &str) -> String {
     format!(
-        "spectral-mic ({version}-1) stable; urgency=medium\n\n  * Spectral {version}; CHANGELOG.md in the source lists the changes.\n\n -- mmc <github.mmc@pm.me>  {date}\n"
+        "spectral-mic ({version}-1) noble; urgency=medium\n\n  * Spectral {version}; CHANGELOG.md in the source lists the changes.\n\n -- mmc <github.mmc@pm.me>  {date}\n"
     )
 }
 
@@ -76,7 +77,7 @@ mod tests {
     fn the_changelog_names_the_version_with_the_first_revision() {
         assert_eq!(
             changelog("0.11.0", "Wed, 04 Nov 2026 10:00:00 -0500"),
-            "spectral-mic (0.11.0-1) stable; urgency=medium\n\n  * Spectral 0.11.0; CHANGELOG.md in the source lists the changes.\n\n -- mmc <github.mmc@pm.me>  Wed, 04 Nov 2026 10:00:00 -0500\n"
+            "spectral-mic (0.11.0-1) noble; urgency=medium\n\n  * Spectral 0.11.0; CHANGELOG.md in the source lists the changes.\n\n -- mmc <github.mmc@pm.me>  Wed, 04 Nov 2026 10:00:00 -0500\n"
         );
     }
 }
