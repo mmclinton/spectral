@@ -165,6 +165,16 @@ craneLib'.buildPackage (
           // {
             inherit cargoArtifacts;
             cargoTestExtraArgs = "--workspace";
+            # The PKGBUILD version test reads this at run time; only this
+            # check needs it, so a recipe edit reruns the tests alone.
+            src = lib.fileset.toSource {
+              root = ./..;
+              fileset = lib.fileset.unions [
+                buildFiles
+                dataFiles
+                ./../packaging/arch/PKGBUILD
+              ];
+            };
           }
         );
 

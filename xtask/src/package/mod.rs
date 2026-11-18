@@ -2,6 +2,7 @@
 //! of a git ref and checks it. Nothing is signed or published; the
 //! unsigned package is left in `target/packages/<format>/pkg/`.
 
+mod arch;
 mod cmd;
 mod flatpak;
 
@@ -15,12 +16,14 @@ use crate::workspace;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Format {
     Flatpak,
+    Arch,
 }
 
 impl Format {
     fn name(self) -> &'static str {
         match self {
             Self::Flatpak => "flatpak",
+            Self::Arch => "arch",
         }
     }
 }
@@ -36,6 +39,7 @@ impl Options {
         let mut args = args.iter();
         let format = match args.next().map(String::as_str) {
             Some("flatpak") => Format::Flatpak,
+            Some("arch") => Format::Arch,
             Some(other) => return Err(format!("package: unknown format '{other}'")),
             None => return Err("package: name a format".to_string()),
         };
@@ -147,6 +151,7 @@ pub fn run(options: &Options) -> Result<(), String> {
     let mut report = Report::default();
     let result = match options.format {
         Format::Flatpak => flatpak::run(&build, &mut report),
+        Format::Arch => arch::run(&build, &mut report),
     };
     report.print();
     result?;
@@ -178,6 +183,22 @@ fn export(root: &Path, commit: &str, dest: &Path) -> Result<(), String> {
     )?;
     cmd::run(Command::new("tar").arg("-xf").arg(&tar).arg("-C").arg(dest))?;
     fs::remove_file(&tar).map_err(|e| format!("{}: {e}", tar.display()))
+}
+
+/// `podman run --rm` of `script` under `bash -euo pipefail` in `image`, with
+/// each host directory mounted at its guest path (which may carry `:ro`).
+fn podman_script(image: &str, mounts: &[(&Path, &str)], script: &str) -> Command {
+    let mut command = Command::new("podman");
+    command.args(["run", "--rm"]);
+    for (host, guest) in mounts {
+        command
+            .arg("--volume")
+            .arg(format!("{}:{guest}", host.display()));
+    }
+    command
+        .arg(image)
+        .args(["bash", "-euo", "pipefail", "-c", script]);
+    command
 }
 
 #[cfg(test)]
@@ -217,5 +238,29 @@ mod tests {
         assert!(report.verdict().is_ok());
         report.fail("launch", "exited early");
         assert!(report.verdict().is_err());
+    }
+
+    #[test]
+    fn a_podman_script_mounts_each_directory_and_runs_under_strict_bash() {
+        let command = podman_script("img", &[(Path::new("/host/in"), "/in:ro")], "true");
+        let parts: Vec<String> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            parts,
+            [
+                "run",
+                "--rm",
+                "--volume",
+                "/host/in:/in:ro",
+                "img",
+                "bash",
+                "-euo",
+                "pipefail",
+                "-c",
+                "true"
+            ]
+        );
     }
 }

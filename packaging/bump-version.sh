@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Bump every in-repo version spot for a release.
 #
-# The release version lives in five files that must move together; this
+# The release version lives in six files that must move together; this
 # script is the authority on that list. It edits the mechanical spots and
 # verifies the authored one (the metainfo <release> entry), so a release
 # cut cannot silently miss a spot. Any file that no longer matches the
@@ -69,6 +69,10 @@ replace_line Cargo.toml \
 replace_line nix/package.nix \
     '^  version = "[0-9]+\.[0-9]+\.[0-9]+";$' \
     "  version = \"$version\";"
+replace_line packaging/arch/PKGBUILD \
+    '^pkgver=[0-9]+\.[0-9]+\.[0-9]+$' \
+    "pkgver=$version"
+replace_line packaging/arch/PKGBUILD '^pkgrel=[0-9]+$' 'pkgrel=1'
 replace_line "$man_page" '^\.TH SPECTRAL 1 ' \
     "${th_prefix}spectral $version${th_suffix}"
 
@@ -78,4 +82,5 @@ cargo metadata --format-version 1 --offline > /dev/null
 grep -A 1 '^name = "spectral"$' Cargo.lock | grep -q "\"$version\"" \
     || die "Cargo.lock did not pick up $version"
 
-git --no-pager diff --stat -- Cargo.toml Cargo.lock nix/package.nix "$man_page"
+git --no-pager diff --stat -- Cargo.toml Cargo.lock nix/package.nix \
+    packaging/arch/PKGBUILD "$man_page"

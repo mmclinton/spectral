@@ -35,17 +35,18 @@ Pre-1.0 SemVer: any feature in the batch makes a minor (`0.X.0`); fixes only mak
 
 ## The version-bump surface
 
-Five files carry the version and must move together:
+Six files carry the version and must move together:
 
 | File | Field | Moved by |
 | --- | --- | --- |
 | `Cargo.toml` | `[package] version` | `packaging/bump-version.sh` |
 | `Cargo.lock` | the `spectral` stanza | the script, via cargo |
 | `nix/package.nix` | `version` | the script |
+| `packaging/arch/PKGBUILD` | `pkgver` (and `pkgrel` back to 1) | the script |
 | `assets/spectral.1` | the `.TH` line's `"spectral X.Y.Z"` field | the script, preserving the page's own revision date |
 | `assets/io.github.mmclinton.Spectral.metainfo.xml` | `<release>` entry | **authored by hand first** — the script only verifies it exists |
 
-The in-repo Flatpak manifest builds `main` and carries no version; the versioned manifest lives in the Flathub repository. `nix/package.nix` has a `versionCheckHook`, so `nix flake check` fails a cut whose binary and expression disagree, and a unit test pins the man page's `.TH` version to the crate's, so the same gate catches that spot.
+The in-repo Flatpak manifest builds `main` and carries no version; the versioned manifest lives in the Flathub repository. `nix/package.nix` has a `versionCheckHook`, so `nix flake check` fails a cut whose binary and expression disagree, and unit tests pin the man page's `.TH` version and the PKGBUILD's `pkgver` to the crate's, so the same gate catches those spots.
 
 ## Cutting a release
 

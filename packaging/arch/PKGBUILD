@@ -1,0 +1,65 @@
+# Maintainer: mmc <github.mmc@pm.me>
+#
+# Release package for Spectral. The source is a `git archive` tarball of the
+# commit being packaged, named after pkgver; `cargo xtask package arch`
+# makes it, so its integrity is git's, not a checksum in this file.
+
+pkgname=spectral-mic
+pkgver=0.11.0
+pkgrel=1
+pkgdesc="Real-time microphone noise suppression via a virtual PipeWire source (RNNoise)"
+arch=('x86_64')
+url="https://github.com/mmclinton/spectral"
+license=('GPL-3.0-only')
+depends=(
+  'gcc-libs'
+  'glibc'
+  'libpipewire'
+  'pipewire'          # the media graph itself (WirePlumber drives it)
+  'wireplumber'       # session manager: owns the "default" metadata object
+  'fontconfig'
+  'libxkbcommon'      # this and the wayland/x11 libs below are dlopened by winit
+  'libxkbcommon-x11'
+  'wayland'
+  'libx11'
+  'libxcursor'
+  'libxi'
+  'libxrandr'
+  'hicolor-icon-theme'
+  'xdg-utils'         # xdg-open for the GUI's web links
+)
+makedepends=('cargo' 'clang' 'pkgconf')
+# The unrelated AUR package "spectral" (a BSC trace-analysis tool) also
+# ships /usr/bin/spectral.
+conflicts=('spectral')
+options=('!debug')    # the release profile already strips symbols
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc --print host-tuple)"
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo test --frozen --release
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo --frozen xtask install --destdir "$pkgdir" --prefix /usr \
+    --licensedir "/usr/share/licenses/$pkgname"
+}
