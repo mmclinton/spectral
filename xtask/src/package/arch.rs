@@ -36,7 +36,15 @@ pub fn run(build: &Build, report: &mut Report) -> Result<(), String> {
     ))?;
     report.pass("build");
     report.note("namcap: findings printed above, to triage by hand");
-    Ok(())
+    super::check::run(
+        build,
+        &super::check::Target {
+            name: "arch",
+            base_image: "docker.io/library/archlinux:base",
+            install_script: "pacman -Syu --noconfirm && pacman -U --noconfirm /pkg/*.pkg.tar.zst",
+        },
+        report,
+    )
 }
 
 #[cfg(test)]

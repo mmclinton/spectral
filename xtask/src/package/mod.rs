@@ -3,6 +3,7 @@
 //! unsigned package is left in `target/packages/<format>/pkg/`.
 
 mod arch;
+mod check;
 mod cmd;
 mod flatpak;
 
