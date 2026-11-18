@@ -8,6 +8,7 @@ mod cmd;
 mod deb;
 mod flatpak;
 
+use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -39,18 +40,20 @@ pub struct Options {
 }
 
 impl Options {
-    pub fn parse(args: &[String]) -> Result<Self, String> {
-        let mut args = args.iter();
-        let format = match args.next().map(String::as_str) {
+    pub fn parse(args: &[OsString]) -> Result<Self, String> {
+        let mut args = args.iter().map(|arg| arg.to_string_lossy());
+        let format = match args.next().as_deref() {
             Some("flatpak") => Format::Flatpak,
             Some("arch") => Format::Arch,
             Some("deb") => Format::Deb,
             Some(other) => return Err(format!("package: unknown format '{other}'")),
             None => return Err("package: name a format".to_string()),
         };
-        let git_ref = match (args.next().map(String::as_str), args.next()) {
+        let git_ref = match (args.next().as_deref(), args.next()) {
             (None, _) => "HEAD".to_string(),
-            (Some("--ref"), Some(value)) => value.clone(),
+            // Lossy is safe here: git refs are UTF-8, so a replaced byte
+            // names no ref and `git rev-parse` refuses it.
+            (Some("--ref"), Some(value)) => value.into_owned(),
             (Some("--ref"), None) => return Err("package: --ref needs a git ref".to_string()),
             (Some(other), _) => return Err(format!("package: unknown argument '{other}'")),
         };
@@ -211,8 +214,8 @@ fn podman_script(image: &str, mounts: &[(&Path, &str)], script: &str) -> Command
 mod tests {
     use super::*;
 
-    fn args(list: &[&str]) -> Vec<String> {
-        list.iter().map(|arg| (*arg).to_string()).collect()
+    fn args(list: &[&str]) -> Vec<OsString> {
+        list.iter().map(OsString::from).collect()
     }
 
     #[test]

@@ -2,6 +2,7 @@
 //! consists of, copied into place under a prefix. Every package format
 //! stages its files through this list, so adding a file is one edit here.
 
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
 use std::os::unix::fs::PermissionsExt;
@@ -28,14 +29,15 @@ pub struct Options {
 }
 
 impl Options {
-    pub fn parse(args: &[String]) -> Result<Self, String> {
+    pub fn parse(args: &[OsString]) -> Result<Self, String> {
         let mut prefix = None;
         let mut destdir = None;
         let mut licensedir = None;
         let mut app_only = false;
         let mut args = args.iter();
-        while let Some(flag) = args.next() {
-            let slot = match flag.as_str() {
+        while let Some(arg) = args.next() {
+            let flag = arg.to_string_lossy();
+            let slot = match flag.as_ref() {
                 "--app-only" => {
                     app_only = true;
                     continue;
@@ -48,7 +50,7 @@ impl Options {
             let value = args
                 .next()
                 .ok_or_else(|| format!("install: {flag} needs a directory"))?;
-            if slot.replace(checked_dir(flag, value)?).is_some() {
+            if slot.replace(checked_dir(&flag, value)?).is_some() {
                 return Err(format!("install: {flag} given twice"));
             }
         }
@@ -63,15 +65,19 @@ impl Options {
 
 /// A directory argument must be absolute and free of `..`, so joining it
 /// under the destdir can never climb out of the staging root.
-fn checked_dir(flag: &str, value: &str) -> Result<PathBuf, String> {
+fn checked_dir(flag: &str, value: &OsStr) -> Result<PathBuf, String> {
     let path = PathBuf::from(value);
     if !path.is_absolute() {
         return Err(format!(
-            "install: {flag} must be an absolute path, not '{value}'"
+            "install: {flag} must be an absolute path, not '{}'",
+            path.display()
         ));
     }
     if path.components().any(|part| part == Component::ParentDir) {
-        return Err(format!("install: {flag} must not contain '..': '{value}'"));
+        return Err(format!(
+            "install: {flag} must not contain '..': '{}'",
+            path.display()
+        ));
     }
     Ok(path)
 }
@@ -211,8 +217,8 @@ fn copy(from: &Path, to: &Path, mode: u32) -> io::Result<()> {
 mod tests {
     use super::*;
 
-    fn args(list: &[&str]) -> Vec<String> {
-        list.iter().map(|arg| (*arg).to_string()).collect()
+    fn args(list: &[&str]) -> Vec<OsString> {
+        list.iter().map(OsString::from).collect()
     }
 
     fn sources(entries: &[Entry]) -> Vec<&str> {
@@ -338,6 +344,17 @@ mod tests {
                 app_only: true,
             }
         );
+    }
+
+    #[test]
+    fn a_directory_need_not_be_utf8() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let stage = OsString::from_vec(b"/stage/\xff".to_vec());
+        let mut list = args(&["--prefix", "/usr", "--destdir"]);
+        list.push(stage.clone());
+        let parsed = Options::parse(&list).unwrap();
+        assert_eq!(parsed.destdir, Some(PathBuf::from(stage)));
     }
 
     #[test]

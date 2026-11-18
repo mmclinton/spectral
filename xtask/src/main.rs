@@ -8,6 +8,7 @@ mod install;
 mod package;
 mod workspace;
 
+use std::ffi::OsString;
 use std::process::ExitCode;
 
 const USAGE: &str =
@@ -15,12 +16,13 @@ const USAGE: &str =
        cargo xtask package <format> [--ref <git-ref>]";
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    // OS strings, since a packager's staging path need not be UTF-8.
+    let args: Vec<OsString> = std::env::args_os().skip(1).collect();
     let result = match args.split_first() {
-        Some((task, rest)) if task == "install" => {
+        Some((task, rest)) if task.to_str() == Some("install") => {
             install::Options::parse(rest).and_then(|options| install::run(&options))
         }
-        Some((task, rest)) if task == "package" => {
+        Some((task, rest)) if task.to_str() == Some("package") => {
             package::Options::parse(rest).and_then(|options| package::run(&options))
         }
         _ => Err(USAGE.to_string()),
