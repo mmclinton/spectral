@@ -230,7 +230,7 @@ impl Display {
     /// Whether the GUI's window is up: on X11 the server lists it, on
     /// Wayland the client's protocol log shows its toplevel getting the
     /// title. Either needs winit to have loaded its libraries first.
-    fn window_shown(self, server: &str, client: &str) -> Result<bool, String> {
+    fn is_window_shown(self, server: &str, client: &str) -> Result<bool, String> {
         match self {
             Self::X11 => {
                 let tree = cmd::output(Command::new("podman").args([
@@ -334,15 +334,15 @@ fn try_launch(build: &Build, image: &str, display: Display) -> Result<(Launch, S
 
     let deadline = Instant::now() + WINDOW_TIMEOUT;
     let launch = loop {
-        if display.window_shown(&server, &client)? {
+        if display.is_window_shown(&server, &client)? {
             thread::sleep(SETTLE);
-            break if running(&client)? {
+            break if is_running(&client)? {
                 Launch::Started
             } else {
                 Launch::Exited
             };
         }
-        if !running(&client)? {
+        if !is_running(&client)? {
             break Launch::Exited;
         }
         if Instant::now() > deadline {
@@ -354,7 +354,7 @@ fn try_launch(build: &Build, image: &str, display: Display) -> Result<(Launch, S
     Ok((launch, output))
 }
 
-fn running(container: &str) -> Result<bool, String> {
+fn is_running(container: &str) -> Result<bool, String> {
     let state = cmd::output(Command::new("podman").args([
         "inspect",
         "--format",
