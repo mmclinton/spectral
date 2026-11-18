@@ -116,7 +116,10 @@ fn version(build: &Build, image: &str, report: &mut Report) {
     let expected = format!("spectral {}", build.version);
     match cmd::capture(Command::new("podman").args(["run", "--rm", image, "spectral", "--version"]))
     {
-        Ok((Some(0), text)) if text.trim() == expected => report.pass(step),
+        // Any line: podman can add its own warnings to the output.
+        Ok((Some(0), text)) if text.lines().any(|line| line.trim() == expected) => {
+            report.pass(step);
+        }
         Ok((_, text)) => report.fail(step, format!("expected `{expected}`, got: {}", text.trim())),
         Err(e) => report.fail(step, e),
     }
