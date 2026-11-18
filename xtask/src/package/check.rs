@@ -69,23 +69,29 @@ pub fn run(build: &Build, target: &Target, report: &mut Report) -> Result<(), St
     version(build, &image.name, report);
     display_image(build)?;
     for display in [Display::X11, Display::Wayland] {
-        launch(build, &image.name, display, report);
+        launch(build, target, &image.name, display, report);
     }
     Ok(())
 }
 
 /// Installs the package in a fresh container and keeps the result as an
 /// image, so each launch starts from the same installed system.
+///
+/// The container and image are named after the format alone, as the pods
+/// are, and each replaces what already carries its name: an interrupted
+/// run skips every `Drop`, so the next run is what clears its leftovers.
+/// Two runs of one format cannot overlap in any case; they share
+/// `target/packages/<format>`.
 fn install(build: &Build, target: &Target) -> Result<Image, String> {
     let name = format!("localhost/spectral-xtask-check-{}", target.name);
-    let container = format!(
-        "spectral-xtask-install-{}-{}",
-        target.name,
-        std::process::id()
-    );
+    let container = format!("spectral-xtask-{}-install", target.name);
+    // An interrupted run's image: committing over its tag would leave it
+    // behind, untagged.
+    cmd::output(Command::new("podman").args(["rmi", "--force", "--ignore", name.as_str()]))?;
     let installed = cmd::run(
         Command::new("podman")
-            .args(["run", PULL, "--name", container.as_str(), "--volume"])
+            .args(["run", PULL, "--replace", "--name", container.as_str()])
+            .arg("--volume")
             .arg(format!("{}:/pkg:ro", build.out.join("pkg").display()))
             .arg(target.base_image)
             .args(["bash", "-euo", "pipefail", "-c", target.install_script]),
@@ -268,9 +274,9 @@ enum Launch {
 /// running [`SETTLE`] later, with no load error in its output. With no
 /// PipeWire session the daemon cannot create the mic; the GUI should open
 /// anyway, showing its error state.
-fn launch(build: &Build, image: &str, display: Display, report: &mut Report) {
+fn launch(build: &Build, target: &Target, image: &str, display: Display, report: &mut Report) {
     let step = format!("GUI opens its window on {}", display.name());
-    match try_launch(build, image, display) {
+    match try_launch(build, target, image, display) {
         Ok((Launch::Started, output)) if !LOAD_ERRORS.iter().any(|e| output.contains(e)) => {
             report.pass(step);
         }
@@ -292,12 +298,13 @@ fn launch(build: &Build, image: &str, display: Display, report: &mut Report) {
     }
 }
 
-fn try_launch(build: &Build, image: &str, display: Display) -> Result<(Launch, String), String> {
-    let pod = Pod::create(&format!(
-        "spectral-xtask-{}-{}",
-        std::process::id(),
-        display.tag()
-    ))?;
+fn try_launch(
+    build: &Build,
+    target: &Target,
+    image: &str,
+    display: Display,
+) -> Result<(Launch, String), String> {
+    let pod = Pod::create(&format!("spectral-xtask-{}-{}", target.name, display.tag()))?;
     let server = format!("{}-server", pod.name);
     let client = format!("{}-client", pod.name);
     let shared = build.out.join(format!("display-{}", display.tag()));
@@ -393,25 +400,30 @@ struct Pod {
 }
 
 impl Pod {
+    /// Creates the pod, first removing one an interrupted run left under
+    /// the same name.
     fn create(name: &str) -> Result<Self, String> {
+        Self::remove(name)?;
         cmd::output(Command::new("podman").args(["pod", "create", "--name", name]))?;
         Ok(Self {
             name: name.to_string(),
         })
     }
+
+    /// Removes the pod and its containers; a pod that is not there is no
+    /// error.
+    fn remove(name: &str) -> Result<(), String> {
+        // --time 0: nothing in the pod needs a graceful stop.
+        cmd::output(
+            Command::new("podman").args(["pod", "rm", "--force", "--ignore", "--time", "0", name]),
+        )
+        .map(drop)
+    }
 }
 
 impl Drop for Pod {
     fn drop(&mut self) {
-        // --time 0: nothing in the pod needs a graceful stop.
-        if let Err(e) = cmd::output(Command::new("podman").args([
-            "pod",
-            "rm",
-            "--force",
-            "--time",
-            "0",
-            self.name.as_str(),
-        ])) {
+        if let Err(e) = Self::remove(&self.name) {
             eprintln!("warning: {e}");
         }
     }
