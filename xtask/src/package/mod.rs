@@ -5,6 +5,7 @@
 mod arch;
 mod check;
 mod cmd;
+mod deb;
 mod flatpak;
 
 use std::fs;
@@ -18,6 +19,7 @@ use crate::workspace;
 enum Format {
     Flatpak,
     Arch,
+    Deb,
 }
 
 impl Format {
@@ -25,6 +27,7 @@ impl Format {
         match self {
             Self::Flatpak => "flatpak",
             Self::Arch => "arch",
+            Self::Deb => "deb",
         }
     }
 }
@@ -41,6 +44,7 @@ impl Options {
         let format = match args.next().map(String::as_str) {
             Some("flatpak") => Format::Flatpak,
             Some("arch") => Format::Arch,
+            Some("deb") => Format::Deb,
             Some(other) => return Err(format!("package: unknown format '{other}'")),
             None => return Err("package: name a format".to_string()),
         };
@@ -153,6 +157,7 @@ pub fn run(options: &Options) -> Result<(), String> {
     let result = match options.format {
         Format::Flatpak => flatpak::run(&build, &mut report),
         Format::Arch => arch::run(&build, &mut report),
+        Format::Deb => deb::run(&build, &mut report),
     };
     report.print();
     result?;
