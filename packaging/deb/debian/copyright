@@ -7,7 +7,7 @@ Files: *
 Copyright: 2025-2026 mmc <github.mmc@pm.me>
 License: GPL-3
 Comment: The binaries also contain the Rust crates listed, with their
- licenses and notices, in /usr/share/doc/spectral-mic/THIRD-PARTY.md.
+ licenses and notices, in /usr/share/doc/spectral-mic/THIRD-PARTY.md.gz.
 
 License: GPL-3
  This program is free software: you can redistribute it and/or modify it
