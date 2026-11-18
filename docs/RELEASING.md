@@ -54,8 +54,9 @@ The Flatpak manifest builds the tree it sits in and carries no version, and the 
 2. `./packaging/bump-version.sh X.Y.Z`
 3. Roll CHANGELOG.md: `[Unreleased]` → `[X.Y.Z] - date`, keep an empty `[Unreleased]` above, fix the compare links at the bottom (`/compare/vA...vB`). If `Cargo.lock` moved since the last release, check THIRD-PARTY.md against it (the recipe is at that file's foot) and regenerate `packaging/flatpak/cargo-sources.json` (`./packaging/flatpak/generate-sources.sh`).
 4. Gates: `nix flake check` and, from the dev shell, `cargo deny check` (needs network for the advisory DB). Any advisory hit is triaged before the release commit, never after.
-5. Build the release candidates both ways — `nix build` and `cargo xtask package flatpak` (install the bundle it leaves in `target/packages/flatpak/pkg/`) — and **validate them functionally**: the virtual mic audibly denoises on a real device. No automated check substitutes for this.
-6. Commit `chore(release): vX.Y.Z`, tag `git tag -a vX.Y.Z`, verify `git describe --tags` prints exactly `vX.Y.Z` on a clean tree, and push with `git push --follow-tags`.
+5. Commit `chore(release): vX.Y.Z`. `cargo xtask package` builds a commit, never the working tree, so the candidates have to come from this one.
+6. Build the release candidates both ways — `nix build` and `cargo xtask package flatpak` (install the bundle it leaves in `target/packages/flatpak/pkg/`) — and **validate them functionally**: the virtual mic audibly denoises on a real device. No automated check substitutes for this. A fix found here is a further commit, and the candidates are built again from it.
+7. Tag `git tag -a vX.Y.Z`, verify `git describe --tags` prints exactly `vX.Y.Z` on a clean tree, and push with `git push --follow-tags`.
 
 ## Fan-out
 
