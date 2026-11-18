@@ -50,6 +50,8 @@ pub fn run(build: &Build, report: &mut Report) -> Result<(), String> {
 
     let step = "spectral --version";
     let expected = format!("spectral {}", build.version);
+    // Judged on the output alone: `flatpak-builder --run` exits 1 even when
+    // the command it runs succeeds (`--run … true` does too).
     match cmd::capture(
         builder()
             .arg("--run")
@@ -57,7 +59,7 @@ pub fn run(build: &Build, report: &mut Report) -> Result<(), String> {
             .arg(&manifest)
             .args(["spectral", "--version"]),
     ) {
-        Ok((Some(0), text)) if text.lines().any(|line| line.trim() == expected) => {
+        Ok((_, text)) if text.lines().any(|line| line.trim() == expected) => {
             report.pass(step);
         }
         Ok((_, text)) => report.fail(step, format!("expected `{expected}`, got: {}", text.trim())),
