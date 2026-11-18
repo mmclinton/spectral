@@ -70,9 +70,11 @@ let
   # man page from re-running the format check; everything else here
   # consumes them.
   dataFiles = lib.fileset.unions [
-    # Whole, so xtask's test that every asset is either installed or named
-    # as deliberately left out sees the real directory.
-    ./../assets
+    # The directory rather than a list, so a new asset reaches the install
+    # phase and xtask's asset test without an edit here. The screenshot is
+    # only ever referenced by URL; leaving it out keeps replacing it from
+    # recompiling the crate.
+    (lib.fileset.difference ./../assets ./../assets/screenshot.png)
     ./../docs/CLI.md
     ./../LICENSE
     ./../THIRD-PARTY.md
