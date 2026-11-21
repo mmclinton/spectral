@@ -1,0 +1,30 @@
+#!/usr/bin/make -f
+
+# Ubuntu 24.04's default Rust is older than Spectral's minimum; the
+# versioned toolchain from noble-updates is new enough.
+export PATH := /usr/lib/rust-1.97/bin:$(PATH)
+export CARGO_HOME := $(CURDIR)/debian/cargo-home
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	cargo build --release --locked
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	cargo test --release --locked
+endif
+
+override_dh_auto_install:
+	cargo xtask install --destdir $(CURDIR)/debian/spectral-mic --prefix /usr \
+		--licensedir /usr/share/doc/spectral-mic
+	# Debian carries the license text in debian/copyright instead.
+	rm $(CURDIR)/debian/spectral-mic/usr/share/doc/spectral-mic/LICENSE
+	# Debian's zsh reads packaged completions from vendor-completions and
+	# leaves site-functions out of its fpath.
+	mv $(CURDIR)/debian/spectral-mic/usr/share/zsh/site-functions \
+		$(CURDIR)/debian/spectral-mic/usr/share/zsh/vendor-completions
+
+# The release profile strips the binaries, leaving dwz nothing to compress.
+override_dh_dwz:

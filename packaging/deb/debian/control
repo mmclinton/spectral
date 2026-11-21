@@ -1,0 +1,40 @@
+Source: spectral-mic
+Section: sound
+Priority: optional
+Maintainer: mmc <github.mmc@pm.me>
+Rules-Requires-Root: no
+Build-Depends:
+ debhelper-compat (= 13),
+ cargo-1.97,
+ rustc-1.97,
+ clang,
+ libclang-dev,
+ pkgconf,
+ libpipewire-0.3-dev,
+ libfontconfig-dev,
+Standards-Version: 4.6.2
+Homepage: https://github.com/mmclinton/spectral
+
+Package: spectral-mic
+Architecture: amd64
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ pipewire,
+ wireplumber,
+# winit dlopens these at run time, so ${shlibs:Depends} cannot see them.
+ libxkbcommon0,
+ libxkbcommon-x11-0,
+ libwayland-client0,
+ libx11-6,
+ libx11-xcb1,
+ libxcursor1,
+ libxi6,
+ libxrandr2,
+ hicolor-icon-theme,
+ xdg-utils,
+Description: real-time microphone noise suppression (RNNoise)
+ Spectral creates a virtual microphone that runs a chosen input device
+ through RNNoise denoising and voice-activity gating, so any application
+ can select the cleaned microphone. It is a GUI control panel and a small
+ background daemon, both talking to PipeWire directly.

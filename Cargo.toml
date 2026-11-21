@@ -1,9 +1,17 @@
-[package]
-name = "spectral"
-version = "0.11.0"
+[workspace]
+members = ["xtask"]
+
+[workspace.package]
 edition = "2024"
 rust-version = "1.92"
 license = "GPL-3.0-only"
+
+[package]
+name = "spectral"
+version = "0.11.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
 authors = ["mmc <github.mmc@pm.me>"]
 repository = "https://github.com/mmclinton/spectral"
 homepage = "https://github.com/mmclinton/spectral"
@@ -24,12 +32,15 @@ path = "src/main.rs"
 name = "spectral-daemon"
 path = "src/bin/spectral-daemon.rs"
 
-[lints.rust]
+[lints]
+workspace = true
+
+[workspace.lints.rust]
 # Matches the flake's clippy gate (--deny warnings): bare cargo build/clippy
 # hits the same wall as nix flake check.
 warnings = { level = "deny", priority = -1 }
 
-[lints.clippy]
+[workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 # Rules the conventions state in prose, machine-enforced. Each is named
 # individually: `restriction` is not meant to be enabled as a group, and the

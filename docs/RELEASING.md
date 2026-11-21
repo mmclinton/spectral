@@ -25,7 +25,7 @@ The per-change test:
 
 - **No** — comments, refactors, CI, docs, packaging expressions: land it on `main` and stop. It ships silently inside the next release.
 - **Yes** — it gets a line under `[Unreleased]` in CHANGELOG.md when it lands, and urgency decides the timing. The default is to batch; only breakage and security justify a same-day release. UI wording is user-visible (it is compiled into the binary); a code comment is not.
-- **Packaging-only error** (a package expression or manifest wrong, source fine) — no new tag. nixpkgs: a package-only PR. Flathub: a manifest-only PR in the Flathub repository.
+- **Packaging-only error** (a package expression or manifest wrong, source fine) — no new tag. nixpkgs: a package-only PR. Flathub: a manifest-only PR in the Flathub repository. The recipes in `packaging/` build the tag they sit in, so a fix to one of them ships in a new patch release.
 
 `[Unreleased]` is both the accumulator and the gauge: when it reads like something a user would want, cut the release.
 
@@ -35,17 +35,18 @@ Pre-1.0 SemVer: any feature in the batch makes a minor (`0.X.0`); fixes only mak
 
 ## The version-bump surface
 
-Five files carry the version and must move together:
+Six files carry the version and must move together:
 
 | File | Field | Moved by |
 | --- | --- | --- |
 | `Cargo.toml` | `[package] version` | `packaging/bump-version.sh` |
 | `Cargo.lock` | the `spectral` stanza | the script, via cargo |
 | `nix/package.nix` | `version` | the script |
+| `packaging/arch/PKGBUILD` | `pkgver` (and `pkgrel` back to 1) | the script |
 | `assets/spectral.1` | the `.TH` line's `"spectral X.Y.Z"` field | the script, preserving the page's own revision date |
 | `assets/io.github.mmclinton.Spectral.metainfo.xml` | `<release>` entry | **authored by hand first** — the script only verifies it exists |
 
-The in-repo Flatpak manifest builds `main` and carries no version; the versioned manifest lives in the Flathub repository. `nix/package.nix` has a `versionCheckHook`, so `nix flake check` fails a cut whose binary and expression disagree, and a unit test pins the man page's `.TH` version to the crate's, so the same gate catches that spot.
+The Flatpak manifest builds the tree it sits in and carries no version, and the deb's changelog is generated from the crate version, so neither is a spot. `nix/package.nix` has a `versionCheckHook`, so `nix flake check` fails a cut whose binary and expression disagree, and unit tests pin the man page's `.TH` version and the PKGBUILD's `pkgver` to the crate's, so the same gate catches those spots.
 
 ## Cutting a release
 
@@ -53,8 +54,9 @@ The in-repo Flatpak manifest builds `main` and carries no version; the versioned
 2. `./packaging/bump-version.sh X.Y.Z`
 3. Roll CHANGELOG.md: `[Unreleased]` → `[X.Y.Z] - date`, keep an empty `[Unreleased]` above, fix the compare links at the bottom (`/compare/vA...vB`). If `Cargo.lock` moved since the last release, check THIRD-PARTY.md against it (the recipe is at that file's foot) and regenerate `packaging/flatpak/cargo-sources.json` (`./packaging/flatpak/generate-sources.sh`).
 4. Gates: `nix flake check` and, from the dev shell, `cargo deny check` (needs network for the advisory DB). Any advisory hit is triaged before the release commit, never after.
-5. Build the release candidates both ways — `nix build` and the Flatpak dev manifest — and **validate them functionally**: the virtual mic audibly denoises on a real device. No automated check substitutes for this.
-6. Commit `chore(release): vX.Y.Z`, tag `git tag -a vX.Y.Z`, verify `git describe --tags` prints exactly `vX.Y.Z` on a clean tree, and push with `git push --follow-tags`.
+5. Commit `chore(release): vX.Y.Z`. `cargo xtask package` builds a commit, never the working tree, so the candidates have to come from this one.
+6. Build the release candidates both ways — `nix build` and `cargo xtask package flatpak` (install the bundle it leaves in `target/packages/flatpak/pkg/`) — and **validate them functionally**: the virtual mic audibly denoises on a real device. No automated check substitutes for this. A fix found here is a further commit, and the candidates are built again from it.
+7. Tag `git tag -a vX.Y.Z`, verify `git describe --tags` prints exactly `vX.Y.Z` on a clean tree, and push with `git push --follow-tags`.
 
 ## Fan-out
 
@@ -69,7 +71,7 @@ Preflight: one open PR per package, never two.
 
 Fresh update: branch from `upstream/master`, set `version`, set both `src.hash` and `cargoHash` to `lib.fakeHash` (`cargoHash` moves even when `Cargo.lock` looks unchanged — its own version line is enough), and let `nix-build -A spectral-mic` report the real hashes one mismatch at a time. A 404 is not a mismatch — it means the tag is missing. Smoke-test `./result/bin/`, run the tree's formatter and `./ci/nixpkgs-vet.sh master`, commit as `spectral-mic: OLD -> NEW` with the changelog URL (`https://github.com/mmclinton/spectral/blob/vX.Y.Z/CHANGELOG.md`) in the body, and open the PR with only truthful checkboxes. A later force-push or body edit notifies nobody — only a comment does.
 
-**Parity:** general improvements to either package expression are mirrored to the other in the same session. Must stay in sync: runtime and build inputs, `postInstall`, `__structuredAttrs` + `env.` vars, renamed nixpkgs attrs, the `versionCheckHook` block, and `meta`. Intentionally different (do not sync): the builder (`rustPlatform.buildRustPackage` vs crane), the toolchain, `src` (`fetchFromGitHub` vs a fileset), `cargoHash` (crane vendors from the lockfile), where tests run, `pname` (`spectral-mic` vs `spectral`), and the `passthru`/maintainers/fixpoint plumbing.
+**Parity:** general improvements to either package expression are mirrored to the other in the same session. Must stay in sync: runtime and build inputs, the installed files and the `wrapProgram` call, `__structuredAttrs` + `env.` vars, renamed nixpkgs attrs, the `versionCheckHook` block, and `meta`. Intentionally different (do not sync): the builder (`rustPlatform.buildRustPackage` vs crane), how the files are installed (`install` lines in nixpkgs' `postInstall` vs `cargo xtask install`), the toolchain, `src` (`fetchFromGitHub` vs a fileset), `cargoHash` (crane vendors from the lockfile), where tests run, `pname` (`spectral-mic` vs `spectral`), and the `passthru`/maintainers/fixpoint plumbing.
 
 ### Flathub
 
