@@ -5,6 +5,7 @@ use spectral_lib::platform::ipc::{
     DaemonClient, DaemonCommand, DaemonResponse, DaemonState, PROTOCOL_VERSION, SPECTRAL_VERSION,
     daemon_log_path, wait_for_daemon_exit,
 };
+use spectral_lib::state::Status;
 use std::error::Error;
 use std::fmt;
 use std::os::unix::process::CommandExt;
@@ -113,10 +114,12 @@ pub fn restart_reason(state: &DaemonState) -> Option<RestartReason> {
     }
 }
 
-/// A connection to a daemon of this build, and the state it reported.
+/// A connection to a daemon of this build, the state it reported, and the
+/// state of the daemon it replaced when there was one that answered.
 pub struct Connection {
     pub client: DaemonClient,
     pub state: DaemonState,
+    pub replaced: Option<DaemonState>,
 }
 
 /// Connect to the daemon (spawning one if needed) and fetch its state,
@@ -127,21 +130,28 @@ pub fn connect_and_fetch_state() -> Result<Connection, Box<dyn Error>> {
 
     match client.send_command(DaemonCommand::GetState) {
         Ok(DaemonResponse::State(state)) => match restart_reason(&state) {
-            None => Ok(Connection { client, state }),
+            None => Ok(Connection {
+                client,
+                state,
+                replaced: None,
+            }),
             Some(reason) => {
                 eprintln!("{reason}; restarting it");
-                restart_and_refetch(client)
+                restart_and_refetch(client, Some(state))
             }
         },
         Ok(_) => Err("Unexpected response from daemon".into()),
         Err(e) => {
             eprintln!("Failed to communicate with daemon (possibly old version), restarting: {e}");
-            restart_and_refetch(client)
+            restart_and_refetch(client, None)
         }
     }
 }
 
-fn restart_and_refetch(mut old_client: DaemonClient) -> Result<Connection, Box<dyn Error>> {
+fn restart_and_refetch(
+    mut old_client: DaemonClient,
+    replaced: Option<DaemonState>,
+) -> Result<Connection, Box<dyn Error>> {
     let _ = old_client.send_command(DaemonCommand::Shutdown);
     drop(old_client);
     wait_for_daemon_exit()?;
@@ -158,7 +168,11 @@ fn restart_and_refetch(mut old_client: DaemonClient) -> Result<Connection, Box<d
                     "warning: {reason} even after a restart; the installed daemon does not match this client"
                 );
             }
-            Ok(Connection { client, state })
+            Ok(Connection {
+                client,
+                state,
+                replaced,
+            })
         }
         Ok(DaemonResponse::Error(e)) => {
             Err(format!("Daemon refused GetState after restart: {e}").into())
@@ -168,10 +182,51 @@ fn restart_and_refetch(mut old_client: DaemonClient) -> Result<Connection, Box<d
     }
 }
 
+/// The command that brings the mic back as the replaced daemon had it, or
+/// `None` when its mic was off. The device goes by its durable node name,
+/// with the id only for a snapshot that has none.
+fn restore_command(replaced: &DaemonState) -> Option<DaemonCommand> {
+    match replaced.status {
+        Status::Inactive => None,
+        Status::Active | Status::Pending => Some(DaemonCommand::Enable {
+            device_id: replaced
+                .device_id
+                .filter(|_| replaced.device_node_name.is_none()),
+            device_node_name: replaced.device_node_name.clone(),
+            mic_name: Some(replaced.mic_name.clone()),
+            threshold: Some(replaced.threshold),
+            rumble_filter: Some(replaced.rumble_filter),
+            auto_level: Some(replaced.auto_level),
+        }),
+    }
+}
+
+/// Turn the mic back on in the new daemon when the one it replaced had it
+/// on, then refresh `connection.state` to match. Does nothing when no daemon
+/// was replaced or its mic was off. `spectral enable` skips this: its own
+/// `Enable` follows, and a second would rebuild the mic twice.
+pub fn restore(connection: &mut Connection) -> Result<(), Box<dyn Error>> {
+    let Some(command) = connection.replaced.as_ref().and_then(restore_command) else {
+        return Ok(());
+    };
+    match connection.client.send_command(command)? {
+        DaemonResponse::Ok => {}
+        DaemonResponse::Error(e) => return Err(e.into()),
+        DaemonResponse::State(_) => return Err("unexpected response to Enable".into()),
+    }
+    match connection.client.send_command(DaemonCommand::GetState)? {
+        DaemonResponse::State(state) => {
+            connection.state = state;
+            Ok(())
+        }
+        DaemonResponse::Error(e) => Err(e.into()),
+        DaemonResponse::Ok => Err("unexpected response to GetState".into()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use spectral_lib::state::Status;
 
     fn state(protocol_version: u32, daemon_version: Option<&str>) -> DaemonState {
         DaemonState {
@@ -217,6 +272,69 @@ mod tests {
         ];
         for (daemon, expected) in cases {
             assert_eq!(restart_reason(&daemon), expected, "{daemon:?}");
+        }
+    }
+
+    #[test]
+    fn a_mic_that_was_on_comes_back_with_every_setting() {
+        for status in [Status::Active, Status::Pending] {
+            let old = DaemonState {
+                status,
+                mic_name: "Desk-Mic".to_string(),
+                threshold: 65,
+                rumble_filter: true,
+                auto_level: true,
+                ..state(PROTOCOL_VERSION, Some("0.0.1"))
+            };
+            match restore_command(&old) {
+                Some(DaemonCommand::Enable {
+                    device_id,
+                    device_node_name,
+                    mic_name,
+                    threshold,
+                    rumble_filter,
+                    auto_level,
+                }) => {
+                    assert_eq!(device_id, None, "the durable node name names the device");
+                    assert_eq!(
+                        device_node_name.as_deref(),
+                        Some("alsa_input.usb-Blue_Yeti-00.analog-stereo")
+                    );
+                    assert_eq!(mic_name.as_deref(), Some("Desk-Mic"));
+                    assert_eq!(threshold, Some(65));
+                    assert_eq!(rumble_filter, Some(true));
+                    assert_eq!(auto_level, Some(true));
+                }
+                other => panic!("{status:?} must restore with Enable, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_mic_that_was_off_stays_off() {
+        let old = DaemonState {
+            status: Status::Inactive,
+            ..state(PROTOCOL_VERSION, None)
+        };
+        assert!(restore_command(&old).is_none());
+    }
+
+    #[test]
+    fn a_snapshot_without_a_node_name_restores_by_device_id() {
+        let old = DaemonState {
+            device_node_name: None,
+            ..state(PROTOCOL_VERSION, None)
+        };
+        match restore_command(&old) {
+            Some(DaemonCommand::Enable {
+                device_id,
+                device_node_name,
+                ..
+            }) => {
+                assert_eq!(device_id, Some(42));
+                assert_eq!(device_node_name, None);
+            }
+            other => panic!("must restore with Enable, got {other:?}"),
         }
     }
 }
