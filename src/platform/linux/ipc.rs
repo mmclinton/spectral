@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 const DAEMON_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -48,10 +48,6 @@ mod pid_file {
         file.set_len(0)?;
         file.seek(SeekFrom::Start(0))?;
         write!(file, "{}", std::process::id())
-    }
-
-    pub fn is_process_running(pid: u32) -> bool {
-        Path::new(&format!("/proc/{pid}")).exists()
     }
 
     pub fn cleanup(path: &Path) {
@@ -247,24 +243,42 @@ pub fn wake_accept_loop() {
     }
 }
 
-/// Wait for a previously running daemon to exit. Shutdown terminates the
-/// process without running Drop, so the socket file lingers; the pid file's
-/// process going away — the same condition `bind` checks — is the signal.
+/// Wait for a previously running daemon to exit. Its lock on the pid file
+/// is the signal: it is what [`DaemonServer::bind`] needs before a new
+/// daemon can start, the kernel drops it however the process ends, and,
+/// unlike the pid the file records, it means the same thing from any PID
+/// namespace; a Flatpak client can run in a different one from the daemon
+/// it replaces.
 pub fn wait_for_daemon_exit() -> Result<(), std::io::Error> {
-    let Some(pid) = pid_file::read_pid(&get_pid_file_path()?) else {
-        return Ok(());
+    wait_for_lock_release(&get_pid_file_path()?, DAEMON_EXIT_TIMEOUT)
+}
+
+fn wait_for_lock_release(path: &Path, timeout: Duration) -> Result<(), std::io::Error> {
+    let file = match File::open(path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
     };
-    let deadline = Instant::now() + DAEMON_EXIT_TIMEOUT;
-    while pid_file::is_process_running(pid) {
-        if Instant::now() >= deadline {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                format!("daemon (pid {pid}) did not exit within {DAEMON_EXIT_TIMEOUT:?}"),
-            ));
+    let deadline = Instant::now() + timeout;
+    loop {
+        match file.try_lock() {
+            // Released again when `file` drops, before anyone spawns.
+            Ok(()) => return Ok(()),
+            Err(TryLockError::WouldBlock) if Instant::now() < deadline => {
+                std::thread::sleep(POLL_INTERVAL);
+            }
+            Err(TryLockError::WouldBlock) => {
+                let holder = pid_file::read_pid(path)
+                    .map(|pid| format!(" (pid {pid})"))
+                    .unwrap_or_default();
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    format!("the daemon{holder} did not exit within {timeout:?}"),
+                ));
+            }
+            Err(TryLockError::Error(e)) => return Err(e),
         }
-        std::thread::sleep(POLL_INTERVAL);
     }
-    Ok(())
 }
 
 /// A client's end of the daemon socket: one blocking request/response
@@ -764,6 +778,29 @@ mod tests {
             DaemonResponse::Error(text) => assert_eq!(text, reason),
             other => panic!("the round trip changed the variant: {other:?}"),
         }
+    }
+
+    #[test]
+    fn waiting_on_the_pid_lock_ends_when_its_holder_lets_go() {
+        let dir = std::env::temp_dir().join(format!("spectral_pid_lock_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("spectral-daemon.pid");
+
+        // A second open of the same file is a second lock owner, exactly as
+        // a daemon and a client are.
+        let holder = File::create(&path).expect("pid file");
+        holder.try_lock().expect("the holder takes the lock");
+        let err = wait_for_lock_release(&path, Duration::from_millis(120))
+            .expect_err("a held lock must time out");
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+
+        drop(holder);
+        wait_for_lock_release(&path, Duration::from_millis(120))
+            .expect("a released lock ends the wait");
+        wait_for_lock_release(&dir.join("absent.pid"), Duration::ZERO)
+            .expect("no pid file means no daemon to wait for");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Only an absolute path may name the runtime dir. An empty value is
