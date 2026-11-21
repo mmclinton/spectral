@@ -380,7 +380,7 @@ fn main() -> std::process::ExitCode {
 
 fn run_app() -> Result<(), Box<dyn Error>> {
     let (daemon_state, launch_error) = match daemon_launch::connect_and_fetch_state() {
-        Ok((_, state)) => (state, None),
+        Ok(connection) => (connection.state, None),
         Err(e) => {
             // Still open the window: a .desktop launch has no stderr, so a
             // silent exit looks like the app is broken. The defaults mirror

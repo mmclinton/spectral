@@ -494,8 +494,8 @@ fn run_enable(
     rumble_filter: Option<bool>,
     auto_level: Option<bool>,
 ) -> ExitCode {
-    let (mut client, _) = match daemon_launch::connect_and_fetch_state() {
-        Ok(pair) => pair,
+    let mut client = match daemon_launch::connect_and_fetch_state() {
+        Ok(connection) => connection.client,
         Err(e) => {
             eprintln!("spectral: cannot reach the daemon: {e}");
             return ExitCode::FAILURE;
