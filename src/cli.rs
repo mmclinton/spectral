@@ -574,6 +574,9 @@ fn run_status(out: &mut Output<impl Write>) -> ExitCode {
         }
         Ok(DaemonResponse::State(state)) => {
             print_status(out, &state);
+            if let Some(note) = version_note(&state) {
+                eprintln!("{note}");
+            }
             ExitCode::SUCCESS
         }
         Ok(_) => {
@@ -587,6 +590,15 @@ fn run_status(out: &mut Output<impl Write>) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// The stderr note for a daemon on this protocol but another version: its
+/// state is still accurate, so `status` reports it, and says what replaces
+/// the daemon.
+fn version_note(state: &DaemonState) -> Option<String> {
+    daemon_launch::restart_reason(state).map(|reason| {
+        format!("spectral: warning: {reason}; opening the window or `spectral enable` replaces it")
+    })
 }
 
 fn print_status(out: &mut Output<impl Write>, state: &DaemonState) {
@@ -719,6 +731,22 @@ mod tests {
             is_playing_filtered: false,
             last_error: None,
         }
+    }
+
+    #[test]
+    fn status_notes_a_daemon_of_another_version_and_what_replaces_it() {
+        let current = DaemonState {
+            daemon_version: Some(ipc::SPECTRAL_VERSION.to_string()),
+            ..state(Some(42), None)
+        };
+        assert_eq!(version_note(&current), None);
+
+        let note = version_note(&state(Some(42), None)).expect("1.2.3 is another version");
+        assert!(
+            note.contains("1.2.3") && note.contains(ipc::SPECTRAL_VERSION),
+            "{note}"
+        );
+        assert!(note.contains("`spectral enable`"), "{note}");
     }
 
     /// `spectral status` has to name the device the mic is capturing. The
