@@ -20,8 +20,8 @@
 use spectral_lib::platform::audio_devices::{find_node, get_node_details};
 use spectral_lib::platform::audio_processor::VirtualMic;
 use spectral_lib::platform::ipc::{
-    DaemonCommand, DaemonResponse, DaemonServer, DaemonState, PROTOCOL_VERSION, daemon_log_path,
-    wake_accept_loop,
+    DaemonCommand, DaemonResponse, DaemonServer, DaemonState, PROTOCOL_VERSION, SPECTRAL_VERSION,
+    daemon_log_path, wake_accept_loop,
 };
 use spectral_lib::platform::persistence::{
     PersistedState, get_filtered_recording_path, get_original_recording_path, load_state,
@@ -476,6 +476,7 @@ fn handle_client(
                         let last_error = lock_or_recover(&state.last_error).clone();
                         let daemon_state = DaemonState {
                             protocol_version: PROTOCOL_VERSION,
+                            daemon_version: Some(SPECTRAL_VERSION.to_string()),
                             status,
                             device_id,
                             device_node_name,

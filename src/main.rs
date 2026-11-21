@@ -389,6 +389,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
             (
                 DaemonState {
                     protocol_version: spectral_lib::platform::ipc::PROTOCOL_VERSION,
+                    daemon_version: None,
                     status: Status::Inactive,
                     device_id: None,
                     device_node_name: None,

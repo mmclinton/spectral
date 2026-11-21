@@ -108,6 +108,12 @@ pub enum DaemonCommand {
 /// their restart-and-upgrade path.
 pub const PROTOCOL_VERSION: u32 = 2;
 
+/// This build's version. The daemon reports it in [`DaemonState`], and a
+/// client replaces a daemon that reports any other, so an upgrade takes
+/// effect at the next launch instead of whenever the old daemon happens to
+/// stop.
+pub const SPECTRAL_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// The daemon's full observable state; the GUI reconciles its controls and
 /// status display from this snapshot on every poll.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -115,6 +121,9 @@ pub struct DaemonState {
     /// Must equal [`PROTOCOL_VERSION`]; absent (pre-0.4 daemons) or
     /// different means the daemon predates this client.
     pub protocol_version: u32,
+    /// The daemon's [`SPECTRAL_VERSION`]. A daemon from before this field
+    /// parses with `None`, which clients treat as another version.
+    pub daemon_version: Option<String>,
     /// Current lifecycle state of the virtual mic.
     pub status: Status,
     /// PipeWire id of the configured capture device, if any.
@@ -482,6 +491,16 @@ mod tests {
     }
 
     #[test]
+    fn a_daemon_from_before_version_reporting_parses_with_no_version() {
+        // A 0.11.0 daemon's GetState payload: protocol 2, no daemon_version.
+        let old = r#"{"protocol_version":2,"status":"Active","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"capture_detached":false,"is_recording":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}"#;
+        let state: DaemonState =
+            serde_json::from_str(old).expect("a 0.11.0 daemon's state must still parse");
+        assert_eq!(state.daemon_version, None);
+        assert_eq!(state.protocol_version, PROTOCOL_VERSION);
+    }
+
+    #[test]
     fn missing_protocol_version_fails_to_parse() {
         assert!(serde_json::from_str::<DaemonState>(OLD_STATE).is_err());
     }
@@ -620,6 +639,7 @@ mod tests {
         // constant means deliberately editing this string.
         let full_state = DaemonState {
             protocol_version: PROTOCOL_VERSION,
+            daemon_version: Some("1.2.3".to_string()),
             status: Status::Active,
             device_id: Some(42),
             device_node_name: Some("alsa_input.usb-Blue_Yeti-00.analog-stereo".to_string()),
@@ -640,6 +660,7 @@ mod tests {
         // most often.
         let idle_state = DaemonState {
             protocol_version: PROTOCOL_VERSION,
+            daemon_version: None,
             status: Status::Inactive,
             device_id: None,
             device_node_name: None,
@@ -658,6 +679,7 @@ mod tests {
         // renaming it would be a wire break the suite passes.
         let pending_state = DaemonState {
             protocol_version: PROTOCOL_VERSION,
+            daemon_version: Some("1.2.3".to_string()),
             status: Status::Pending,
             device_id: Some(42),
             device_node_name: Some("alsa_input.usb-Blue_Yeti-00.analog-stereo".to_string()),
@@ -699,19 +721,19 @@ mod tests {
                 status: Status::Active,
                 ..
             }) => {
-                r#"{"State":{"protocol_version":2,"status":"Active","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"capture_detached":false,"is_recording":false,"is_playing_original":false,"is_playing_filtered":true,"last_error":"pipeline died"}}"#
+                r#"{"State":{"protocol_version":2,"daemon_version":"1.2.3","status":"Active","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"capture_detached":false,"is_recording":false,"is_playing_original":false,"is_playing_filtered":true,"last_error":"pipeline died"}}"#
             }
             DaemonResponse::State(DaemonState {
                 status: Status::Pending,
                 ..
             }) => {
-                r#"{"State":{"protocol_version":2,"status":"Pending","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"capture_detached":false,"is_recording":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}}"#
+                r#"{"State":{"protocol_version":2,"daemon_version":"1.2.3","status":"Pending","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"capture_detached":false,"is_recording":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}}"#
             }
             DaemonResponse::State(DaemonState {
                 status: Status::Inactive,
                 ..
             }) => {
-                r#"{"State":{"protocol_version":2,"status":"Inactive","device_id":null,"device_node_name":null,"mic_name":"Spectral-Mic","threshold":50,"rumble_filter":false,"auto_level":false,"capture_detached":false,"is_recording":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}}"#
+                r#"{"State":{"protocol_version":2,"daemon_version":null,"status":"Inactive","device_id":null,"device_node_name":null,"mic_name":"Spectral-Mic","threshold":50,"rumble_filter":false,"auto_level":false,"capture_detached":false,"is_recording":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}}"#
             }
             DaemonResponse::Error(_) => r#"{"Error":"no such device"}"#,
         }

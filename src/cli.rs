@@ -705,6 +705,7 @@ mod tests {
     fn state(device_id: Option<u32>, device_node_name: Option<&str>) -> DaemonState {
         DaemonState {
             protocol_version: PROTOCOL_VERSION,
+            daemon_version: Some("1.2.3".to_string()),
             status: Status::Active,
             device_id,
             device_node_name: device_node_name.map(str::to_string),

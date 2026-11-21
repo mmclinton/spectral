@@ -183,6 +183,7 @@ mod tests {
     fn state() -> DaemonState {
         DaemonState {
             protocol_version: PROTOCOL_VERSION,
+            daemon_version: Some("1.2.3".to_string()),
             status: Status::Active,
             device_id: Some(47),
             device_node_name: Some("node.EVO4 Mic 1".to_string()),
