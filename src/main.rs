@@ -387,7 +387,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                     "Spectral restarted its background service to match this version, \
                      but could not turn the mic back on: {e}"
                 );
-                eprintln!("{msg}");
+                eprintln!("warning: {msg}");
                 msg
             });
             (connection.state, None, restore_error)

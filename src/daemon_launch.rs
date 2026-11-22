@@ -136,7 +136,7 @@ pub fn connect_and_fetch_state() -> Result<Connection, Box<dyn Error>> {
                 replaced: None,
             }),
             Some(reason) => {
-                eprintln!("{reason}; restarting it");
+                eprintln!("warning: {reason}; restarting it");
                 restart_and_refetch(client, Some(state))
             }
         },
