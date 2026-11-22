@@ -494,15 +494,15 @@ fn run_enable(
     rumble_filter: Option<bool>,
     auto_level: Option<bool>,
 ) -> ExitCode {
-    let mut client = match daemon_launch::connect_and_fetch_state() {
-        Ok(connection) => connection.client,
+    let mut connection = match daemon_launch::connect_and_fetch_state() {
+        Ok(connection) => connection,
         Err(e) => {
             eprintln!("spectral: cannot reach the daemon: {e}");
             return ExitCode::FAILURE;
         }
     };
 
-    match client.send_command(DaemonCommand::Enable {
+    match connection.client.send_command(DaemonCommand::Enable {
         device_id,
         device_node_name: None,
         mic_name,
@@ -516,6 +516,11 @@ fn run_enable(
         }
         Ok(DaemonResponse::Error(e)) => {
             eprintln!("spectral: {e}");
+            // A rejected Enable leaves a running mic as it was, but a
+            // daemon replaced on the way here took its mic down with it.
+            if let Err(e) = daemon_launch::restore(&mut connection) {
+                eprintln!("spectral: warning: could not turn the mic back on: {e}");
+            }
             ExitCode::FAILURE
         }
         Ok(DaemonResponse::State(_)) => {

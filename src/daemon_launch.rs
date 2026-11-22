@@ -209,8 +209,9 @@ fn restore_command(replaced: &DaemonState, current: Status) -> Option<DaemonComm
 /// Turn the mic back on in the new daemon when the one it replaced had it
 /// on, then refresh `connection.state` to match. Does nothing when no daemon
 /// was replaced, its mic was off, or the new daemon's is already on.
-/// `spectral enable` skips this: its own `Enable` follows, and a second
-/// would rebuild the mic twice.
+/// `spectral enable` calls this only when the daemon rejects its own
+/// `Enable`: an accepted one brings the mic up, and restoring first would
+/// rebuild it twice.
 ///
 /// An error means the mic did not come back. A refresh that fails after the
 /// mic is back only warns, leaving the stale state for the GUI's poll to
