@@ -1,4 +1,4 @@
-.TH SPECTRAL 1 "2026-11-03" "spectral 0.11.0" "General Commands Manual"
+.TH SPECTRAL 1 "2026-11-21" "spectral 0.11.0" "General Commands Manual"
 .SH NAME
 spectral \- real-time noise suppression for PipeWire
 .SH SYNOPSIS
@@ -33,7 +33,7 @@ talks to the background daemon and exits; everything but the voice test works
 this way, without the GUI.
 .PP
 .B enable
-starts the daemon if none is running, as the GUI does.
+starts the daemon if none is running, as the GUI does when it opens.
 .BR disable ", " shutdown " and " status
 report that none is running instead.
 .B devices
@@ -140,7 +140,7 @@ Find an input device id:
 .B spectral devices
 .RE
 .PP
-Create the virtual mic on a specific device:
+Create the virtual microphone on a specific device:
 .PP
 .RS
 .B spectral enable \-\-device 62

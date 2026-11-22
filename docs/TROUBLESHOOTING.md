@@ -48,8 +48,8 @@ Under `$XDG_STATE_HOME/spectral/recordings`, which is `~/.local/state/spectral/r
 
 Issues go to [GitHub](https://github.com/mmclinton/spectral/issues). A useful report includes:
 
-- your distribution;
+- your distribution, and how you installed Spectral;
 - your PipeWire and WirePlumber versions (`pipewire --version`, `wireplumber --version`);
 - the input device involved;
 - the Diagnostics box from the app bar's error details, if an error is showing;
-- the daemon log, from `$XDG_RUNTIME_DIR/spectral-daemon.log` or, under Flatpak, through the command [above](#something-failed-and-i-want-to-know-why).
+- the daemon log ([where to find it](#something-failed-and-i-want-to-know-why)).

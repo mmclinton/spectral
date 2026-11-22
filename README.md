@@ -11,7 +11,7 @@ Spectral runs a microphone you choose through the RNNoise neural network and exp
 - Real-time RNNoise denoising, with a voice-activity gate you can dial from off (denoise only) to strict
 - A native PipeWire virtual mic that any application can select, and that becomes your system default input when you enable it
 - A built-in voice test — record yourself and compare original against filtered
-- Two optional voice-processing switches, both off by default: a rumble filter and automatic volume leveling
+- Optional voice-processing switches, off by default: a rumble filter and automatic volume leveling
 - Settings persist across restarts, and your device is remembered by name, so it survives reboots and PipeWire restarts
 - A headless CLI that covers everything but the voice test, so day-to-day use does not require the GUI
 
@@ -19,21 +19,11 @@ Spectral runs a microphone you choose through the RNNoise neural network and exp
 
 - Linux with **PipeWire** and its session manager, **WirePlumber**
 - Wayland or X11
-- x86_64 or aarch64
-
-Confirmed working on x86_64 and on aarch64.
+- x86_64 or aarch64, both confirmed working
 
 ## Installation
 
-Spectral is in nixpkgs as `spectral-mic`; the other paths build from packaging kept in this repository.
-
-| Path                        | What you get                                                   |
-| --------------------------- | -------------------------------------------------------------- |
-| nixpkgs `spectral-mic`      | The packaged release, installed as `spectral`                  |
-| Nix flake (this repository) | The latest commit, plus the NixOS module nixpkgs does not ship |
-| Flatpak                     | A sandboxed build from the included manifest                   |
-
-Manual builds may work but are unsupported. Which of these are published yet, and the commands, build steps, and caveats for each, are in [docs/INSTALLATION.md](docs/INSTALLATION.md).
+Spectral installs through Nix, from the flake in this repository or as `spectral-mic` in nixpkgs; [docs/INSTALLATION.md](docs/INSTALLATION.md) has the commands.
 
 ## Usage
 
@@ -55,7 +45,7 @@ Manual builds may work but are unsupported. Which of these are published yet, an
 
 ## How it works
 
-A background daemon owns all the audio work: it captures your chosen device, downmixes to mono, and runs each 10 ms frame through its DSP chain — RNNoise denoising, the voice gate, and the two optional stages when you switch them on — before feeding a PipeWire virtual source node, the microphone other applications see. The GUI and the CLI are thin clients over a Unix socket, holding no audio state of their own, and because the daemon owns every PipeWire object it creates, the virtual mic disappears cleanly when the daemon stops. For the chain and its order, the module map, the real-time constraints, and the IPC protocol, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+A background daemon owns all the audio work: it captures your chosen device, downmixes to mono, and runs each 10 ms frame through its DSP chain — RNNoise denoising, the voice gate, and any optional stage you switch on — before feeding a PipeWire virtual source node, the microphone other applications see. The GUI and the CLI are thin clients over a Unix socket, holding no audio state of their own, and because the daemon owns every PipeWire object it creates, the virtual mic disappears cleanly when the daemon stops. For the chain and its order, the module map, the real-time constraints, and the IPC protocol, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Help
 
@@ -69,11 +59,11 @@ If you're coming from **NoiseTorch**: it solved this problem for PulseAudio and 
 
 ## Privacy
 
-All processing happens on your machine. Spectral makes no network connections and has no telemetry. The only audio it writes to disk comes from voice-test recordings you start yourself, under `$XDG_STATE_HOME/spectral/recordings` (`~/.local/state/spectral/recordings` unless you have set it).
+All processing happens on your machine. Spectral makes no network connections and has no telemetry. The only audio it writes to disk is the voice-test recordings you start yourself ([where they are kept](docs/TROUBLESHOOTING.md#where-are-my-voice-test-recordings)).
 
 ## Contributing
 
-Bug reports and patches are welcome as [issues](https://github.com/mmclinton/spectral/issues) and pull requests on GitHub; see [CONTRIBUTING.md](CONTRIBUTING.md) for the build, the required checks, and the commit conventions, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a map of the codebase. What makes a bug report useful is listed under [Reporting a bug](docs/TROUBLESHOOTING.md#reporting-a-bug).
+Bug reports and patches are welcome as [issues](https://github.com/mmclinton/spectral/issues) and pull requests on GitHub; see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for the build, the required checks, and the commit conventions, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a map of the codebase. What makes a bug report useful is listed under [Reporting a bug](docs/TROUBLESHOOTING.md#reporting-a-bug).
 
 ## License
 

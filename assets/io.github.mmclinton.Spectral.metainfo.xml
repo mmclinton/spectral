@@ -16,7 +16,7 @@
     </p>
     <ul>
       <li>Real-time RNNoise denoising with an adjustable voice-activity gate</li>
-      <li>Native PipeWire virtual source, set as the default input automatically</li>
+      <li>Native PipeWire virtual microphone, set as the default input automatically</li>
       <li>Built-in voice test to compare original and filtered audio</li>
     </ul>
   </description>

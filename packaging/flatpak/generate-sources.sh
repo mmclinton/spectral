@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Regenerate cargo-sources.json from Cargo.lock.
 #
-# Flathub builds with no network, so every crate has to be listed as an
+# flatpak-builder builds with no network, so every crate has to be listed as an
 # explicit source with a checksum. Run this whenever Cargo.lock changes and
 # commit the result alongside it.
 #

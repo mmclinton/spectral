@@ -1,6 +1,8 @@
 //! `cargo xtask install`: the one list of the files a Spectral installation
-//! consists of, copied into place under a prefix. Every package format
-//! stages its files through this list, so adding a file is one edit here.
+//! consists of, copied into place under a prefix. Every package built from
+//! this repository stages its files through this list. nixpkgs' expression
+//! installs its own, so a new file also needs the parity edit that
+//! `docs/RELEASING.md` describes.
 
 use std::ffi::{OsStr, OsString};
 use std::fs;

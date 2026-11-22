@@ -1,19 +1,20 @@
 # Command-line interface
 
-The `spectral` binary doubles as a command-line client covering everything but the voice test, which is the one thing that needs the GUI. Running it without a command opens the control panel; running it with one talks to the daemon and exits. `enable` starts the daemon if none is running, as the GUI does; `disable`, `shutdown` and `status` report that none is running instead, and `devices` reads the PipeWire registry directly and needs no daemon at all.
+The `spectral` binary is also a command-line client for everything but the voice test, which needs the GUI. Without a command it opens the control panel; with one it talks to the daemon and exits.
 
-```bash
-spectral devices              # list input devices: id, channels, name
-spectral enable --device 62   # create the virtual mic
-spectral enable               # re-enable with the remembered settings
-spectral status               # show state, device, mic name, threshold, toggles
-spectral disable              # tear the virtual mic down
-spectral shutdown             # stop the daemon
-```
+| Command | What it does | With no daemon running |
+| --- | --- | --- |
+| `spectral devices` | Lists input devices: id, channels, name | Needs none; it reads the PipeWire registry |
+| `spectral enable` | Creates the virtual mic ([flags](#enable-flags) below) | Starts one, as the GUI does when it opens |
+| `spectral status` | Shows the state, device, mic name, threshold and toggles | Reports that none is running |
+| `spectral disable` | Tears the virtual mic down | Reports that none is running |
+| `spectral shutdown` | Stops the daemon | Reports that none is running |
 
-`spectral --help` prints the same reference; `spectral --version` prints the version. `man spectral` covers the same ground and adds the file locations.
+`spectral --help` prints the same reference, and `spectral --version` the version. `man spectral` covers the same ground and adds the file locations. A Flatpak has neither the man page nor the shell completions, and its command takes another name: see [packaging/flatpak](../packaging/flatpak/README.md).
 
-Fish, zsh and bash get completions for the subcommands and every flag, including live device ids for `--device` and the `on`/`off` values. Fish and zsh list each id beside its device name; bash offers the ids alone, since it cannot show a description beside a candidate. The Nix package puts all three where their shells look already. Running from a checkout, `source assets/spectral.fish` or `source assets/spectral.bash` loads them for the session, and in zsh `source assets/spectral.zsh` does the same once `compinit` has run. A Flatpak install has neither the page nor the completions, since Flatpak exports neither to the host; see [Under Flatpak](#under-flatpak) for the name the command takes there.
+## Shell completions
+
+Fish, zsh and bash complete the subcommands, every flag, the `on`/`off` values, and the live device ids for `--device`; fish and zsh show each device's name beside its id. The Nix package installs all three. From a checkout, `source assets/spectral.fish` or `source assets/spectral.bash` loads them for the session, as does `source assets/spectral.zsh` once `compinit` has run.
 
 ## `enable` flags
 
@@ -25,7 +26,12 @@ Fish, zsh and bash get completions for the subcommands and every flag, including
 | `--rumble-filter <on\|off>` | Cut low-frequency rumble (below ~90 Hz) before denoising. |
 | `--auto-level <on\|off>` | Even out voice volume automatically, with a peak limiter as the safety ceiling. |
 
-Every flag but a first run's `--device` is optional, and an omitted flag keeps whatever the daemon already has — the prior setting, or the default on a first run. That is what makes a bare `spectral enable` a "restore what I had" command.
+Every flag but a first run's `--device` is optional, and an omitted flag keeps whatever the daemon already has — the prior setting, or the default on a first run. That is what makes a bare `spectral enable` a "restore what I had" command:
+
+```bash
+spectral enable --device 62   # the first run picks the input
+spectral enable               # later runs restore the remembered settings
+```
 
 ## Device ids
 
@@ -38,7 +44,3 @@ Device ids come from PipeWire and are scoped to the running PipeWire instance: t
 | `0` | Success, including a `disable` or `shutdown` that had nothing to do. |
 | `1` | Runtime failure — including `status` when no daemon is running. |
 | `2` | Usage error. |
-
-## Under Flatpak
-
-A Flatpak install exports the CLI as `io.github.mmclinton.Spectral` rather than `spectral`; see [INSTALLATION.md](INSTALLATION.md#flatpak).

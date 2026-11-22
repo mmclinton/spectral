@@ -4,20 +4,19 @@ How Spectral versions are decided, cut, and delivered. This document is the sing
 
 ## Channels
 
-A release reaches users through exactly two channels:
+A release reaches users through:
 
 | Channel | What a release means there |
 | --- | --- |
 | nixpkgs (`spectral-mic`) | an update PR pinning the new tag and hashes |
-| Flathub | a manifest bump in the Flathub app repository (once the initial submission lands) |
 
-**Deliberately out of scope:** the AUR, deb, rpm, PPA/COPR repositories, AppImage, raw release tarballs, and prebuilt binaries. Flatpak covers every desktop with a pinned runtime and an update cadence this project controls; distro archives would freeze a fast-moving pre-1.0 app into stale packages; and a binary built on one machine inherits its loader and library paths and fails on everyone else's. The list is a decision, not an oversight — concrete demand can reopen it, and anyone is welcome to package the release tags independently (on the AUR, note that the name `spectral` is taken by an unrelated tool; this project used `spectral-mic` there).
+**Deliberately out of scope:** rpm, PPA and COPR repositories, the AUR, AppImage, raw release tarballs, and prebuilt binaries. Each package format is another build to test and keep current with every release, and the last three have no update path; a prebuilt binary also inherits its build machine's loader and library paths and fails on everyone else's. The list is a decision, not an oversight: concrete demand can reopen it, and anyone is welcome to package the release tags independently.
 
 ## When to release
 
 Releases are milestone-driven: a release is cut when a coherent, user-visible arc has landed — a completed feature, a batch of fixes worth users' download — not on a calendar and not per commit.
 
-Pushing `main` releases nothing. Every channel pins an annotated tag plus a content hash, so `main` is free: commit, push, iterate daily with no downstream consequence. The corollary with teeth: **a published tag is immutable.** Deleting or re-pointing one breaks the pinned hashes in every downstream rebuild. A bad release is fixed by a new patch release, never by retagging.
+Pushing `main` cuts no release: every channel pins an annotated tag plus a content hash. The flake is the exception, since `github:mmclinton/spectral` follows `main`: a push reaches its users' next build, though a daemon they already have running keeps the old one until it restarts ([INSTALLATION.md](INSTALLATION.md#nix)). The corollary of pinning, with teeth: **a published tag is immutable.** Deleting or re-pointing one breaks the pinned hashes in every downstream rebuild. A bad release is fixed by a new patch release, never by retagging.
 
 The per-change test:
 
@@ -25,7 +24,7 @@ The per-change test:
 
 - **No** — comments, refactors, CI, docs, packaging expressions: land it on `main` and stop. It ships silently inside the next release.
 - **Yes** — it gets a line under `[Unreleased]` in CHANGELOG.md when it lands, and urgency decides the timing. The default is to batch; only breakage and security justify a same-day release. UI wording is user-visible (it is compiled into the binary); a code comment is not.
-- **Packaging-only error** (a package expression or manifest wrong, source fine) — no new tag. nixpkgs: a package-only PR. Flathub: a manifest-only PR in the Flathub repository. The recipes in `packaging/` build the tag they sit in, so a fix to one of them ships in a new patch release.
+- **Packaging-only error** (a package expression or manifest wrong, source fine) — no new tag. nixpkgs: a package-only PR. The recipes in `packaging/` build the tag they sit in, so a fix to one of them ships in a new patch release.
 
 `[Unreleased]` is both the accumulator and the gauge: when it reads like something a user would want, cut the release.
 
@@ -35,7 +34,7 @@ Pre-1.0 SemVer: any feature in the batch makes a minor (`0.X.0`); fixes only mak
 
 ## The version-bump surface
 
-Six files carry the version and must move together:
+These files carry the version and must move together:
 
 | File | Field | Moved by |
 | --- | --- | --- |
@@ -60,7 +59,7 @@ The Flatpak manifest builds the tree it sits in and carries no version, and the 
 
 ## Fan-out
 
-Order: nixpkgs first (it merges on reviewer time), then Flathub. Skipping versions downstream is legal — each channel bumps from whatever it has to the newest tag.
+Skipping versions downstream is legal: a channel bumps from whatever it has to the newest tag.
 
 ### nixpkgs
 
@@ -69,13 +68,18 @@ Preflight: one open PR per package, never two.
 - An earlier bump PR is still open — update it in place (rebase, redo the hashes, amend, retitle `spectral-mic: OLD -> X.Y.Z` where OLD is what nixpkgs master holds) rather than opening a second.
 - The r-ryantm bot may open the bump first — review and approve that PR instead of competing with it.
 
-Fresh update: branch from `upstream/master`, set `version`, set both `src.hash` and `cargoHash` to `lib.fakeHash` (`cargoHash` moves even when `Cargo.lock` looks unchanged — its own version line is enough), and let `nix-build -A spectral-mic` report the real hashes one mismatch at a time. A 404 is not a mismatch — it means the tag is missing. Smoke-test `./result/bin/`, run the tree's formatter and `./ci/nixpkgs-vet.sh master`, commit as `spectral-mic: OLD -> NEW` with the changelog URL (`https://github.com/mmclinton/spectral/blob/vX.Y.Z/CHANGELOG.md`) in the body, and open the PR with only truthful checkboxes. A later force-push or body edit notifies nobody — only a comment does.
+A fresh update:
 
-**Parity:** general improvements to either package expression are mirrored to the other in the same session. Must stay in sync: runtime and build inputs, the installed files and the `wrapProgram` call, `__structuredAttrs` + `env.` vars, renamed nixpkgs attrs, the `versionCheckHook` block, and `meta`. Intentionally different (do not sync): the builder (`rustPlatform.buildRustPackage` vs crane), how the files are installed (`install` lines in nixpkgs' `postInstall` vs `cargo xtask install`), the toolchain, `src` (`fetchFromGitHub` vs a fileset), `cargoHash` (crane vendors from the lockfile), where tests run, `pname` (`spectral-mic` vs `spectral`), and the `passthru`/maintainers/fixpoint plumbing.
+1. Branch from `upstream/master` and set `version`.
+2. Set both `src.hash` and `cargoHash` to `lib.fakeHash`, and let `nix-build -A spectral-mic` report the real hashes one mismatch at a time. `cargoHash` moves even when `Cargo.lock` looks unchanged, since its own version line is enough. A 404 is not a mismatch: it means the tag is missing.
+3. Smoke-test `./result/bin/`, then run the tree's formatter and `./ci/nixpkgs-vet.sh master`.
+4. Commit as `spectral-mic: OLD -> NEW`, with the changelog URL (`https://github.com/mmclinton/spectral/blob/vX.Y.Z/CHANGELOG.md`) in the body.
+5. Open the PR with only truthful checkboxes. A later force-push or body edit notifies nobody; only a comment does.
 
-### Flathub
+**Parity:** an improvement to either package expression, this repository's or nixpkgs', is mirrored to the other right away.
 
-Bump the manifest's source tag in the Flathub app repository and refresh its cargo sources if the lockfile moved. Not applicable until the initial submission lands.
+- Keep in sync: runtime and build inputs, the installed files and the `wrapProgram` call, `__structuredAttrs` and `env.` vars, renamed nixpkgs attributes, the `versionCheckHook` block, and `meta`.
+- Leave different: the builder (`rustPlatform.buildRustPackage` and its `cargoHash`, against crane vendoring from the lockfile), how the files are installed (`install` lines in nixpkgs' `postInstall`, against `cargo xtask install`), the toolchain, `src` (`fetchFromGitHub`, against a fileset), where tests run, `pname` (`spectral-mic`, against `spectral`), and the `passthru`, maintainer and fixpoint plumbing.
 
 ## Propagation
 
@@ -83,5 +87,4 @@ What users see, when, after a release:
 
 1. **nixpkgs `master`** — when the bump PR merges; days to weeks of review latency is normal, and after about a week a polite post in the Discourse "PRs ready for review" thread is the escalation path.
 2. **`nixos-unstable`** — a few days after merge, once Hydra builds it.
-3. **Flathub** — hours after the Flathub PR merges.
-4. **NixOS stable** — only at the next release branch-off; backports are for critical and security fixes only. Stable users being one release behind is the channel's contract, not a problem to solve.
+3. **NixOS stable** — only at the next release branch-off; backports are for critical and security fixes only. Stable users being one release behind is the channel's contract, not a problem to solve.

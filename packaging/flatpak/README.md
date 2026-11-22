@@ -45,7 +45,7 @@ Commit the result together with the `Cargo.lock` change that caused it.
 
 ## Permissions
 
-The whole static permission set is four entries:
+The whole static permission set:
 
 | Permission | Why |
 | --- | --- |
