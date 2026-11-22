@@ -6,7 +6,7 @@ Before installing, check the [requirements](../README.md#requirements).
 
 - [NixOS / Nix](#nixos--nix)
 - [Flatpak](#flatpak)
-- [What is deliberately not packaged](#what-is-deliberately-not-packaged)
+- [Other formats](#other-formats)
 
 ## NixOS / Nix
 
@@ -97,6 +97,6 @@ Alias it if the full name grates — Flatpak has no way to export a shorter one.
 
 Details, including the full permission set, are in [packaging/flatpak](../packaging/flatpak).
 
-## What is deliberately not packaged
+## Other formats
 
-There is no AUR package, and there are no deb or rpm packages, no PPA or COPR repositories, no AppImage, and no prebuilt binaries or release tarballs — none are planned. Flatpak already covers those desktops with a runtime this project can pin and an update cadence it controls, while Spectral moves too fast for distro archives, which would freeze it into stale packages. A prebuilt binary is the worst of the options: it inherits its build machine's loader and library paths and fails on everyone else's. If one of these formats matters to you, open an issue describing the need — the list is a decision, not an oversight. Anyone is welcome to package the release tags independently; on the AUR, note that the name `spectral` is taken by an unrelated tool.
+No other package is published. Anyone is welcome to package the release tags; on the AUR, note that the name `spectral` is taken by an unrelated tool.

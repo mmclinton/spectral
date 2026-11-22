@@ -10,7 +10,7 @@ A release reaches users through:
 | --- | --- |
 | nixpkgs (`spectral-mic`) | an update PR pinning the new tag and hashes |
 
-**Deliberately out of scope:** the AUR, deb, rpm, PPA/COPR repositories, AppImage, raw release tarballs, and prebuilt binaries. Flatpak covers every desktop with a pinned runtime and an update cadence this project controls; distro archives would freeze a fast-moving pre-1.0 app into stale packages; and a binary built on one machine inherits its loader and library paths and fails on everyone else's. The list is a decision, not an oversight — concrete demand can reopen it, and anyone is welcome to package the release tags independently (on the AUR, note that the name `spectral` is taken by an unrelated tool; this project used `spectral-mic` there).
+**Deliberately out of scope:** rpm, PPA and COPR repositories, the AUR, AppImage, raw release tarballs, and prebuilt binaries. A binary built on one machine inherits its loader and library paths and fails on everyone else's. The list is a decision, not an oversight: concrete demand can reopen it, and anyone is welcome to package the release tags independently.
 
 ## When to release
 
