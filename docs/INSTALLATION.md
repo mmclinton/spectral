@@ -16,7 +16,6 @@ On NixOS, add `inputs.spectral.url = "github:mmclinton/spectral";` to your flake
 { inputs, ... }:
 {
   imports = [ inputs.spectral.nixosModules.default ];
-  nixpkgs.overlays = [ inputs.spectral.overlays.default ];
   programs.spectral.enable = true;
 }
 ```
