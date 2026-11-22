@@ -4,7 +4,7 @@ Spectral installs through Nix. Before installing, check the [requirements](../RE
 
 ## Nix
 
-The flake in this repository is the recommended route, and the only one with a NixOS module:
+The flake in this repository is the recommended route, and the only one with a NixOS module. It tracks `main`, not the last release:
 
 ```bash
 nix run github:mmclinton/spectral

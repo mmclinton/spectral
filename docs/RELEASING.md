@@ -16,7 +16,7 @@ A release reaches users through:
 
 Releases are milestone-driven: a release is cut when a coherent, user-visible arc has landed — a completed feature, a batch of fixes worth users' download — not on a calendar and not per commit.
 
-Pushing `main` releases nothing. Every channel pins an annotated tag plus a content hash, so `main` is free: commit, push, iterate daily with no downstream consequence. The corollary with teeth: **a published tag is immutable.** Deleting or re-pointing one breaks the pinned hashes in every downstream rebuild. A bad release is fixed by a new patch release, never by retagging.
+Pushing `main` cuts no release: every channel pins an annotated tag plus a content hash. The flake is the exception, since `github:mmclinton/spectral` follows `main`: a push reaches its users the next time they run or update it. The corollary of pinning, with teeth: **a published tag is immutable.** Deleting or re-pointing one breaks the pinned hashes in every downstream rebuild. A bad release is fixed by a new patch release, never by retagging.
 
 The per-change test:
 
