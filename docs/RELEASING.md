@@ -10,7 +10,7 @@ A release reaches users through:
 | --- | --- |
 | nixpkgs (`spectral-mic`) | an update PR pinning the new tag and hashes |
 
-**Deliberately out of scope:** rpm, PPA and COPR repositories, the AUR, AppImage, raw release tarballs, and prebuilt binaries. A binary built on one machine inherits its loader and library paths and fails on everyone else's. The list is a decision, not an oversight: concrete demand can reopen it, and anyone is welcome to package the release tags independently.
+**Deliberately out of scope:** rpm, PPA and COPR repositories, the AUR, AppImage, raw release tarballs, and prebuilt binaries. Each package format is another build to test and keep current with every release, and the last three have no update path; a prebuilt binary also inherits its build machine's loader and library paths and fails on everyone else's. The list is a decision, not an oversight: concrete demand can reopen it, and anyone is welcome to package the release tags independently.
 
 ## When to release
 
