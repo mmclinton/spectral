@@ -68,9 +68,18 @@ Preflight: one open PR per package, never two.
 - An earlier bump PR is still open — update it in place (rebase, redo the hashes, amend, retitle `spectral-mic: OLD -> X.Y.Z` where OLD is what nixpkgs master holds) rather than opening a second.
 - The r-ryantm bot may open the bump first — review and approve that PR instead of competing with it.
 
-Fresh update: branch from `upstream/master`, set `version`, set both `src.hash` and `cargoHash` to `lib.fakeHash` (`cargoHash` moves even when `Cargo.lock` looks unchanged — its own version line is enough), and let `nix-build -A spectral-mic` report the real hashes one mismatch at a time. A 404 is not a mismatch — it means the tag is missing. Smoke-test `./result/bin/`, run the tree's formatter and `./ci/nixpkgs-vet.sh master`, commit as `spectral-mic: OLD -> NEW` with the changelog URL (`https://github.com/mmclinton/spectral/blob/vX.Y.Z/CHANGELOG.md`) in the body, and open the PR with only truthful checkboxes. A later force-push or body edit notifies nobody — only a comment does.
+A fresh update:
 
-**Parity:** general improvements to either package expression are mirrored to the other in the same session. Must stay in sync: runtime and build inputs, the installed files and the `wrapProgram` call, `__structuredAttrs` + `env.` vars, renamed nixpkgs attrs, the `versionCheckHook` block, and `meta`. Intentionally different (do not sync): the builder (`rustPlatform.buildRustPackage` vs crane), how the files are installed (`install` lines in nixpkgs' `postInstall` vs `cargo xtask install`), the toolchain, `src` (`fetchFromGitHub` vs a fileset), `cargoHash` (crane vendors from the lockfile), where tests run, `pname` (`spectral-mic` vs `spectral`), and the `passthru`/maintainers/fixpoint plumbing.
+1. Branch from `upstream/master` and set `version`.
+2. Set both `src.hash` and `cargoHash` to `lib.fakeHash`, and let `nix-build -A spectral-mic` report the real hashes one mismatch at a time. `cargoHash` moves even when `Cargo.lock` looks unchanged, since its own version line is enough. A 404 is not a mismatch: it means the tag is missing.
+3. Smoke-test `./result/bin/`, then run the tree's formatter and `./ci/nixpkgs-vet.sh master`.
+4. Commit as `spectral-mic: OLD -> NEW`, with the changelog URL (`https://github.com/mmclinton/spectral/blob/vX.Y.Z/CHANGELOG.md`) in the body.
+5. Open the PR with only truthful checkboxes. A later force-push or body edit notifies nobody; only a comment does.
+
+**Parity:** an improvement to either package expression, this repository's or nixpkgs', is mirrored to the other right away.
+
+- Keep in sync: runtime and build inputs, the installed files and the `wrapProgram` call, `__structuredAttrs` and `env.` vars, renamed nixpkgs attributes, the `versionCheckHook` block, and `meta`.
+- Leave different: the builder (`rustPlatform.buildRustPackage` and its `cargoHash`, against crane vendoring from the lockfile), how the files are installed (`install` lines in nixpkgs' `postInstall`, against `cargo xtask install`), the toolchain, `src` (`fetchFromGitHub`, against a fileset), where tests run, `pname` (`spectral-mic`, against `spectral`), and the `passthru`, maintainer and fixpoint plumbing.
 
 ## Propagation
 
