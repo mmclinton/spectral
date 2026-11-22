@@ -77,6 +77,31 @@
           checks = {
             build = spectral;
             inherit (spectral.passthru.tests) clippy unit fmt;
+
+            # Evaluation only. Without the overlay, `pkgs.spectral` is nixpkgs'
+            # typeface, so the module must install a package that is this app.
+            nixos-module =
+              let
+                nixos = nixpkgs.lib.nixosSystem {
+                  modules = [
+                    self.nixosModules.default
+                    {
+                      nixpkgs.hostPlatform = system;
+                      programs.spectral.enable = true;
+                      boot.loader.grub.enable = false;
+                      fileSystems."/" = {
+                        device = "none";
+                        fsType = "tmpfs";
+                      };
+                      system.stateVersion = "25.11";
+                    }
+                  ];
+                };
+                package = nixos.config.programs.spectral.package;
+              in
+              assert (package.meta.mainProgram or null) == "spectral";
+              assert builtins.elem package nixos.config.environment.systemPackages;
+              pkgs.runCommand "nixos-module-eval" { } "touch $out";
           };
 
           apps.default = {
