@@ -205,6 +205,10 @@ fn restore_command(replaced: &DaemonState) -> Option<DaemonCommand> {
 /// on, then refresh `connection.state` to match. Does nothing when no daemon
 /// was replaced or its mic was off. `spectral enable` skips this: its own
 /// `Enable` follows, and a second would rebuild the mic twice.
+///
+/// An error means the mic did not come back. A refresh that fails after the
+/// mic is back only warns, leaving the stale state for the GUI's poll to
+/// correct.
 pub fn restore(connection: &mut Connection) -> Result<(), Box<dyn Error>> {
     let Some(command) = connection.replaced.as_ref().and_then(restore_command) else {
         return Ok(());
@@ -214,14 +218,17 @@ pub fn restore(connection: &mut Connection) -> Result<(), Box<dyn Error>> {
         DaemonResponse::Error(e) => return Err(e.into()),
         DaemonResponse::State(_) => return Err("unexpected response to Enable".into()),
     }
-    match connection.client.send_command(DaemonCommand::GetState)? {
-        DaemonResponse::State(state) => {
-            connection.state = state;
-            Ok(())
+    match connection.client.send_command(DaemonCommand::GetState) {
+        Ok(DaemonResponse::State(state)) => connection.state = state,
+        Ok(DaemonResponse::Error(e)) => {
+            eprintln!("warning: the mic is back on, but the daemon refused GetState: {e}");
         }
-        DaemonResponse::Error(e) => Err(e.into()),
-        DaemonResponse::Ok => Err("unexpected response to GetState".into()),
+        Ok(DaemonResponse::Ok) => {
+            eprintln!("warning: the mic is back on, but GetState got an unexpected response");
+        }
+        Err(e) => eprintln!("warning: the mic is back on, but reading its state failed: {e}"),
     }
+    Ok(())
 }
 
 #[cfg(test)]
