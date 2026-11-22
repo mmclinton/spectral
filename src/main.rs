@@ -494,8 +494,10 @@ fn run_app() -> Result<(), Box<dyn Error>> {
 
     refresh_unsaved_changes(&ui, &filtered_devices.borrow(), &applied);
     update_ui_status(&ui_weak, daemon_state.status);
-    // A daemon-launch failure outranks the device one: it implies the
-    // bigger problem.
+    // Each message replaces the one before, so the weightiest goes last. A
+    // restore failure outranks the device one: a mic the user left on is now
+    // off. A launch failure, which never comes with a restore failure,
+    // implies the bigger problem.
     if let Some(msg) = device_error {
         show_error(&ui_weak, &msg);
     }

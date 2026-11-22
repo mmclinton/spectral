@@ -99,8 +99,7 @@ impl fmt::Display for RestartReason {
 
 /// Whether the daemon that answered with `state` has to be replaced. Any
 /// protocol or version but this build's counts, newer as well as older, so
-/// a client always ends up with the daemon from its own build, rollbacks
-/// included.
+/// a rollback replaces a newer daemon too.
 pub fn restart_reason(state: &DaemonState) -> Option<RestartReason> {
     if state.protocol_version != PROTOCOL_VERSION {
         return Some(RestartReason::Protocol(state.protocol_version));
@@ -114,8 +113,8 @@ pub fn restart_reason(state: &DaemonState) -> Option<RestartReason> {
     }
 }
 
-/// A connection to a daemon of this build, the state it reported, and the
-/// state of the daemon it replaced when there was one that answered.
+/// A connection to the daemon, the state it reported, and the state of the
+/// daemon it replaced when there was one that answered.
 pub struct Connection {
     pub client: DaemonClient,
     pub state: DaemonState,
@@ -160,9 +159,11 @@ fn restart_and_refetch(
     let mut client = DaemonClient::connect_with_retry()?;
     match client.send_command(DaemonCommand::GetState) {
         Ok(DaemonResponse::State(state)) => {
-            // Not restarted again: the daemon beside this executable is the
-            // only one there is to start, so a mismatch here is a broken
-            // install, and a second restart would only repeat it.
+            // Not restarted again. The daemon beside this executable is the
+            // only one this client can start, so for a broken install a
+            // second restart would only repeat the mismatch, and for another
+            // install's daemon, bound first while this client waited, it
+            // would only fight that install's client.
             if let Some(reason) = restart_reason(&state) {
                 eprintln!(
                     "warning: {reason} even after a restart; the installed daemon does not match this client"

@@ -516,8 +516,9 @@ fn run_enable(
         }
         Ok(DaemonResponse::Error(e)) => {
             eprintln!("spectral: {e}");
-            // A rejected Enable leaves a running mic as it was, but a
-            // daemon replaced on the way here took its mic down with it.
+            // The daemon refuses a bad request before it touches a running
+            // mic, but a daemon replaced on the way here took its mic down
+            // with it.
             if let Err(e) = daemon_launch::restore(&mut connection) {
                 eprintln!("spectral: warning: could not turn the mic back on: {e}");
             }
@@ -597,9 +598,9 @@ fn run_status(out: &mut Output<impl Write>) -> ExitCode {
     }
 }
 
-/// The stderr note for a daemon on this protocol but another version: its
-/// state is still accurate, so `status` reports it, and says what replaces
-/// the daemon.
+/// The stderr note for a daemon on this protocol but another version,
+/// naming what replaces it. Its state is still accurate, so `status`
+/// prints it as usual.
 fn version_note(state: &DaemonState) -> Option<String> {
     daemon_launch::restart_reason(state).map(|reason| {
         format!("spectral: warning: {reason}; opening the window or `spectral enable` replaces it")

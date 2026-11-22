@@ -105,10 +105,8 @@ pub enum DaemonCommand {
 /// their restart-and-upgrade path.
 pub const PROTOCOL_VERSION: u32 = 2;
 
-/// This build's version. The daemon reports it in [`DaemonState`], and a
-/// client replaces a daemon that reports any other, so an upgrade takes
-/// effect at the next launch instead of whenever the old daemon happens to
-/// stop.
+/// This build's version, which the daemon reports in [`DaemonState`] so a
+/// client can replace a daemon from another build.
 pub const SPECTRAL_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The daemon's full observable state; the GUI reconciles its controls and
@@ -116,7 +114,7 @@ pub const SPECTRAL_VERSION: &str = env!("CARGO_PKG_VERSION");
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DaemonState {
     /// Must equal [`PROTOCOL_VERSION`]; absent (pre-0.4 daemons) or
-    /// different means the daemon predates this client.
+    /// different means the daemon is from another build, older or newer.
     pub protocol_version: u32,
     /// The daemon's [`SPECTRAL_VERSION`]. A daemon from before this field
     /// parses with `None`, which clients treat as another version.
@@ -251,10 +249,9 @@ pub fn wake_accept_loop() {
 /// namespace; a Flatpak client can run in a different one from the daemon
 /// it replaces.
 ///
-/// A socket file other than the one there at the start ends the wait too.
-/// Only a daemon holding the lock binds one, so the old daemon is gone and
-/// the lock is a successor's, started by another client replacing the same
-/// daemon, which keeps it for the rest of the session.
+/// A socket file other than the one there at the start also ends the wait:
+/// only a lock holder binds one, so the old daemon is gone and the lock is
+/// a successor's, held for the rest of the session.
 pub fn wait_for_daemon_exit() -> Result<(), std::io::Error> {
     let socket_path = get_socket_path()?;
     let bound = socket_identity(&socket_path);
@@ -290,7 +287,8 @@ fn wait_for_lock_release(
     let deadline = Instant::now() + timeout;
     loop {
         match file.try_lock() {
-            // Released again when `file` drops, before anyone spawns.
+            // Released again when `file` drops, before this client spawns
+            // the replacement.
             Ok(()) => return Ok(()),
             Err(TryLockError::WouldBlock)
                 if socket_identity(socket_path).is_some_and(|now| Some(now) != bound) =>
