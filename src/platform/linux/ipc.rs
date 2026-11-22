@@ -6,6 +6,7 @@ use crate::state::Status;
 use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{BufRead, BufReader, Write};
+use std::os::unix::fs::MetadataExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -249,12 +250,39 @@ pub fn wake_accept_loop() {
 /// unlike the pid the file records, it means the same thing from any PID
 /// namespace; a Flatpak client can run in a different one from the daemon
 /// it replaces.
+///
+/// A socket file other than the one there at the start ends the wait too.
+/// Only a daemon holding the lock binds one, so the old daemon is gone and
+/// the lock is a successor's, started by another client replacing the same
+/// daemon, which keeps it for the rest of the session.
 pub fn wait_for_daemon_exit() -> Result<(), std::io::Error> {
-    wait_for_lock_release(&get_pid_file_path()?, DAEMON_EXIT_TIMEOUT)
+    let socket_path = get_socket_path()?;
+    let bound = socket_identity(&socket_path);
+    wait_for_lock_release(
+        &get_pid_file_path()?,
+        &socket_path,
+        bound,
+        DAEMON_EXIT_TIMEOUT,
+    )
 }
 
-fn wait_for_lock_release(path: &Path, timeout: Duration) -> Result<(), std::io::Error> {
-    let file = match File::open(path) {
+/// Tells a socket file from the one a later daemon binds at the same path.
+/// The change time is there for a filesystem that hands a freed inode
+/// number straight to the next file.
+type SocketIdentity = (u64, u64, i64, i64);
+
+fn socket_identity(path: &Path) -> Option<SocketIdentity> {
+    let meta = std::fs::symlink_metadata(path).ok()?;
+    Some((meta.dev(), meta.ino(), meta.ctime(), meta.ctime_nsec()))
+}
+
+fn wait_for_lock_release(
+    pid_path: &Path,
+    socket_path: &Path,
+    bound: Option<SocketIdentity>,
+    timeout: Duration,
+) -> Result<(), std::io::Error> {
+    let file = match File::open(pid_path) {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(e) => return Err(e),
@@ -264,11 +292,16 @@ fn wait_for_lock_release(path: &Path, timeout: Duration) -> Result<(), std::io::
         match file.try_lock() {
             // Released again when `file` drops, before anyone spawns.
             Ok(()) => return Ok(()),
+            Err(TryLockError::WouldBlock)
+                if socket_identity(socket_path).is_some_and(|now| Some(now) != bound) =>
+            {
+                return Ok(());
+            }
             Err(TryLockError::WouldBlock) if Instant::now() < deadline => {
                 std::thread::sleep(POLL_INTERVAL);
             }
             Err(TryLockError::WouldBlock) => {
-                let holder = pid_file::read_pid(path)
+                let holder = pid_file::read_pid(pid_path)
                     .map(|pid| format!(" (pid {pid})"))
                     .unwrap_or_default();
                 return Err(std::io::Error::new(
@@ -785,20 +818,48 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("spectral_pid_lock_{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         let path = dir.join("spectral-daemon.pid");
+        let socket = dir.join("spectral-daemon.sock");
+        File::create(&socket).expect("socket file");
+        let bound = socket_identity(&socket);
 
         // A second open of the same file is a second lock owner, exactly as
         // a daemon and a client are.
         let holder = File::create(&path).expect("pid file");
         holder.try_lock().expect("the holder takes the lock");
-        let err = wait_for_lock_release(&path, Duration::from_millis(120))
-            .expect_err("a held lock must time out");
+        let err = wait_for_lock_release(&path, &socket, bound, Duration::from_millis(120))
+            .expect_err("a held lock under the same socket must time out");
         assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
 
         drop(holder);
-        wait_for_lock_release(&path, Duration::from_millis(120))
+        wait_for_lock_release(&path, &socket, bound, Duration::from_millis(120))
             .expect("a released lock ends the wait");
-        wait_for_lock_release(&dir.join("absent.pid"), Duration::ZERO)
+        wait_for_lock_release(&dir.join("absent.pid"), &socket, bound, Duration::ZERO)
             .expect("no pid file means no daemon to wait for");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_socket_bound_under_the_held_lock_ends_the_wait() {
+        let dir = std::env::temp_dir().join(format!("spectral_successor_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("spectral-daemon.pid");
+        let socket = dir.join("spectral-daemon.sock");
+        File::create(&socket).expect("the old daemon's socket");
+        let bound = socket_identity(&socket);
+
+        let successor = File::create(&path).expect("pid file");
+        successor.try_lock().expect("the successor takes the lock");
+        // Created beside the old file before replacing it, so the two can
+        // never share an inode.
+        let fresh = dir.join("fresh.sock");
+        File::create(&fresh).expect("the successor's socket");
+        std::fs::rename(&fresh, &socket).expect("the successor binds over the old path");
+
+        wait_for_lock_release(&path, &socket, bound, Duration::from_millis(120))
+            .expect("a successor's socket means the old daemon is gone");
+        wait_for_lock_release(&path, &socket, None, Duration::from_millis(120))
+            .expect("a socket where there was none is a successor's too");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
