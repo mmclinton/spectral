@@ -183,9 +183,14 @@ fn restart_and_refetch(
 }
 
 /// The command that brings the mic back as the replaced daemon had it, or
-/// `None` when its mic was off. The device goes by its durable node name,
-/// with the id only for a snapshot that has none.
-fn restore_command(replaced: &DaemonState) -> Option<DaemonCommand> {
+/// `None` when its mic was off or the new daemon's is already on, which
+/// means another client replacing the same daemon got there first. The
+/// device goes by its durable node name, with the id only for a snapshot
+/// that has none.
+fn restore_command(replaced: &DaemonState, current: Status) -> Option<DaemonCommand> {
+    if current != Status::Inactive {
+        return None;
+    }
     match replaced.status {
         Status::Inactive => None,
         Status::Active | Status::Pending => Some(DaemonCommand::Enable {
@@ -203,14 +208,20 @@ fn restore_command(replaced: &DaemonState) -> Option<DaemonCommand> {
 
 /// Turn the mic back on in the new daemon when the one it replaced had it
 /// on, then refresh `connection.state` to match. Does nothing when no daemon
-/// was replaced or its mic was off. `spectral enable` skips this: its own
-/// `Enable` follows, and a second would rebuild the mic twice.
+/// was replaced, its mic was off, or the new daemon's is already on.
+/// `spectral enable` skips this: its own `Enable` follows, and a second
+/// would rebuild the mic twice.
 ///
 /// An error means the mic did not come back. A refresh that fails after the
 /// mic is back only warns, leaving the stale state for the GUI's poll to
 /// correct.
 pub fn restore(connection: &mut Connection) -> Result<(), Box<dyn Error>> {
-    let Some(command) = connection.replaced.as_ref().and_then(restore_command) else {
+    let current = connection.state.status;
+    let Some(command) = connection
+        .replaced
+        .as_ref()
+        .and_then(|replaced| restore_command(replaced, current))
+    else {
         return Ok(());
     };
     match connection.client.send_command(command)? {
@@ -293,7 +304,7 @@ mod tests {
                 auto_level: true,
                 ..state(PROTOCOL_VERSION, Some("0.0.1"))
             };
-            match restore_command(&old) {
+            match restore_command(&old, Status::Inactive) {
                 Some(DaemonCommand::Enable {
                     device_id,
                     device_node_name,
@@ -323,7 +334,15 @@ mod tests {
             status: Status::Inactive,
             ..state(PROTOCOL_VERSION, None)
         };
-        assert!(restore_command(&old).is_none());
+        assert!(restore_command(&old, Status::Inactive).is_none());
+    }
+
+    #[test]
+    fn a_mic_another_client_already_turned_on_is_left_alone() {
+        let old = state(PROTOCOL_VERSION, None);
+        for current in [Status::Active, Status::Pending] {
+            assert!(restore_command(&old, current).is_none(), "{current:?}");
+        }
     }
 
     #[test]
@@ -332,7 +351,7 @@ mod tests {
             device_node_name: None,
             ..state(PROTOCOL_VERSION, None)
         };
-        match restore_command(&old) {
+        match restore_command(&old, Status::Inactive) {
             Some(DaemonCommand::Enable {
                 device_id,
                 device_node_name,
