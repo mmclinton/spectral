@@ -23,15 +23,7 @@ Spectral runs a microphone you choose through the RNNoise neural network and exp
 
 ## Installation
 
-Spectral is in nixpkgs as `spectral-mic`; the other paths build from packaging kept in this repository.
-
-| Path                        | What you get                                                   |
-| --------------------------- | -------------------------------------------------------------- |
-| nixpkgs `spectral-mic`      | The packaged release, installed as `spectral`                  |
-| Nix flake (this repository) | The latest commit, plus the NixOS module nixpkgs does not ship |
-| Flatpak                     | A sandboxed build from the included manifest                   |
-
-Manual builds may work but are unsupported. The commands, build steps, and caveats for each are in [docs/INSTALLATION.md](docs/INSTALLATION.md).
+Spectral installs through Nix, from the flake in this repository or as `spectral-mic` in nixpkgs; [docs/INSTALLATION.md](docs/INSTALLATION.md) has the commands.
 
 ## Usage
 
