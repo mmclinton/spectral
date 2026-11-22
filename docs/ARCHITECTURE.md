@@ -14,7 +14,7 @@ One crate produces two binaries plus a shared library:
 
 The daemon is the single owner of audio state. Clients connect over a Unix socket at `$XDG_RUNTIME_DIR/spectral-daemon.sock`, and the daemon serves one handler thread per connection. Either client auto-spawns the daemon if none is running; a lock on `$XDG_RUNTIME_DIR/spectral-daemon.pid` decides ownership when two try at once.
 
-The runtime dir is required, with no second location to fall back to. An unset, empty or relative `XDG_RUNTIME_DIR` is rejected as one condition — the XDG spec treats empty as absent, and a relative value would resolve the socket into the process's working directory, outside the mode-0700 runtime dir that is what actually keeps other local users out. What the user sees still depends on the caller: `disable` and `shutdown` print "daemon not running" and exit 0, `status` prints the same and exits 1, and only `enable` names the real cause — it reports the rejection from the spawn attempt, which fails before the daemon process is created rather than after a connect timeout.
+The runtime dir is required, with no second location to fall back to. An unset, empty or relative `XDG_RUNTIME_DIR` is rejected as one condition — the XDG spec treats empty as absent, and a relative value would resolve the socket into the process's working directory, outside the mode-0700 runtime dir that is what actually keeps other local users out. The commands that only connect report the daemon as not running ([CLI.md](CLI.md)); `enable` names the real cause, because the rejection comes from its spawn attempt, before the daemon process is created rather than after a connect timeout.
 
 Daemon diagnostics are not written by the daemon, which only ever writes to its inherited stdout and stderr. A client that spawns it redirects those to `spectral-daemon.log` in the same runtime dir, resolved through the same check, so the log cannot land somewhere the socket could not. A daemon started any other way — directly from a shell, from a service manager — logs wherever its parent's stdio points, and no such file exists.
 
@@ -76,7 +76,7 @@ While the window is open the pipeline's `detached` atomic surfaces as `DaemonSta
 | `src/platform/linux/recorder.rs` | Native PipeWire recorder and player for the voice test. |
 | `xtask/` | Packaging tasks, part of neither binary: `cargo xtask install`, the one list of installed files every package stages through, and `cargo xtask package`, which builds and checks one format's package in containers. `packaging/README.md` has the details. |
 
-Settings persist to `$XDG_CONFIG_HOME/spectral/state.toml`; voice-test recordings live under the XDG state dir at `~/.local/state/spectral/recordings`.
+Settings persist to `$XDG_CONFIG_HOME/spectral/state.toml`.
 
 The interface renders in Iosevka Aile, embedded rather than resolved from the system: `ui/app-window.slint` imports one file per weight and style from `ui/fonts/`, and `packaging/subset-fonts.sh` regenerates those files from the upstream release, cut down to the characters the markup draws. A new weight needs both the face and its import; a character outside the subset needs the script's range list widened. A test in `src/main.rs` catches the stray character. A weight is checked only if `every_weight_and_style_the_markup_asks_for_matches_a_face_exactly` lists it, and that list is hand-maintained, so extend it in the same change or the interface renders the nearest face instead. THIRD-PARTY.md carries the font's notice.
 
@@ -96,7 +96,7 @@ Off the audio path, the daemon guards optional subsystems with `Arc<Mutex<Option
 
 JSON request/response, one message per line, defined in `src/platform/linux/ipc.rs`. A `DaemonCommand` (`Enable`, `Disable`, `GetState`, `Shutdown`, and the voice-test recording and playback commands) gets back a `DaemonResponse` — `Ok`, `State(DaemonState)`, or `Error(String)`. Errors cross the socket stringified.
 
-`Enable` carries every setting as an `Option`; `None` means "keep what the daemon already has". Device ids are scoped to one PipeWire server instance, so the daemon also remembers the device's `node.name` and re-resolves from it, which is what makes a flagless `spectral enable` work across reboots.
+`Enable` carries every setting as an `Option`; `None` means "keep what the daemon already has". Device ids are scoped to one PipeWire server instance, so the daemon also remembers the device's `node.name` and re-resolves from it; [Device ids](CLI.md#device-ids) covers what a user sees.
 
 `PROTOCOL_VERSION` guards client/daemon mismatches. Bump it when you change the wire format incompatibly. Clients also compare `daemon_version`, the daemon's crate version, on connect, and replace a daemon whose protocol or version is not their own, older or newer, so an upgraded client is never left talking to a stale daemon from a previous install and a rollback gets its own (`connect_and_fetch_state`, `src/daemon_launch.rs`). A version change alone needs no protocol bump: `daemon_version` is optional, and a daemon without it counts as another version. When the replaced daemon's mic was on, the GUI turns it back on in the new one with the same device and settings (`restore`); `spectral enable` sends its own `Enable` instead, and restores only when the new daemon rejects it. Only launch checks: the GUI's poll does not, so a window left open across an upgrade never restarts the newer daemon.
 
@@ -116,4 +116,4 @@ Because that socket is opened per command and dropped again, the daemon has no d
 
 ## Testing
 
-Tests are inline `#[cfg(test)] mod tests` blocks. They stay off PipeWire and sockets — a few reach further, rendering offscreen through Slint's software renderer or reading the tracked sources under `ui/` — so that the whole suite runs in the nix sandbox. `nix flake check` builds the package and runs formatting, clippy (all warnings denied), and the tests.
+Tests are inline `#[cfg(test)] mod tests` blocks. They stay off PipeWire and sockets — a few reach further, rendering offscreen through Slint's software renderer or reading the tracked sources under `ui/` — so that the whole suite runs in the nix sandbox.

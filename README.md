@@ -19,9 +19,7 @@ Spectral runs a microphone you choose through the RNNoise neural network and exp
 
 - Linux with **PipeWire** and its session manager, **WirePlumber**
 - Wayland or X11
-- x86_64 or aarch64
-
-Confirmed working on x86_64 and on aarch64.
+- x86_64 or aarch64, both confirmed working
 
 ## Installation
 
@@ -69,7 +67,7 @@ If you're coming from **NoiseTorch**: it solved this problem for PulseAudio and 
 
 ## Privacy
 
-All processing happens on your machine. Spectral makes no network connections and has no telemetry. The only audio it writes to disk comes from voice-test recordings you start yourself, under `$XDG_STATE_HOME/spectral/recordings` (`~/.local/state/spectral/recordings` unless you have set it).
+All processing happens on your machine. Spectral makes no network connections and has no telemetry. The only audio it writes to disk is the voice-test recordings you start yourself ([where they are kept](docs/TROUBLESHOOTING.md#where-are-my-voice-test-recordings)).
 
 ## Contributing
 
