@@ -40,7 +40,7 @@ One crate builds both binaries and the library they share:
 
 ## The daemon and its clients
 
-The daemon is the only owner of audio state, and it outlives the clients that start it. Clients reach it on `$XDG_RUNTIME_DIR/spectral-daemon.sock` with a short-lived connection for each exchange, and the daemon serves each connection on a handler thread of its own until the client closes it. The GUI and `spectral enable` spawn the daemon if none answers; a lock on `$XDG_RUNTIME_DIR/spectral-daemon.pid` decides which one wins when two try at once.
+The daemon is the only owner of audio state, and it outlives the clients that start it. Clients reach it on `$XDG_RUNTIME_DIR/spectral-daemon.sock` with a short-lived connection for each exchange, and the daemon serves each connection on a handler thread of its own until the client closes it. The GUI at launch and `spectral enable` spawn the daemon if none answers; a lock on `$XDG_RUNTIME_DIR/spectral-daemon.pid` decides which one wins when two try at once.
 
 `start_daemon` (`src/daemon_launch.rs`) runs the `spectral-daemon` beside the client's own executable, in a process group of its own, so Ctrl-C in the launching terminal, or closing it, cannot take the mic down with the client.
 

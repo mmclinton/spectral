@@ -5,7 +5,7 @@ The `spectral` binary is also a command-line client for everything but the voice
 | Command | What it does | With no daemon running |
 | --- | --- | --- |
 | `spectral devices` | Lists input devices: id, channels, name | Needs none; it reads the PipeWire registry |
-| `spectral enable` | Creates the virtual mic ([flags](#enable-flags) below) | Starts one, as the GUI does |
+| `spectral enable` | Creates the virtual mic ([flags](#enable-flags) below) | Starts one, as the GUI does when it opens |
 | `spectral status` | Shows the state, device, mic name, threshold and toggles | Reports that none is running |
 | `spectral disable` | Tears the virtual mic down | Reports that none is running |
 | `spectral shutdown` | Stops the daemon | Reports that none is running |
