@@ -4,12 +4,11 @@ How Spectral versions are decided, cut, and delivered. This document is the sing
 
 ## Channels
 
-A release reaches users through exactly two channels:
+A release reaches users through:
 
 | Channel | What a release means there |
 | --- | --- |
 | nixpkgs (`spectral-mic`) | an update PR pinning the new tag and hashes |
-| Flathub | a manifest bump in the Flathub app repository (once the initial submission lands) |
 
 **Deliberately out of scope:** the AUR, deb, rpm, PPA/COPR repositories, AppImage, raw release tarballs, and prebuilt binaries. Flatpak covers every desktop with a pinned runtime and an update cadence this project controls; distro archives would freeze a fast-moving pre-1.0 app into stale packages; and a binary built on one machine inherits its loader and library paths and fails on everyone else's. The list is a decision, not an oversight — concrete demand can reopen it, and anyone is welcome to package the release tags independently (on the AUR, note that the name `spectral` is taken by an unrelated tool; this project used `spectral-mic` there).
 
@@ -25,7 +24,7 @@ The per-change test:
 
 - **No** — comments, refactors, CI, docs, packaging expressions: land it on `main` and stop. It ships silently inside the next release.
 - **Yes** — it gets a line under `[Unreleased]` in CHANGELOG.md when it lands, and urgency decides the timing. The default is to batch; only breakage and security justify a same-day release. UI wording is user-visible (it is compiled into the binary); a code comment is not.
-- **Packaging-only error** (a package expression or manifest wrong, source fine) — no new tag. nixpkgs: a package-only PR. Flathub: a manifest-only PR in the Flathub repository. The recipes in `packaging/` build the tag they sit in, so a fix to one of them ships in a new patch release.
+- **Packaging-only error** (a package expression or manifest wrong, source fine) — no new tag. nixpkgs: a package-only PR. The recipes in `packaging/` build the tag they sit in, so a fix to one of them ships in a new patch release.
 
 `[Unreleased]` is both the accumulator and the gauge: when it reads like something a user would want, cut the release.
 
@@ -60,7 +59,7 @@ The Flatpak manifest builds the tree it sits in and carries no version, and the 
 
 ## Fan-out
 
-Order: nixpkgs first (it merges on reviewer time), then Flathub. Skipping versions downstream is legal — each channel bumps from whatever it has to the newest tag.
+Skipping versions downstream is legal: a channel bumps from whatever it has to the newest tag.
 
 ### nixpkgs
 
@@ -73,15 +72,10 @@ Fresh update: branch from `upstream/master`, set `version`, set both `src.hash` 
 
 **Parity:** general improvements to either package expression are mirrored to the other in the same session. Must stay in sync: runtime and build inputs, the installed files and the `wrapProgram` call, `__structuredAttrs` + `env.` vars, renamed nixpkgs attrs, the `versionCheckHook` block, and `meta`. Intentionally different (do not sync): the builder (`rustPlatform.buildRustPackage` vs crane), how the files are installed (`install` lines in nixpkgs' `postInstall` vs `cargo xtask install`), the toolchain, `src` (`fetchFromGitHub` vs a fileset), `cargoHash` (crane vendors from the lockfile), where tests run, `pname` (`spectral-mic` vs `spectral`), and the `passthru`/maintainers/fixpoint plumbing.
 
-### Flathub
-
-Bump the manifest's source tag in the Flathub app repository and refresh its cargo sources if the lockfile moved. Not applicable until the initial submission lands.
-
 ## Propagation
 
 What users see, when, after a release:
 
 1. **nixpkgs `master`** — when the bump PR merges; days to weeks of review latency is normal, and after about a week a polite post in the Discourse "PRs ready for review" thread is the escalation path.
 2. **`nixos-unstable`** — a few days after merge, once Hydra builds it.
-3. **Flathub** — hours after the Flathub PR merges.
-4. **NixOS stable** — only at the next release branch-off; backports are for critical and security fixes only. Stable users being one release behind is the channel's contract, not a problem to solve.
+3. **NixOS stable** — only at the next release branch-off; backports are for critical and security fixes only. Stable users being one release behind is the channel's contract, not a problem to solve.

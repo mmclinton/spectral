@@ -31,7 +31,7 @@ Spectral is in nixpkgs as `spectral-mic`; the other paths build from packaging k
 | Nix flake (this repository) | The latest commit, plus the NixOS module nixpkgs does not ship |
 | Flatpak                     | A sandboxed build from the included manifest                   |
 
-Manual builds may work but are unsupported. Which of these are published yet, and the commands, build steps, and caveats for each, are in [docs/INSTALLATION.md](docs/INSTALLATION.md).
+Manual builds may work but are unsupported. The commands, build steps, and caveats for each are in [docs/INSTALLATION.md](docs/INSTALLATION.md).
 
 ## Usage
 

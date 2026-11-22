@@ -1,6 +1,6 @@
 # Installation
 
-Spectral is in nixpkgs as `spectral-mic`. A Flatpak manifest is included and builds cleanly; [Flatpak](#flatpak) below carries its publishing status. Manual builds may work but are unsupported.
+Spectral installs through Nix, or as a Flatpak built from the included manifest. Manual builds may work but are unsupported.
 
 Before installing, check the [requirements](../README.md#requirements).
 
@@ -75,7 +75,7 @@ If you prefer manual control over installation:
 
 ## Flatpak
 
-**Spectral is not on Flathub yet.** Until it is, build the Flatpak yourself — it needs only `flatpak` and the Flathub remote:
+Build the Flatpak from the manifest in this repository. It needs only `flatpak`, plus the Flathub remote for the builder and the runtime:
 
 ```bash
 flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
