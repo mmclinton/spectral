@@ -65,6 +65,13 @@ pub fn build_diagnostics(
         Some(state) => {
             lines.push("last known daemon state:".to_string());
             lines.push(format!("  protocol (daemon): {}", state.protocol_version));
+            lines.push(format!(
+                "  version (daemon): {}",
+                state
+                    .daemon_version
+                    .as_deref()
+                    .unwrap_or("unknown (predates version reporting)")
+            ));
             lines.push(format!("  status: {}", describe_status(state.status)));
             lines.push(format!(
                 "  capture detached: {}",
@@ -183,6 +190,7 @@ mod tests {
     fn state() -> DaemonState {
         DaemonState {
             protocol_version: PROTOCOL_VERSION,
+            daemon_version: Some("1.2.3".to_string()),
             status: Status::Active,
             device_id: Some(47),
             device_node_name: Some("node.EVO4 Mic 1".to_string()),
@@ -420,6 +428,19 @@ mod tests {
         assert!(dump.contains("config: unavailable (no valid XDG config base or HOME)"));
         // The log is resolvable here, so the dump still asks for it.
         assert!(dump.ends_with("Attach the daemon log named above."));
+    }
+
+    #[test]
+    fn the_daemons_version_is_named_in_the_dump() {
+        assert!(render(Some(&state()), &[]).contains("  version (daemon): 1.2.3"));
+        let unversioned = DaemonState {
+            daemon_version: None,
+            ..state()
+        };
+        assert!(
+            render(Some(&unversioned), &[])
+                .contains("  version (daemon): unknown (predates version reporting)")
+        );
     }
 
     #[test]

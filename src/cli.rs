@@ -494,15 +494,15 @@ fn run_enable(
     rumble_filter: Option<bool>,
     auto_level: Option<bool>,
 ) -> ExitCode {
-    let (mut client, _) = match daemon_launch::connect_and_fetch_state() {
-        Ok(pair) => pair,
+    let mut connection = match daemon_launch::connect_and_fetch_state() {
+        Ok(connection) => connection,
         Err(e) => {
             eprintln!("spectral: cannot reach the daemon: {e}");
             return ExitCode::FAILURE;
         }
     };
 
-    match client.send_command(DaemonCommand::Enable {
+    match connection.client.send_command(DaemonCommand::Enable {
         device_id,
         device_node_name: None,
         mic_name,
@@ -516,6 +516,12 @@ fn run_enable(
         }
         Ok(DaemonResponse::Error(e)) => {
             eprintln!("spectral: {e}");
+            // The daemon refuses a bad request before it touches a running
+            // mic, but a daemon replaced on the way here took its mic down
+            // with it.
+            if let Err(e) = daemon_launch::restore(&mut connection) {
+                eprintln!("spectral: warning: could not turn the mic back on: {e}");
+            }
             ExitCode::FAILURE
         }
         Ok(DaemonResponse::State(_)) => {
@@ -574,6 +580,9 @@ fn run_status(out: &mut Output<impl Write>) -> ExitCode {
         }
         Ok(DaemonResponse::State(state)) => {
             print_status(out, &state);
+            if let Some(note) = version_note(&state) {
+                eprintln!("{note}");
+            }
             ExitCode::SUCCESS
         }
         Ok(_) => {
@@ -587,6 +596,15 @@ fn run_status(out: &mut Output<impl Write>) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// The stderr note for a daemon on this protocol but another version,
+/// naming what replaces it. Its state is still accurate, so `status`
+/// prints it as usual.
+fn version_note(state: &DaemonState) -> Option<String> {
+    daemon_launch::restart_reason(state).map(|reason| {
+        format!("spectral: warning: {reason}; opening the window or `spectral enable` replaces it")
+    })
 }
 
 fn print_status(out: &mut Output<impl Write>, state: &DaemonState) {
@@ -705,6 +723,7 @@ mod tests {
     fn state(device_id: Option<u32>, device_node_name: Option<&str>) -> DaemonState {
         DaemonState {
             protocol_version: PROTOCOL_VERSION,
+            daemon_version: Some("1.2.3".to_string()),
             status: Status::Active,
             device_id,
             device_node_name: device_node_name.map(str::to_string),
@@ -718,6 +737,22 @@ mod tests {
             is_playing_filtered: false,
             last_error: None,
         }
+    }
+
+    #[test]
+    fn status_notes_a_daemon_of_another_version_and_what_replaces_it() {
+        let current = DaemonState {
+            daemon_version: Some(ipc::SPECTRAL_VERSION.to_string()),
+            ..state(Some(42), None)
+        };
+        assert_eq!(version_note(&current), None);
+
+        let note = version_note(&state(Some(42), None)).expect("1.2.3 is another version");
+        assert!(
+            note.contains("1.2.3") && note.contains(ipc::SPECTRAL_VERSION),
+            "{note}"
+        );
+        assert!(note.contains("`spectral enable`"), "{note}");
     }
 
     /// `spectral status` has to name the device the mic is capturing. The

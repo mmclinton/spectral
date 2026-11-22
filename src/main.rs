@@ -379,8 +379,19 @@ fn main() -> std::process::ExitCode {
 }
 
 fn run_app() -> Result<(), Box<dyn Error>> {
-    let (daemon_state, launch_error) = match daemon_launch::connect_and_fetch_state() {
-        Ok((_, state)) => (state, None),
+    let (daemon_state, launch_error, restore_error) = match daemon_launch::connect_and_fetch_state()
+    {
+        Ok(mut connection) => {
+            let restore_error = daemon_launch::restore(&mut connection).err().map(|e| {
+                let msg = format!(
+                    "Spectral restarted its background service to match this version, \
+                     but could not turn the mic back on: {e}"
+                );
+                eprintln!("warning: {msg}");
+                msg
+            });
+            (connection.state, None, restore_error)
+        }
         Err(e) => {
             // Still open the window: a .desktop launch has no stderr, so a
             // silent exit looks like the app is broken. The defaults mirror
@@ -389,6 +400,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
             (
                 DaemonState {
                     protocol_version: spectral_lib::platform::ipc::PROTOCOL_VERSION,
+                    daemon_version: None,
                     status: Status::Inactive,
                     device_id: None,
                     device_node_name: None,
@@ -403,6 +415,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
                     last_error: None,
                 },
                 Some(format!("Cannot reach the daemon: {e}")),
+                None,
             )
         }
     };
@@ -481,10 +494,15 @@ fn run_app() -> Result<(), Box<dyn Error>> {
 
     refresh_unsaved_changes(&ui, &filtered_devices.borrow(), &applied);
     update_ui_status(&ui_weak, daemon_state.status);
-    // A daemon-launch failure outranks the device one: it implies the
-    // bigger problem.
+    // Each message replaces the one before, so the weightiest goes last. A
+    // restore failure outranks the device one: a mic the user left on is now
+    // off. A launch failure, which never comes with a restore failure,
+    // implies the bigger problem.
     if let Some(msg) = device_error {
         show_error(&ui_weak, &msg);
+    }
+    if let Some(msg) = &restore_error {
+        show_error(&ui_weak, msg);
     }
     if let Some(msg) = launch_failure.borrow().as_deref() {
         show_error(&ui_weak, msg);

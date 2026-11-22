@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+- After an update, opening Spectral or running `spectral enable` replaces a background daemon still running the previous version, and the window turns the virtual mic back on if it was on. Before, the old daemon kept running until it was stopped or the session ended, and a daemon replaced for being too old came back with the mic off.
+
 ## [0.11.0] - 2026-11-04
 
 ### Changed

@@ -6,8 +6,9 @@ use crate::state::Status;
 use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{BufRead, BufReader, Write};
+use std::os::unix::fs::MetadataExt;
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 const DAEMON_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -48,10 +49,6 @@ mod pid_file {
         file.set_len(0)?;
         file.seek(SeekFrom::Start(0))?;
         write!(file, "{}", std::process::id())
-    }
-
-    pub fn is_process_running(pid: u32) -> bool {
-        Path::new(&format!("/proc/{pid}")).exists()
     }
 
     pub fn cleanup(path: &Path) {
@@ -108,13 +105,20 @@ pub enum DaemonCommand {
 /// their restart-and-upgrade path.
 pub const PROTOCOL_VERSION: u32 = 2;
 
+/// This build's version, which the daemon reports in [`DaemonState`] so a
+/// client can replace a daemon from another build.
+pub const SPECTRAL_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// The daemon's full observable state; the GUI reconciles its controls and
 /// status display from this snapshot on every poll.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DaemonState {
     /// Must equal [`PROTOCOL_VERSION`]; absent (pre-0.4 daemons) or
-    /// different means the daemon predates this client.
+    /// different means the daemon is from another build, older or newer.
     pub protocol_version: u32,
+    /// The daemon's [`SPECTRAL_VERSION`]. A daemon from before this field
+    /// parses with `None`, which clients treat as another version.
+    pub daemon_version: Option<String>,
     /// Current lifecycle state of the virtual mic.
     pub status: Status,
     /// PipeWire id of the configured capture device, if any.
@@ -238,24 +242,74 @@ pub fn wake_accept_loop() {
     }
 }
 
-/// Wait for a previously running daemon to exit. Shutdown terminates the
-/// process without running Drop, so the socket file lingers; the pid file's
-/// process going away — the same condition `bind` checks — is the signal.
+/// Wait for a previously running daemon to exit. Its lock on the pid file
+/// is the signal: it is what [`DaemonServer::bind`] needs before a new
+/// daemon can start, the kernel drops it however the process ends, and,
+/// unlike the pid the file records, it means the same thing from any PID
+/// namespace; a Flatpak client can run in a different one from the daemon
+/// it replaces.
+///
+/// A socket file other than the one there at the start also ends the wait:
+/// only a lock holder binds one, so the old daemon is gone and the lock is
+/// a successor's, held for the rest of the session.
 pub fn wait_for_daemon_exit() -> Result<(), std::io::Error> {
-    let Some(pid) = pid_file::read_pid(&get_pid_file_path()?) else {
-        return Ok(());
+    let socket_path = get_socket_path()?;
+    let bound = socket_identity(&socket_path);
+    wait_for_lock_release(
+        &get_pid_file_path()?,
+        &socket_path,
+        bound,
+        DAEMON_EXIT_TIMEOUT,
+    )
+}
+
+/// Tells a socket file from the one a later daemon binds at the same path.
+/// The change time is there for a filesystem that hands a freed inode
+/// number straight to the next file.
+type SocketIdentity = (u64, u64, i64, i64);
+
+fn socket_identity(path: &Path) -> Option<SocketIdentity> {
+    let meta = std::fs::symlink_metadata(path).ok()?;
+    Some((meta.dev(), meta.ino(), meta.ctime(), meta.ctime_nsec()))
+}
+
+fn wait_for_lock_release(
+    pid_path: &Path,
+    socket_path: &Path,
+    bound: Option<SocketIdentity>,
+    timeout: Duration,
+) -> Result<(), std::io::Error> {
+    let file = match File::open(pid_path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
     };
-    let deadline = Instant::now() + DAEMON_EXIT_TIMEOUT;
-    while pid_file::is_process_running(pid) {
-        if Instant::now() >= deadline {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                format!("daemon (pid {pid}) did not exit within {DAEMON_EXIT_TIMEOUT:?}"),
-            ));
+    let deadline = Instant::now() + timeout;
+    loop {
+        match file.try_lock() {
+            // Released again when `file` drops, before this client spawns
+            // the replacement.
+            Ok(()) => return Ok(()),
+            Err(TryLockError::WouldBlock)
+                if socket_identity(socket_path).is_some_and(|now| Some(now) != bound) =>
+            {
+                return Ok(());
+            }
+            Err(TryLockError::WouldBlock) if Instant::now() < deadline => {
+                std::thread::sleep(POLL_INTERVAL);
+            }
+            Err(TryLockError::WouldBlock) => {
+                let holder = pid_file::read_pid(pid_path)
+                    .map(|pid| format!(" (pid {pid})"))
+                    .unwrap_or_default();
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    format!("the daemon{holder} did not exit within {timeout:?}"),
+                ));
+            }
+            Err(TryLockError::Error(e)) => return Err(e),
         }
-        std::thread::sleep(POLL_INTERVAL);
     }
-    Ok(())
 }
 
 /// A client's end of the daemon socket: one blocking request/response
@@ -482,6 +536,16 @@ mod tests {
     }
 
     #[test]
+    fn a_daemon_from_before_version_reporting_parses_with_no_version() {
+        // A 0.11.0 daemon's GetState payload: protocol 2, no daemon_version.
+        let old = r#"{"protocol_version":2,"status":"Active","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"capture_detached":false,"is_recording":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}"#;
+        let state: DaemonState =
+            serde_json::from_str(old).expect("a 0.11.0 daemon's state must still parse");
+        assert_eq!(state.daemon_version, None);
+        assert_eq!(state.protocol_version, PROTOCOL_VERSION);
+    }
+
+    #[test]
     fn missing_protocol_version_fails_to_parse() {
         assert!(serde_json::from_str::<DaemonState>(OLD_STATE).is_err());
     }
@@ -620,6 +684,7 @@ mod tests {
         // constant means deliberately editing this string.
         let full_state = DaemonState {
             protocol_version: PROTOCOL_VERSION,
+            daemon_version: Some("1.2.3".to_string()),
             status: Status::Active,
             device_id: Some(42),
             device_node_name: Some("alsa_input.usb-Blue_Yeti-00.analog-stereo".to_string()),
@@ -640,6 +705,7 @@ mod tests {
         // most often.
         let idle_state = DaemonState {
             protocol_version: PROTOCOL_VERSION,
+            daemon_version: None,
             status: Status::Inactive,
             device_id: None,
             device_node_name: None,
@@ -658,6 +724,7 @@ mod tests {
         // renaming it would be a wire break the suite passes.
         let pending_state = DaemonState {
             protocol_version: PROTOCOL_VERSION,
+            daemon_version: Some("1.2.3".to_string()),
             status: Status::Pending,
             device_id: Some(42),
             device_node_name: Some("alsa_input.usb-Blue_Yeti-00.analog-stereo".to_string()),
@@ -699,19 +766,19 @@ mod tests {
                 status: Status::Active,
                 ..
             }) => {
-                r#"{"State":{"protocol_version":2,"status":"Active","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"capture_detached":false,"is_recording":false,"is_playing_original":false,"is_playing_filtered":true,"last_error":"pipeline died"}}"#
+                r#"{"State":{"protocol_version":2,"daemon_version":"1.2.3","status":"Active","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"capture_detached":false,"is_recording":false,"is_playing_original":false,"is_playing_filtered":true,"last_error":"pipeline died"}}"#
             }
             DaemonResponse::State(DaemonState {
                 status: Status::Pending,
                 ..
             }) => {
-                r#"{"State":{"protocol_version":2,"status":"Pending","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"capture_detached":false,"is_recording":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}}"#
+                r#"{"State":{"protocol_version":2,"daemon_version":"1.2.3","status":"Pending","device_id":42,"device_node_name":"alsa_input.usb-Blue_Yeti-00.analog-stereo","mic_name":"Spectral-Mic","threshold":80,"rumble_filter":true,"auto_level":false,"capture_detached":false,"is_recording":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}}"#
             }
             DaemonResponse::State(DaemonState {
                 status: Status::Inactive,
                 ..
             }) => {
-                r#"{"State":{"protocol_version":2,"status":"Inactive","device_id":null,"device_node_name":null,"mic_name":"Spectral-Mic","threshold":50,"rumble_filter":false,"auto_level":false,"capture_detached":false,"is_recording":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}}"#
+                r#"{"State":{"protocol_version":2,"daemon_version":null,"status":"Inactive","device_id":null,"device_node_name":null,"mic_name":"Spectral-Mic","threshold":50,"rumble_filter":false,"auto_level":false,"capture_detached":false,"is_recording":false,"is_playing_original":false,"is_playing_filtered":false,"last_error":null}}"#
             }
             DaemonResponse::Error(_) => r#"{"Error":"no such device"}"#,
         }
@@ -742,6 +809,57 @@ mod tests {
             DaemonResponse::Error(text) => assert_eq!(text, reason),
             other => panic!("the round trip changed the variant: {other:?}"),
         }
+    }
+
+    #[test]
+    fn waiting_on_the_pid_lock_ends_when_its_holder_lets_go() {
+        let dir = std::env::temp_dir().join(format!("spectral_pid_lock_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("spectral-daemon.pid");
+        let socket = dir.join("spectral-daemon.sock");
+        File::create(&socket).expect("socket file");
+        let bound = socket_identity(&socket);
+
+        // A second open of the same file is a second lock owner, exactly as
+        // a daemon and a client are.
+        let holder = File::create(&path).expect("pid file");
+        holder.try_lock().expect("the holder takes the lock");
+        let err = wait_for_lock_release(&path, &socket, bound, Duration::from_millis(120))
+            .expect_err("a held lock under the same socket must time out");
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+
+        drop(holder);
+        wait_for_lock_release(&path, &socket, bound, Duration::from_millis(120))
+            .expect("a released lock ends the wait");
+        wait_for_lock_release(&dir.join("absent.pid"), &socket, bound, Duration::ZERO)
+            .expect("no pid file means no daemon to wait for");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_socket_bound_under_the_held_lock_ends_the_wait() {
+        let dir = std::env::temp_dir().join(format!("spectral_successor_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("spectral-daemon.pid");
+        let socket = dir.join("spectral-daemon.sock");
+        File::create(&socket).expect("the old daemon's socket");
+        let bound = socket_identity(&socket);
+
+        let successor = File::create(&path).expect("pid file");
+        successor.try_lock().expect("the successor takes the lock");
+        // Created beside the old file before replacing it, so the two can
+        // never share an inode.
+        let fresh = dir.join("fresh.sock");
+        File::create(&fresh).expect("the successor's socket");
+        std::fs::rename(&fresh, &socket).expect("the successor binds over the old path");
+
+        wait_for_lock_release(&path, &socket, bound, Duration::from_millis(120))
+            .expect("a successor's socket means the old daemon is gone");
+        wait_for_lock_release(&path, &socket, None, Duration::from_millis(120))
+            .expect("a socket where there was none is a successor's too");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Only an absolute path may name the runtime dir. An empty value is
