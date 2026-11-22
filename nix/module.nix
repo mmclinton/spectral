@@ -1,4 +1,6 @@
-# NixOS module for Spectral
+# NixOS module for Spectral. Imported by path it reads `pkgs.spectral`, which
+# is this app only under the flake's overlay; the flake's nixosModules wrap
+# this file and supply the package themselves.
 {
   config,
   lib,

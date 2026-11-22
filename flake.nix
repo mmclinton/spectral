@@ -32,7 +32,8 @@
             { lib, pkgs, ... }:
             {
               # Without this flake's overlay, `pkgs.spectral` is nixpkgs'
-              # unrelated Spectral typeface. One that is this app, the
+              # unrelated Spectral typeface, which shares the pname and sets
+              # no mainProgram. A `pkgs.spectral` that is this app, the
               # overlay's or an override of it, is kept.
               programs.spectral.package = lib.mkDefault (
                 let
