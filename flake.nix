@@ -23,6 +23,9 @@
       spectralFor = import ./nix/spectral-for.nix { inherit crane rust-overlay; };
 
       nixosModule = {
+        # Lets the module system import it once however often it is listed.
+        key = "github:mmclinton/spectral#nixosModules.default";
+        _file = ./flake.nix;
         imports = [
           ./nix/module.nix
           (
