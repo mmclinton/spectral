@@ -163,8 +163,8 @@ fn send_simple_command(ui_weak: &Weak<MainWindow>, command: DaemonCommand, actio
 
 /// The stop commands an exiting window still owes the daemon. The daemon owns
 /// the recorder and the players and has no way to notice this window is gone —
-/// the socket is opened per command, so a closed GUI looks exactly like an idle
-/// one. Without this, a clip plays on to its end and a capture runs to the
+/// the GUI holds no connection open between exchanges, so a closed window looks
+/// exactly like an idle one. Without this, a clip plays on to its end and a capture runs to the
 /// recorder's duration cap after the window has already closed.
 fn exit_stop_commands(
     is_recording: bool,
