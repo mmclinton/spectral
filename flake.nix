@@ -105,28 +105,42 @@
             inherit (spectral.passthru.tests) clippy unit fmt;
 
             # Evaluation only. Without the overlay, `pkgs.spectral` is nixpkgs'
-            # typeface, so the module must install a package that is this app.
+            # typeface, so the module must install a package that is this app;
+            # with it, an override of `pkgs.spectral` must reach the module.
             nixos-module =
               let
-                nixos = nixpkgs.lib.nixosSystem {
-                  modules = [
-                    self.nixosModules.default
-                    {
-                      nixpkgs.hostPlatform = system;
-                      programs.spectral.enable = true;
-                      boot.loader.grub.enable = false;
-                      fileSystems."/" = {
-                        device = "none";
-                        fsType = "tmpfs";
-                      };
-                      system.stateVersion = "25.11";
-                    }
+                configWith =
+                  extra:
+                  (nixpkgs.lib.nixosSystem {
+                    modules = [
+                      self.nixosModules.default
+                      {
+                        nixpkgs.hostPlatform = system;
+                        programs.spectral.enable = true;
+                        boot.loader.grub.enable = false;
+                        fileSystems."/" = {
+                          device = "none";
+                          fsType = "tmpfs";
+                        };
+                        system.stateVersion = "25.11";
+                      }
+                      extra
+                    ];
+                  }).config;
+                bare = configWith { };
+                overridden = configWith {
+                  nixpkgs.overlays = [
+                    self.overlays.default
+                    (final: prev: {
+                      spectral = prev.spectral.overrideAttrs { pname = "spectral-overridden"; };
+                    })
                   ];
                 };
-                package = nixos.config.programs.spectral.package;
+                package = bare.programs.spectral.package;
               in
               assert (package.meta.mainProgram or null) == "spectral";
-              assert builtins.elem package nixos.config.environment.systemPackages;
+              assert builtins.elem package bare.environment.systemPackages;
+              assert overridden.programs.spectral.package.pname == "spectral-overridden";
               pkgs.runCommand "nixos-module-eval" { } "touch $out";
           };
 
