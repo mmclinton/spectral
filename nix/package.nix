@@ -1,4 +1,5 @@
-# Package definition for Spectral, used by the flake and the overlay.
+# Package definition for Spectral, called by the flake's packages and by
+# spectral-for.nix.
 #
 # Built with crane so the dependency artifacts are a derivation of their
 # own: a source change recompiles only this crate, and the lint and test
