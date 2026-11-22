@@ -1,8 +1,8 @@
 //! Packaging tasks for Spectral, run as `cargo xtask <task>`.
 //!
 //! `install` is the one list of the files a Spectral installation consists
-//! of; every package format stages its files through it. `package` builds
-//! a format's package from a git ref and checks it.
+//! of; every package built from this repository stages its files through
+//! it. `package` builds a format's package from a git ref and checks it.
 
 mod install;
 mod package;

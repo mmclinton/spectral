@@ -74,7 +74,7 @@ While the window is open the pipeline's `detached` atomic surfaces as `DaemonSta
 | `src/platform/linux/ipc.rs` | Unix-socket JSON IPC: `DaemonServer`, `DaemonClient`, commands, state. |
 | `src/platform/linux/persistence.rs` | XDG TOML persistence and the on-disk recording locations. |
 | `src/platform/linux/recorder.rs` | Native PipeWire recorder and player for the voice test. |
-| `xtask/` | Packaging tasks, part of neither binary: `cargo xtask install`, the one list of installed files every package stages through, and `cargo xtask package`, which builds and checks one format's package in containers. `packaging/README.md` has the details. |
+| `xtask/` | Packaging tasks, part of neither binary: `cargo xtask install` and `cargo xtask package`, described in `packaging/README.md`. |
 
 Settings persist to `$XDG_CONFIG_HOME/spectral/state.toml`.
 

@@ -1,6 +1,6 @@
 # Packaging
 
-Every package of Spectral stages its files through one list. The recipes live here, one folder per format, and none of them names a source URL or a hash: whoever builds a recipe exports the wanted commit first, so a recipe inside a release tag builds that tag.
+Every package built from this repository stages its files through one list. The recipes live here, one folder per format, and none of them names a source URL or a hash: whoever builds a recipe exports the wanted commit first, so a recipe inside a release tag builds that tag.
 
 | Format | Recipe | Build and check |
 | --- | --- | --- |
