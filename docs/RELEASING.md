@@ -34,7 +34,7 @@ Pre-1.0 SemVer: any feature in the batch makes a minor (`0.X.0`); fixes only mak
 
 ## The version-bump surface
 
-Six files carry the version and must move together:
+These files carry the version and must move together:
 
 | File | Field | Moved by |
 | --- | --- | --- |
