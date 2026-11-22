@@ -1,4 +1,5 @@
 # NixOS module for Spectral
+{ overlay }:
 {
   config,
   lib,
@@ -14,8 +15,10 @@ in
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.spectral;
-      defaultText = lib.literalExpression "pkgs.spectral";
+      # Built here rather than read from `pkgs.spectral`: without this flake's
+      # overlay, that attribute is nixpkgs' unrelated Spectral typeface.
+      default = (overlay pkgs pkgs).spectral;
+      defaultText = lib.literalMD "this flake's Spectral, built against the system's `pkgs`";
       description = "The Spectral package to use.";
     };
   };

@@ -19,11 +19,14 @@
       ...
     }:
     let
-      systemIndependentOutputs = {
-        overlays.default = import ./nix/overlay.nix { inherit crane rust-overlay; };
+      overlay = import ./nix/overlay.nix { inherit crane rust-overlay; };
+      nixosModule = import ./nix/module.nix { inherit overlay; };
 
-        nixosModules.default = import ./nix/module.nix;
-        nixosModules.spectral = import ./nix/module.nix;
+      systemIndependentOutputs = {
+        overlays.default = overlay;
+
+        nixosModules.default = nixosModule;
+        nixosModules.spectral = nixosModule;
       };
 
       perSystemOutputs = flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" ] (
