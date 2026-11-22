@@ -12,7 +12,7 @@ Everything is pinned by the nix flake:
 - `nix build` — `result/bin/spectral` and `result/bin/spectral-daemon`
 - `nix run` / `nix run .#daemon` — run the GUI or the daemon directly
 
-A daemon outlives the client that started it, Ctrl-C on that client included, and a rebuild keeps the version, so no client replaces the running daemon ([IPC protocol](ARCHITECTURE.md#ipc-protocol)). Run `spectral shutdown` before trying a rebuilt daemon, or you are testing the old one.
+A daemon outlives the client that started it, Ctrl-C on that client included, and a rebuild keeps the version, so no client replaces the running daemon ([Launch and replacement](ARCHITECTURE.md#launch-and-replacement)). Run `spectral shutdown` before trying a rebuilt daemon, or you are testing the old one.
 
 ## Before submitting
 

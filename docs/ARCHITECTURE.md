@@ -1,10 +1,10 @@
 # Architecture
 
-How Spectral is put together, for anyone about to change it. The overview and the opening paragraph of each section give the shape; the rest is the detail you need once you touch that part. Building, testing and submitting patches are in [CONTRIBUTING.md](CONTRIBUTING.md).
+How Spectral is put together, for anyone about to change it. The overview and the opening paragraph of each section give the shape; the rest is detail for whoever touches that part. Building, testing and submitting patches are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Overview
 
-Spectral is two processes. `spectral-daemon` owns everything that touches audio: it captures the chosen input device, runs every 10 ms of it through a denoising chain, and feeds the result into a virtual microphone in the PipeWire graph, which any application can select. `spectral` is a thin client, the GUI or the CLI, that tells the daemon what to do over a Unix socket and shows what it reports. It does no audio work.
+Spectral is two processes. `spectral-daemon` owns everything that touches audio: it captures the chosen input device, runs every 10 ms of it through a denoising chain, and feeds the result into a virtual mic in the PipeWire graph, which any application can select. `spectral` is a thin client, the GUI or the CLI, that tells the daemon what to do over a Unix socket and shows what it reports. It does no audio work.
 
 ```mermaid
 flowchart LR
@@ -23,7 +23,7 @@ flowchart LR
 
     GUI -- "JSON over a Unix socket" --> HANDLERS
     CLI -- "JSON over a Unix socket" --> HANDLERS
-    HANDLERS <--> STATE
+    HANDLERS -- "saved on Enable" --> STATE
     HANDLERS -- "start, stop, settings" --> PIPELINE
     DEVICE -- "capture stream" --> PIPELINE
     PIPELINE -- "feed stream and link" --> MIC
@@ -40,13 +40,13 @@ One crate builds both binaries and the library they share:
 
 ## The daemon and its clients
 
-The daemon is the only owner of audio state, and it outlives the clients that start it. Clients reach it on `$XDG_RUNTIME_DIR/spectral-daemon.sock`, opening one connection per command, and the daemon serves each connection on a handler thread of its own. The GUI and `spectral enable` spawn the daemon if none answers; a lock on `$XDG_RUNTIME_DIR/spectral-daemon.pid` decides which one wins when two try at once.
+The daemon is the only owner of audio state, and it outlives the clients that start it. Clients reach it on `$XDG_RUNTIME_DIR/spectral-daemon.sock` with a short-lived connection for each exchange, and the daemon serves each connection on a handler thread of its own until the client closes it. The GUI and `spectral enable` spawn the daemon if none answers; a lock on `$XDG_RUNTIME_DIR/spectral-daemon.pid` decides which one wins when two try at once.
 
 `start_daemon` (`src/daemon_launch.rs`) runs the `spectral-daemon` beside the client's own executable, in a process group of its own, so Ctrl-C in the launching terminal, or closing it, cannot take the mic down with the client.
 
 The runtime dir is required, with no second location to fall back to. An unset, empty or relative `XDG_RUNTIME_DIR` is rejected as one condition: the XDG spec treats empty as absent, and a relative value would resolve the socket into the process's working directory, outside the mode-0700 runtime dir that is what actually keeps other local users out. The commands that only connect report the daemon as not running ([CLI.md](CLI.md)); `enable` names the real cause, because the rejection comes from its spawn attempt, before the daemon process is created rather than after a connect timeout.
 
-The daemon never opens a log of its own; it writes only to its inherited stdout and stderr. A client that spawns it redirects those to `spectral-daemon.log` in the same runtime dir, resolved through the same check, so the log cannot land somewhere the socket could not. A daemon started any other way, from a shell or a service manager, logs wherever its parent's stdio points, and no such file exists.
+The daemon writes only to its inherited stdout and stderr and never creates a log. A client that spawns it redirects those to `spectral-daemon.log` in the same runtime dir, resolved through the same check, so the log cannot land somewhere the socket could not, and the daemon that wins the pid lock empties that file before writing (`start_log_afresh`). A daemon started any other way, from a shell or a service manager, logs wherever its parent's stdio points, though it still empties a log an earlier spawned daemon left behind.
 
 Because the daemon owns every PipeWire object it creates, the virtual mic disappears when the daemon exits. There is nothing to reap and no state left in the audio graph.
 
@@ -82,7 +82,7 @@ The GUI's restore (`restore`) re-sends the replaced daemon's device and settings
 
 The GUI holds no authoritative state. A Slint timer in `ui/app-window.slint` polls the daemon every second, every 250 ms during voice-test playback, and the GUI reconciles status and errors from each snapshot.
 
-Because every command opens its own connection, the daemon has no disconnect to act on: a closed window looks exactly like an idle one. So the GUI sends the voice-test stops it still owes, `StopRecording`, `StopOriginal` and `StopFiltered`, after its event loop exits (`stop_playback_and_recording_on_exit`, `src/main.rs`). This is best effort; a killed process sends nothing, which is what the recorder's own cap (`MAX_RECORDING_SAMPLES`, 60 s) backstops. The virtual mic deliberately survives the window and is never torn down here.
+Because the GUI holds no connection open between exchanges, the daemon has no disconnect to act on: a closed window looks exactly like an idle one. So the GUI sends the voice-test stops it still owes, `StopRecording`, `StopOriginal` and `StopFiltered`, after its event loop exits (`stop_playback_and_recording_on_exit`, `src/main.rs`). This is best effort; a killed process sends nothing, which is what the recorder's own cap (`MAX_RECORDING_SAMPLES`, 60 s) backstops. The virtual mic deliberately survives the window and is never torn down here.
 
 ## The audio path
 
@@ -109,7 +109,7 @@ flowchart LR
 4. **Leveler**: auto level, off by default. A slow RMS-tracking gain rider toward −18 dBFS with a peak limiter, frozen on non-voice frames so noise floors are never pumped up (`stages/leveler.rs`).
 5. **Voice gate**, always in the chain. Turns the voice probability into a click-free gain using 20 ms of lookahead, hysteresis, a 200 ms hold, and a −20 dB floor rather than a hard mute (`stages/gate.rs`).
 
-`AudioProcessor::process_frame` (`audio_processor.rs`) composes these in that order and is the authoritative reference. It reads the user's settings from atomics on `AppState` every frame, so toggling a stage applies live without ever locking the audio path.
+`AudioProcessor::process_frame` (`audio_processor.rs`) composes stages 2 to 5 in that order and is the authoritative reference for them; the downmix runs before it, in the capture callback (`mix_to_mono`, `pipewire.rs`). It reads the user's settings from atomics on `AppState` every frame, so toggling a stage applies live without ever locking the audio path.
 
 Two latency contributions are fixed and independent of settings: RNNoise's 10 ms algorithmic delay, and the gate's 20 ms lookahead. The gate's delay is constant even when the gate is bypassed, so latency never shifts as the user changes the threshold. Everything else depends on the PipeWire graph quantum, which any client on the system can change.
 
@@ -133,7 +133,7 @@ stateDiagram-v2
     Expired --> [*]
 ```
 
-`ReattachState::step` returns `Retry` on the edge into Connecting, at most every 500 ms (`REATTACH_RETRY_INTERVAL`), `GiveUp` on the edge into Expired, where the pipeline records a failure and exits, and `Waiting` otherwise. A capture error before `Enable` has returned is not a detach but a failure: nothing holds the mic yet, so a window would protect no audio.
+`ReattachState::step` returns `Retry` on the edge into Connecting, at most every 500 ms (`REATTACH_RETRY_INTERVAL`), `GiveUp` on the edge into Expired, where the pipeline records a failure and exits, `Waiting` otherwise while detached, and `Attached` whenever no window is open. A capture error before `Enable` has returned is not a detach but a failure: nothing holds the mic yet, so a window would protect no audio.
 
 One unplug is reported twice in the same loop iteration: as `StreamState::Error` on the capture stream, and as a core `-ENOENT` on its proxy. `core_error_is_lost_target` is what separates that from a failure of the connection itself, which must stay fatal.
 
@@ -157,11 +157,11 @@ Every thread, and what it may do. The constraints column is where most subtle bu
 | `spectral` | one reaper per spawned child | Waits on the spawned daemon or `xdg-open`, so neither lingers as a zombie | |
 | `spectral-daemon` | main | The accept loop | |
 | `spectral-daemon` | signal | Waits for SIGTERM or SIGINT, then clears `running` and wakes the accept loop | |
-| `spectral-daemon` | one handler per connection (`handle_client`) | One command: starts and stops subsystems, persists the settings an `Enable` carries, replies | Takes locks in the documented order |
+| `spectral-daemon` | one handler per connection (`handle_client`) | The connection's commands, one at a time until it closes: starts and stops subsystems, persists the settings an `Enable` carries, replies | Takes locks in the documented order |
 | `spectral-daemon` | pipeline (`run_pipeline`) | The pipeline's PipeWire main loop: negotiation, the link, the reconnect window | The only thread that records a pipeline failure |
-| `spectral-daemon` | PipeWire data thread | The capture and feed `process` callbacks, and the chain inside them | No locks, no allocation, no I/O |
+| `spectral-daemon` | PipeWire data threads, one per context with a real-time stream | The pipeline's capture and feed `process` callbacks and the chain inside them; the player's playback callback | No locks, no allocation, no I/O |
 | `spectral-daemon` | recorder (`run_recorder`) | The voice-test recording: the device and the virtual mic, side by side, to WAV | Not real-time: its callback writes files |
-| `spectral-daemon` | player (`run_player`) | Voice-test playback to the default sink | Real-time: its callback only reads a preloaded buffer |
+| `spectral-daemon` | player (`run_player`) | The voice-test player's PipeWire main loop: setup, and polling for the end of the clip, whose playback callback runs on a data thread | |
 
 **The real-time path takes no locks and makes no allocations.** Stages allocate their buffers in `new` and reuse them, and a buffer large enough to be mmap-backed is also written to its full capacity there, so the real-time thread never takes a first-touch page fault on memory that was merely reserved. Settings reach it through atomics. Any change to `process_frame` or a stage's `process` must preserve this.
 
@@ -201,7 +201,7 @@ Device ids are scoped to one PipeWire server instance, so the daemon also rememb
 | `src/diagnostics.rs` | Renders the bug-report dump behind the GUI's error details modal, from in-process state only. |
 | `src/bin/spectral-daemon.rs` | Daemon main loop, connection handlers, and the lock-ordering convention. |
 | `src/platform/mod.rs` | The platform seam. Re-exports the Linux modules the binaries use, `audio_devices`, `audio_processor`, `ipc`, `persistence` and `recorder`, while `linux` itself stays crate-private, so there is one path to any item. |
-| `src/platform/linux/pipewire.rs` | `NativeAudioPipeline`: the pipeline thread, capture and feed streams, virtual source node, link, and reconnect window. |
+| `src/platform/linux/pipewire.rs` | `NativeAudioPipeline`: the pipeline thread, capture and feed streams, virtual mic node, link, and reconnect window. |
 | `src/platform/linux/audio_processor.rs` | `AudioProcessor` (the per-frame chain) and `VirtualMic` (lifecycle of the mic). |
 | `src/platform/linux/stages/` | The individual DSP stages: `highpass.rs`, `leveler.rs`, `gate.rs`. |
 | `src/platform/linux/audio_devices.rs` | PipeWire registry queries: enumerate inputs, resolve node names, set the default source. |
@@ -210,7 +210,7 @@ Device ids are scoped to one PipeWire server instance, so the daemon also rememb
 | `src/platform/linux/recorder.rs` | `NativeRecorder` and `NativePlayer`, the voice test's PipeWire recorder and player. |
 | `xtask/` | Packaging tasks, part of neither binary: `cargo xtask install` and `cargo xtask package`, described in `packaging/README.md`. |
 
-Settings persist to `$XDG_CONFIG_HOME/spectral/state.toml`.
+Settings persist to `$XDG_CONFIG_HOME/spectral/state.toml`. The daemon reads it once, at startup, and writes it on each `Enable` whose device resolves, so an edit made under a running daemon is ignored and then overwritten.
 
 ### The interface
 
