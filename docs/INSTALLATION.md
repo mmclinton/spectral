@@ -21,6 +21,8 @@ On NixOS, add `inputs.spectral.url = "github:mmclinton/spectral";` to your flake
 }
 ```
 
+Between releases the version stays the same, so a daemon still running from before an update keeps the old build: run `spectral shutdown` after updating, and the next launch starts the new one.
+
 Spectral is also in nixpkgs as `spectral-mic`, which installs the `spectral` command; [search.nixos.org](https://search.nixos.org/packages?query=spectral-mic) shows which channels have it.
 
 ## Other formats
