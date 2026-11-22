@@ -20,7 +20,30 @@
     }:
     let
       overlay = import ./nix/overlay.nix { inherit crane rust-overlay; };
-      nixosModule = import ./nix/module.nix { inherit overlay; };
+      spectralFor = import ./nix/spectral-for.nix { inherit crane rust-overlay; };
+
+      nixosModule = {
+        imports = [
+          ./nix/module.nix
+          (
+            { lib, pkgs, ... }:
+            {
+              # Without this flake's overlay, `pkgs.spectral` is nixpkgs'
+              # unrelated Spectral typeface. One that is this app, the
+              # overlay's or an override of it, is kept.
+              programs.spectral.package = lib.mkDefault (
+                let
+                  current = pkgs.spectral or null;
+                in
+                if current != null && (current.meta.mainProgram or null) == "spectral" then
+                  current
+                else
+                  spectralFor pkgs
+              );
+            }
+          )
+        ];
+      };
 
       systemIndependentOutputs = {
         overlays.default = overlay;
