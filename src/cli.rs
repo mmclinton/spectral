@@ -1146,9 +1146,10 @@ mod tests {
             );
             // Anchored to the start of a command-table row: `devices` and
             // `enable` also occur inside prose and other cells, so an
-            // unanchored search stays green when the table drops them.
+            // unanchored search stays green when the table drops them. The
+            // cell's padding is left free, so an aligned table still passes.
             assert!(
-                doc.contains(&format!("\n| `spectral {word}` |")),
+                doc.contains(&format!("\n| `spectral {word}`")),
                 "`{word}` is missing from the docs/CLI.md command table"
             );
         }
