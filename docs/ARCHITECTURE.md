@@ -76,7 +76,7 @@ sequenceDiagram
 
 `PROTOCOL_VERSION` guards the wire format: bump it when a change is incompatible. `daemon_version`, the daemon's crate version, catches everything else, so an upgraded client is never left talking to a daemon from a previous install, and a rollback gets its own; older or newer, either mismatch replaces it. A version change alone needs no protocol bump: `daemon_version` is optional, and a daemon without it counts as another version. A daemon that still mismatches after one replacement is used anyway, with a warning, since a second restart would only repeat the mismatch.
 
-The GUI's restore (`restore`) re-sends the replaced daemon's device and settings. `spectral enable` sends its own `Enable` instead, and restores only when the new daemon rejects it. Nothing else replaces a daemon: `spectral status` warns about a mismatch, `disable` and `shutdown` do not check, and the GUI's poll does not either, so a window left open across an upgrade never restarts the newer daemon.
+The GUI's restore (`restore`) re-sends the replaced daemon's device and settings. `spectral enable` sends its own `Enable` instead, and restores only when the new daemon rejects it. Nothing else replaces a daemon: `spectral status` warns about another version and fails on another protocol, `disable` and `shutdown` do not check, and the GUI's poll does not either, so a window left open across an upgrade never restarts the newer daemon.
 
 ### The GUI is a view
 
