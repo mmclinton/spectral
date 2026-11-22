@@ -1,6 +1,6 @@
 # Architecture
 
-A map of the codebase for people changing it. For building, testing, and submitting patches, see [CONTRIBUTING.md](../CONTRIBUTING.md).
+A map of the codebase for people changing it. For building, testing, and submitting patches, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Process model
 

@@ -2,7 +2,7 @@
 
 Spectral's public repository is https://github.com/mmclinton/spectral. Bug reports and patches are welcome as issues and pull requests there. The repository mirrors my own forge, so I merge accepted pull requests by hand, and they show as merged once the next sync reaches GitHub.
 
-For a map of the codebase, read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). What makes a bug report useful is listed under [Reporting a bug](docs/TROUBLESHOOTING.md#reporting-a-bug).
+For a map of the codebase, read [ARCHITECTURE.md](ARCHITECTURE.md). What makes a bug report useful is listed under [Reporting a bug](TROUBLESHOOTING.md#reporting-a-bug).
 
 ## Building
 
@@ -32,4 +32,4 @@ GPL-3.0-only, inbound = outbound: by submitting a change you agree to license it
 
 ## Releases
 
-Versioning, channels, and the release pipeline are documented in [docs/RELEASING.md](docs/RELEASING.md). I cut a release when a coherent user-visible arc has landed; landing on `main` alone ships nothing.
+Versioning, channels, and the release pipeline are documented in [RELEASING.md](RELEASING.md). I cut a release when a coherent user-visible arc has landed; landing on `main` alone ships nothing.
