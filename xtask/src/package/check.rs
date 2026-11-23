@@ -1,7 +1,8 @@
 //! The install check the Arch and deb packages share: install into a fresh
 //! container through the package manager, so only the declared
-//! dependencies arrive, ask the binary for its version, then launch the GUI
-//! headless against X11 and against Wayland and wait for its window.
+//! dependencies arrive, ask the binary for its version, create the virtual
+//! mic on a headless PipeWire with a test tone as its input, then launch
+//! the GUI headless against X11 and against Wayland and wait for its window.
 //! Between them the two launches load every library winit dlopens. Every
 //! step after the install runs as a desktop user, through
 //! `scripts/session.sh`.
@@ -28,6 +29,10 @@ RUN apt-get update \\
 /// Stands in for a desktop login; every step after the install runs
 /// through it, as the uid the launch pods map the host user to.
 const SESSION_SCRIPT: &str = include_str!("../../scripts/session.sh");
+
+/// Judges whether the installed package creates the virtual mic, and says
+/// what is missing when it does not.
+const MIC_CHECK_SCRIPT: &str = include_str!("../../scripts/mic-check.sh");
 
 /// Maps the host user to the uid `session.sh` runs as, so the directory a
 /// launch shares with its display server belongs to the desktop user in
@@ -82,6 +87,7 @@ pub fn run(build: &Build, target: &Target, report: &mut Report) -> Result<(), St
         }
     };
     version(build, target, &image.name, report);
+    mic(target, &image.name, report);
     build_image(build, DISPLAY_IMAGE, DISPLAY_CONTAINERFILE)?;
     for display in [Display::X11, Display::Wayland] {
         launch(build, target, &image.name, display, report);
@@ -171,6 +177,32 @@ fn version(build: &Build, target: &Target, image: &str, report: &mut Report) {
         Ok((_, text)) => report.fail(step, format!("expected `{expected}`, got: {}", text.trim())),
         Err(e) => report.fail(step, e),
     }
+}
+
+/// Whether the package does its job: with PipeWire, WirePlumber and a test
+/// tone in the container, `enable` brings up a virtual mic that is running,
+/// linked at both ends and the default source.
+fn mic(target: &Target, image: &str, report: &mut Report) {
+    let step = "creates the virtual mic";
+    let options = [&["--rm"][..], target.podman_options].concat();
+    match cmd::capture(&mut in_session(&options, image, &mic_check_args(target))) {
+        Ok((Some(0), _)) => report.pass(step),
+        Ok((_, text)) => report.fail(step, tail(&text)),
+        Err(e) => report.fail(step, e),
+    }
+}
+
+fn mic_check_args<'a>(target: &Target<'a>) -> Vec<&'a str> {
+    let mut args = vec![
+        "bash",
+        "-euo",
+        "pipefail",
+        "-c",
+        MIC_CHECK_SCRIPT,
+        "mic-check",
+    ];
+    args.extend_from_slice(target.command);
+    args
 }
 
 /// Builds the image `tag` from `containerfile`; podman's layer cache makes a
@@ -462,6 +494,36 @@ impl Drop for Pod {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const DEB: Target<'static> = Target {
+        name: "deb",
+        base_image: "img",
+        install_script: "true",
+        command: &["spectral"],
+        podman_options: &[],
+    };
+
+    #[test]
+    fn the_mic_check_runs_the_targets_own_command() {
+        let flatpak = Target {
+            command: &["flatpak", "run", "app.id"],
+            ..DEB
+        };
+        assert_eq!(
+            mic_check_args(&flatpak),
+            [
+                "bash",
+                "-euo",
+                "pipefail",
+                "-c",
+                MIC_CHECK_SCRIPT,
+                "mic-check",
+                "flatpak",
+                "run",
+                "app.id"
+            ]
+        );
+    }
 
     fn parts(command: &Command) -> Vec<String> {
         command
