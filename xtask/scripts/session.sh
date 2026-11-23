@@ -5,6 +5,10 @@
 # The system bus is for Flatpak, whose parental-controls check fails without
 # one; WirePlumber 0.4 and `flatpak run` need the session bus.
 
+# One stream, in the order it was written: a step's output is read back
+# with its standard error after its standard output, and judged by its end.
+exec 2>&1
+
 # A committed image keeps the pid file of a bus that ran during the install.
 mkdir -p /run/dbus
 rm -f /run/dbus/pid

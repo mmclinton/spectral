@@ -154,11 +154,13 @@ impl Drop for Image {
 /// `podman run` of `args` in `image` through `session.sh`, with `options`
 /// before the image. It starts as root rather than as a keep-id pod's mapped
 /// user, because `session.sh` starts the system bus, adds the user and
-/// creates its directories before it drops to that user.
+/// creates its directories before it drops to that user. `--init` reaps the
+/// processes a step leaves behind, which `dbus-run-session` would otherwise
+/// do as the container's first process, announcing each one.
 fn in_session(options: &[&str], image: &str, args: &[&str]) -> Command {
     let mut command = Command::new("podman");
     command
-        .args(["run", "--user", "0"])
+        .args(["run", "--init", "--user", "0"])
         .args(options)
         .arg(image)
         .args(["bash", "-euo", "pipefail", "-c", SESSION_SCRIPT, "session"])
@@ -541,6 +543,7 @@ mod tests {
             parts(&command),
             [
                 "run",
+                "--init",
                 "--user",
                 "0",
                 "--rm",
