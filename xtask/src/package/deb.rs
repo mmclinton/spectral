@@ -55,6 +55,8 @@ pub fn run(build: &Build, report: &mut Report) -> Result<(), String> {
             // --no-install-recommends: the check is that the declared
             // dependencies alone are enough.
             install_script: "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends /pkg/*.deb",
+            command: &["spectral"],
+            podman_options: &[],
         },
         report,
     )

@@ -2,7 +2,9 @@
 //! container through the package manager, so only the declared
 //! dependencies arrive, ask the binary for its version, then launch the GUI
 //! headless against X11 and against Wayland and wait for its window.
-//! Between them the two launches load every library winit dlopens.
+//! Between them the two launches load every library winit dlopens. Every
+//! step after the install runs as a desktop user, through
+//! `scripts/session.sh`.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -22,6 +24,15 @@ RUN apt-get update \\
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb weston x11-utils \\
  && rm -rf /var/lib/apt/lists/*
 ";
+
+/// Stands in for a desktop login; every step after the install runs
+/// through it, as the uid the launch pods map the host user to.
+const SESSION_SCRIPT: &str = include_str!("../../scripts/session.sh");
+
+/// Maps the host user to the uid `session.sh` runs as, so the directory a
+/// launch shares with its display server belongs to the desktop user in
+/// both containers, whatever the host user's own uid.
+const USERNS: &str = "--userns=keep-id:uid=1000,gid=1000";
 
 /// How long the window may take to appear. The GUI opens it only after
 /// trying the daemon, which with no PipeWire in the container can take all
@@ -51,6 +62,10 @@ pub struct Target<'a> {
     /// Installs the package in `/pkg` with the distribution's package
     /// manager, which resolves the declared dependencies and nothing else.
     pub install_script: &'a str,
+    /// Runs Spectral in the installed system, as a user would type it.
+    pub command: &'a [&'a str],
+    /// `podman run` options every step after the install needs.
+    pub podman_options: &'a [&'a str],
 }
 
 /// Runs the install check, recording each step in `report`; only a failure
@@ -66,8 +81,8 @@ pub fn run(build: &Build, target: &Target, report: &mut Report) -> Result<(), St
             return Ok(());
         }
     };
-    version(build, &image.name, report);
-    display_image(build)?;
+    version(build, target, &image.name, report);
+    build_image(build, DISPLAY_IMAGE, DISPLAY_CONTAINERFILE)?;
     for display in [Display::X11, Display::Wayland] {
         launch(build, target, &image.name, display, report);
     }
@@ -129,12 +144,27 @@ impl Drop for Image {
     }
 }
 
-fn version(build: &Build, image: &str, report: &mut Report) {
+/// `podman run` of `args` in `image` through `session.sh`, with `options`
+/// before the image. It starts as root, which a pod's mapped user would not,
+/// because `session.sh` starts the system bus before it drops to the user.
+fn in_session(options: &[&str], image: &str, args: &[&str]) -> Command {
+    let mut command = Command::new("podman");
+    command
+        .args(["run", "--user", "0"])
+        .args(options)
+        .arg(image)
+        .args(["bash", "-euo", "pipefail", "-c", SESSION_SCRIPT, "session"])
+        .args(args);
+    command
+}
+
+fn version(build: &Build, target: &Target, image: &str, report: &mut Report) {
     let step = "spectral --version";
     let expected = format!("spectral {}", build.version);
-    match cmd::capture(Command::new("podman").args(["run", "--rm", image, "spectral", "--version"]))
-    {
-        // Any line: podman can add its own warnings to the output.
+    let options = [&["--rm"][..], target.podman_options].concat();
+    let args = [target.command, &["--version"][..]].concat();
+    match cmd::capture(&mut in_session(&options, image, &args)) {
+        // Any line: podman and the session's buses can add their own output.
         Ok((Some(0), text)) if text.lines().any(|line| line.trim() == expected) => {
             report.pass(step);
         }
@@ -143,16 +173,19 @@ fn version(build: &Build, image: &str, report: &mut Report) {
     }
 }
 
-/// Builds the display-server image; podman's layer cache makes a repeat
-/// build cost nothing until the Containerfile or its base changes.
-fn display_image(build: &Build) -> Result<(), String> {
-    let context = build.out.join("display-image");
+/// Builds the image `tag` from `containerfile`; podman's layer cache makes a
+/// repeat build cost nothing until the Containerfile or its base changes.
+pub fn build_image(build: &Build, tag: &str, containerfile: &str) -> Result<(), String> {
+    let context = build
+        .out
+        .join("images")
+        .join(tag.rsplit('/').next().unwrap_or(tag));
     fresh_dir(&context)?;
-    fs::write(context.join("Containerfile"), DISPLAY_CONTAINERFILE)
+    fs::write(context.join("Containerfile"), containerfile)
         .map_err(|e| format!("{}: {e}", context.display()))?;
     cmd::output(
         Command::new("podman")
-            .args(["build", PULL, "--quiet", "--tag", DISPLAY_IMAGE])
+            .args(["build", PULL, "--quiet", "--tag", tag])
             .arg(&context),
     )
     .map(drop)
@@ -206,7 +239,7 @@ impl Display {
     fn shared_dir(self) -> &'static str {
         match self {
             Self::X11 => "/tmp/.X11-unix",
-            Self::Wayland => "/run/xdg",
+            Self::Wayland => "/run/user/1000",
         }
     }
 
@@ -218,18 +251,14 @@ impl Display {
         }
     }
 
-    /// Points the GUI at the server. `XDG_RUNTIME_DIR` also holds the
-    /// daemon's socket; on Wayland it must be the shared directory, and
-    /// `WAYLAND_DEBUG` makes the client log the protocol, which is how the
-    /// Wayland window is spotted.
+    /// Points the GUI at the server. `session.sh` sets `XDG_RUNTIME_DIR` to
+    /// `/run/user/1000`, where the Wayland launch mounts the shared
+    /// directory; `WAYLAND_DEBUG` makes the client log the protocol, which
+    /// is how the Wayland window is spotted.
     fn client_env(self) -> &'static [&'static str] {
         match self {
-            Self::X11 => &["DISPLAY=:99", "XDG_RUNTIME_DIR=/run/xdg"],
-            Self::Wayland => &[
-                "WAYLAND_DISPLAY=wayland-1",
-                "XDG_RUNTIME_DIR=/run/xdg",
-                "WAYLAND_DEBUG=1",
-            ],
+            Self::X11 => &["DISPLAY=:99"],
+            Self::Wayland => &["WAYLAND_DISPLAY=wayland-1", "WAYLAND_DEBUG=1"],
         }
     }
 
@@ -317,27 +346,27 @@ fn try_launch(
         Command::new("podman")
             .args(["run", "--detach", "--name", server.as_str()])
             .args(["--pod", pod.name.as_str(), "--volume", volume.as_str()])
-            .args(["--env", "XDG_RUNTIME_DIR=/run/xdg", DISPLAY_IMAGE])
+            .args(["--env", "XDG_RUNTIME_DIR=/run/user/1000", DISPLAY_IMAGE])
             .args(display.server()),
     )?;
     wait_for(&shared.join(display.socket()))?;
 
     // Detached and kept after it exits, so its state and output can be
     // read while it runs and after; the pod removes it.
-    let mut command = Command::new("podman");
-    command
-        .args(["run", "--detach", "--name", client.as_str()])
-        .args(["--pod", pod.name.as_str(), "--volume", volume.as_str()]);
+    let mut options = vec![
+        "--detach",
+        "--name",
+        client.as_str(),
+        "--pod",
+        pod.name.as_str(),
+        "--volume",
+        volume.as_str(),
+    ];
     for variable in display.client_env() {
-        command.args(["--env", variable]);
+        options.extend(["--env", variable]);
     }
-    command.args([
-        image,
-        "bash",
-        "-c",
-        "mkdir -p -m 700 \"$XDG_RUNTIME_DIR\" && exec spectral",
-    ]);
-    cmd::output(&mut command)?;
+    options.extend_from_slice(target.podman_options);
+    cmd::output(&mut in_session(&options, image, target.command))?;
 
     let deadline = Instant::now() + WINDOW_TIMEOUT;
     let launch = loop {
@@ -394,7 +423,8 @@ fn wait_for(socket: &Path) -> Result<(), String> {
 
 /// A podman pod, removed with its containers when dropped. The display
 /// server and the GUI share its network and IPC namespaces, so X11's
-/// shared-memory path works as on a desktop.
+/// shared-memory path works as on a desktop. Its user namespace maps the
+/// host user to uid 1000 (`USERNS`).
 struct Pod {
     name: String,
 }
@@ -404,7 +434,7 @@ impl Pod {
     /// the same name.
     fn create(name: &str) -> Result<Self, String> {
         Self::remove(name)?;
-        cmd::output(Command::new("podman").args(["pod", "create", "--name", name]))?;
+        cmd::output(Command::new("podman").args(["pod", "create", USERNS, "--name", name]))?;
         Ok(Self {
             name: name.to_string(),
         })
@@ -426,5 +456,40 @@ impl Drop for Pod {
         if let Err(e) = Self::remove(&self.name) {
             eprintln!("warning: {e}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parts(command: &Command) -> Vec<String> {
+        command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn a_session_command_starts_as_root_and_hands_its_arguments_to_session_sh() {
+        let command = in_session(&["--rm"], "img", &["spectral", "--version"]);
+        assert_eq!(
+            parts(&command),
+            [
+                "run",
+                "--user",
+                "0",
+                "--rm",
+                "img",
+                "bash",
+                "-euo",
+                "pipefail",
+                "-c",
+                SESSION_SCRIPT,
+                "session",
+                "spectral",
+                "--version"
+            ]
+        );
     }
 }
