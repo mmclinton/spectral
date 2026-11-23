@@ -1,11 +1,11 @@
-//! The install check the Arch and deb packages share: install into a fresh
-//! container through the package manager, so only the declared
-//! dependencies arrive, ask the binary for its version, create the virtual
-//! mic on a headless PipeWire with a test tone as its input, then launch
-//! the GUI headless against X11 and against Wayland and wait for its window.
-//! Between them the two launches load every library winit dlopens. Every
-//! step after the install runs as a desktop user, through
-//! `scripts/session.sh`.
+//! The install check every format shares: install into a fresh container,
+//! through the package manager for Arch and deb, so only the declared
+//! dependencies arrive, and with `flatpak install` for the Flatpak bundle;
+//! ask the binary for its version, create the virtual mic on a headless
+//! PipeWire with a test tone as its input, then launch the GUI headless
+//! against X11 and against Wayland and wait for its window. Between them the
+//! two launches load every library winit dlopens. Every step after the
+//! install runs as a desktop user, through `scripts/session.sh`.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -58,14 +58,15 @@ const LOAD_ERRORS: [&str; 3] = [
     "panicked",
 ];
 
-/// What the install check needs to know about a distribution.
+/// What the install check needs to know about a format.
 pub struct Target<'a> {
-    /// Names this format's containers and image: `arch` or `deb`.
+    /// Names this format's containers and image: `flatpak`, `arch` or
+    /// `deb`.
     pub name: &'a str,
-    /// A fresh image of the distribution the package is for.
+    /// A fresh image of the system the package is installed on.
     pub base_image: &'a str,
-    /// Installs the package in `/pkg` with the distribution's package
-    /// manager, which resolves the declared dependencies and nothing else.
+    /// Installs the package in `/pkg` with the tool a user would install it
+    /// with, which brings in the declared dependencies and nothing else.
     pub install_script: &'a str,
     /// Runs Spectral in the installed system, as a user would type it.
     pub command: &'a [&'a str],

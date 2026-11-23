@@ -1,16 +1,27 @@
 //! The Flatpak, built on the host with the installed `org.flatpak.Builder`
-//! into a local repository, linted, bundled, and asked for its version.
-//! Its dependencies are the fixed runtime, so it has no install check.
+//! into a local repository, linted and bundled. The bundle then gets the
+//! install check every format gets, in a container standing in for the
+//! user's system, with the runtime fetched from Flathub as a user's install
+//! fetches it.
 
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use super::{Build, Report, cmd};
+use super::{Build, Report, check, cmd};
 use crate::install::APP_ID;
 
 /// Lets `flatpak install` of the bundle fetch the runtime it names.
 const RUNTIME_REPO: &str = "https://dl.flathub.org/repo/flathub.flatpakrepo";
+
+const HOST_IMAGE: &str = "localhost/spectral-xtask-flatpak-host";
+/// The user's side of the sandbox: Flatpak, and the PipeWire and WirePlumber
+/// the sandboxed app talks to.
+const HOST_CONTAINERFILE: &str = "FROM docker.io/library/ubuntu:24.04
+RUN apt-get update \\
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends flatpak pipewire wireplumber dbus-user-session ca-certificates \\
+ && rm -rf /var/lib/apt/lists/*
+";
 
 fn builder() -> Command {
     let mut command = Command::new("flatpak");
@@ -18,7 +29,7 @@ fn builder() -> Command {
     command
 }
 
-/// Builds, lints and bundles the Flatpak, then asks it for its version.
+/// Builds, lints and bundles the Flatpak, then install-checks the bundle.
 pub fn run(build: &Build, report: &mut Report) -> Result<(), String> {
     let manifest = build.src.join(format!("packaging/flatpak/{APP_ID}.yaml"));
     let builddir = build.out.join("build");
@@ -57,25 +68,26 @@ pub fn run(build: &Build, report: &mut Report) -> Result<(), String> {
     )?;
     report.pass("bundle");
 
-    let step = "spectral --version";
-    let expected = format!("spectral {}", build.version);
-    // Judged on the output alone: `flatpak-builder --run` exits 1 even when
-    // the command it runs succeeds (`--run … true` does too).
-    match cmd::capture(
-        builder()
-            .arg("--run")
-            .arg(&state_dir)
-            .arg(&builddir)
-            .arg(&manifest)
-            .args(["spectral", "--version"]),
-    ) {
-        Ok((_, text)) if text.lines().any(|line| line.trim() == expected) => {
-            report.pass(step);
-        }
-        Ok((_, text)) => report.fail(step, format!("expected `{expected}`, got: {}", text.trim())),
-        Err(e) => report.fail(step, e),
-    }
-    Ok(())
+    check::build_image(build, HOST_IMAGE, HOST_CONTAINERFILE)?;
+    check::run(
+        build,
+        &check::Target {
+            name: "flatpak",
+            base_image: HOST_IMAGE,
+            // System-wide, so the desktop user the later steps run as can
+            // run what root installed; the system bus is for Flatpak's
+            // parental-controls check. The bundle names Flathub as its
+            // runtime's repository, so the install adds it as a user's
+            // does. --no-related leaves out the GL extension, which the
+            // software renderer never loads. The install's triggers only
+            // refresh desktop caches, and cannot run bubblewrap as root.
+            install_script: "mkdir -p /run/dbus && dbus-daemon --system --fork && flatpak install --system -y --noninteractive --no-related /pkg/*.flatpak",
+            command: &["flatpak", "run", APP_ID],
+            // Lets bubblewrap mount /proc inside the container.
+            podman_options: &["--security-opt", "unmask=ALL"],
+        },
+        report,
+    )
 }
 
 /// Prints `flatpak-builder-lint`'s findings; they are triaged by hand, not
