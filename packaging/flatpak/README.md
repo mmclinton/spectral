@@ -4,7 +4,7 @@
 
 ## Build and install
 
-Flatpak must be enabled on the host (`services.flatpak.enable = true` on NixOS), with the builder installed once:
+`cargo xtask package flatpak` needs rootless podman for its install check ([../README.md](../README.md#building-and-checking-a-package)), and Flatpak enabled on the host (`services.flatpak.enable = true` on NixOS), with the builder installed once:
 
 ```bash
 flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
