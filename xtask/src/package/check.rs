@@ -152,8 +152,9 @@ impl Drop for Image {
 }
 
 /// `podman run` of `args` in `image` through `session.sh`, with `options`
-/// before the image. It starts as root, which a pod's mapped user would not,
-/// because `session.sh` starts the system bus before it drops to the user.
+/// before the image. It starts as root rather than as a keep-id pod's mapped
+/// user, because `session.sh` starts the system bus, adds the user and
+/// creates its directories before it drops to that user.
 fn in_session(options: &[&str], image: &str, args: &[&str]) -> Command {
     let mut command = Command::new("podman");
     command

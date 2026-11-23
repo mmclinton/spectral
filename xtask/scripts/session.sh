@@ -14,11 +14,13 @@ dbus-daemon --system --fork
 getent passwd 1000 >/dev/null || useradd --uid 1000 --user-group xtask
 
 export HOME=/tmp/xtask-home
-# Where a desktop puts it, and where Flatpak looks for the host's PipeWire
-# socket whatever XDG_RUNTIME_DIR says.
+# Where a desktop puts it, and the only place a Flatpak app finds the host's
+# PipeWire socket: Flatpak shares the socket at its path here, while the
+# sandbox's own runtime directory is always /run/user/<uid>.
 export XDG_RUNTIME_DIR=/run/user/1000
 install -d -m 700 -o 1000 -g 1000 "$HOME"
-# A launch mounts the directory it shares with the display server here.
+# The Wayland launch mounts the directory it shares with the display server
+# here.
 [ -d "$XDG_RUNTIME_DIR" ] || install -d -m 700 -o 1000 -g 1000 "$XDG_RUNTIME_DIR"
 
 exec setpriv --reuid=1000 --regid=1000 --init-groups -- dbus-run-session -- "$@"

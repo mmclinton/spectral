@@ -78,9 +78,11 @@ pub fn run(build: &Build, report: &mut Report) -> Result<(), String> {
             // run what root installed; the system bus is for Flatpak's
             // parental-controls check. The bundle names Flathub as its
             // runtime's repository, so the install adds it as a user's
-            // does. --no-related leaves out the GL extension, which the
-            // software renderer never loads. The install's triggers only
-            // refresh desktop caches, and cannot run bubblewrap as root.
+            // does. --no-related leaves out the runtime's related
+            // extensions, the GL drivers and the locale data among them: the
+            // software renderer never loads GL, and Spectral has no
+            // translations to load. The install's triggers only refresh
+            // desktop caches, and cannot run bubblewrap as root.
             install_script: "mkdir -p /run/dbus && dbus-daemon --system --fork && flatpak install --system -y --noninteractive --no-related /pkg/*.flatpak",
             command: &["flatpak", "run", APP_ID],
             // Lets bubblewrap mount /proc inside the container.
