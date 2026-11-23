@@ -212,7 +212,7 @@ pub fn build_image(build: &Build, tag: &str, containerfile: &str) -> Result<(), 
     let context = build
         .out
         .join("images")
-        .join(tag.rsplit('/').next().unwrap_or(tag));
+        .join(tag.rsplit_once('/').map_or(tag, |(_, name)| name));
     fresh_dir(&context)?;
     fs::write(context.join("Containerfile"), containerfile)
         .map_err(|e| format!("{}: {e}", context.display()))?;
