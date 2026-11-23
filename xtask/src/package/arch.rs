@@ -43,6 +43,8 @@ pub fn run(build: &Build, report: &mut Report) -> Result<(), String> {
             name: "arch",
             base_image: "docker.io/library/archlinux:base",
             install_script: "pacman -Syu --noconfirm && pacman -U --noconfirm /pkg/*.pkg.tar.zst",
+            command: &["spectral"],
+            podman_options: &[],
         },
         report,
     )
