@@ -33,18 +33,28 @@ EOF
 pipewire >"$logs/pipewire.log" 2>&1 &
 wireplumber >"$logs/wireplumber.log" 2>&1 &
 
-# fail <reason...>: ends the check, printing what it saw with the reasons
-# last, since a failed step's report keeps only the end of the output.
+# fail <reason...>: ends the check, printing what it saw from the least to
+# the most telling and the reasons last, since a failed step's report keeps
+# only the end of the output.
 fail() {
   local log
   for log in "$logs"/*.log; do
     echo "--- ${log##*/}"
     tail -n 10 "$log"
   done
-  echo "--- status"
-  "${spectral[@]}" status || true
   echo "--- links"
   pw-link -lI || true
+  echo "--- status"
+  "${spectral[@]}" status || true
+  # The daemon logs into its runtime directory, which for a Flatpak is the
+  # app's own under .flatpak.
+  for log in "$XDG_RUNTIME_DIR"/spectral-daemon.log \
+    "$XDG_RUNTIME_DIR"/.flatpak/*/xdg-run/spectral-daemon.log; do
+    if [ -f "$log" ]; then
+      echo "--- spectral-daemon.log"
+      tail -n 10 "$log"
+    fi
+  done
   printf 'mic check: %s\n' "$@"
   exit 1
 }
