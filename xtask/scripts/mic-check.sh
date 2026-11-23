@@ -75,7 +75,8 @@ wait_for 10 "PipeWire socket" test -S "$XDG_RUNTIME_DIR/pipewire-0"
 wait_for 20 "session manager" session_manager_is_up
 wait_for 10 "ports on $tone" tone_has_ports
 
-id=$("${spectral[@]}" devices | awk -v name="$tone" '$3 == name { print $1 }')
+id=$("${spectral[@]}" devices | awk -v name="$tone" '$3 == name { print $1 }') ||
+  fail "\`devices\` failed"
 if [ -z "$id" ]; then
   fail "\`devices\` does not list $tone"
 fi
