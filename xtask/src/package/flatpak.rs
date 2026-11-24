@@ -14,6 +14,11 @@ use crate::install::APP_ID;
 /// Lets `flatpak install` of the bundle fetch the runtime it names.
 const RUNTIME_REPO: &str = "https://dl.flathub.org/repo/flathub.flatpakrepo";
 
+/// The branch every build is exported on. It ends up in each user's
+/// installation, so it is fixed here rather than left to flatpak-builder's
+/// default of `master`.
+const BRANCH: &str = "stable";
+
 const HOST_IMAGE: &str = "localhost/spectral-xtask-flatpak-host";
 /// The user's side of the sandbox: Flatpak, and the PipeWire and WirePlumber
 /// the sandboxed app talks to.
@@ -45,6 +50,7 @@ pub fn run(build: &Build, report: &mut Report) -> Result<(), String> {
     cmd::run(
         builder()
             .args(["--user", "--install-deps-from=flathub", "--force-clean"])
+            .arg(format!("--default-branch={BRANCH}"))
             .arg(&state_dir)
             .arg(format!("--repo={}", repo.display()))
             .arg(&builddir)
@@ -64,7 +70,8 @@ pub fn run(build: &Build, report: &mut Report) -> Result<(), String> {
             .arg(format!("--runtime-repo={RUNTIME_REPO}"))
             .arg(&repo)
             .arg(pkg.join(format!("{APP_ID}.flatpak")))
-            .arg(APP_ID),
+            .arg(APP_ID)
+            .arg(BRANCH),
     )?;
     report.pass("bundle");
 
