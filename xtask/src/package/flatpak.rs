@@ -54,7 +54,11 @@ pub fn run(build: &Build, report: &mut Report) -> Result<(), String> {
             .arg(&state_dir)
             .arg(format!("--repo={}", repo.display()))
             .arg(&builddir)
-            .arg(&manifest),
+            .arg(&manifest)
+            // The commit's own time rather than the dev shell's 1980 default:
+            // Flatpak refuses an update whose commit is older than the one
+            // installed.
+            .env("SOURCE_DATE_EPOCH", &build.commit_time),
     )?;
     report.pass("build");
 

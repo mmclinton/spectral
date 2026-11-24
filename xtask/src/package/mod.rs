@@ -70,6 +70,8 @@ impl Options {
 pub struct Build {
     /// The commit the ref resolved to.
     commit: String,
+    /// The commit's committer time, in seconds since the epoch.
+    commit_time: String,
     /// A clean export of that commit.
     src: PathBuf,
     /// The format's working directory; the package lands in `pkg/` inside it.
@@ -146,6 +148,15 @@ pub fn run(options: &Options) -> Result<(), String> {
     )?
     .trim()
     .to_string();
+    let commit_time = cmd::output(
+        Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["show", "--no-patch", "--format=%ct"])
+            .arg(&commit),
+    )?
+    .trim()
+    .to_string();
     let out = workspace::target_dir()?
         .join("packages")
         .join(options.format.name());
@@ -155,6 +166,7 @@ pub fn run(options: &Options) -> Result<(), String> {
     let build = Build {
         version: workspace::crate_version(&src)?,
         commit,
+        commit_time,
         src,
         out,
     };
