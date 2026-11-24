@@ -70,6 +70,8 @@ impl Options {
 pub struct Build {
     /// The commit the ref resolved to.
     commit: String,
+    /// The commit's committer time, in seconds since the epoch.
+    commit_time: u64,
     /// A clean export of that commit.
     src: PathBuf,
     /// The format's working directory; the package lands in `pkg/` inside it.
@@ -133,6 +135,13 @@ impl Report {
     }
 }
 
+/// Reads the epoch seconds `git show --format=%ct` printed for `commit`.
+fn parse_commit_time(commit: &str, output: &str) -> Result<u64, String> {
+    let text = output.trim();
+    text.parse()
+        .map_err(|_| format!("package: commit {commit} has no usable commit time: '{text}'"))
+}
+
 /// Exports the ref, hands the export to the format's build, and prints the
 /// report; any failed step makes the result an error.
 pub fn run(options: &Options) -> Result<(), String> {
@@ -146,6 +155,17 @@ pub fn run(options: &Options) -> Result<(), String> {
     )?
     .trim()
     .to_string();
+    let commit_time = parse_commit_time(
+        &commit,
+        &cmd::output(
+            Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                // log.showSignature would print the signature check ahead of the timestamp.
+                .args(["show", "--no-patch", "--no-show-signature", "--format=%ct"])
+                .arg(&commit),
+        )?,
+    )?;
     let out = workspace::target_dir()?
         .join("packages")
         .join(options.format.name());
@@ -155,6 +175,7 @@ pub fn run(options: &Options) -> Result<(), String> {
     let build = Build {
         version: workspace::crate_version(&src)?,
         commit,
+        commit_time,
         src,
         out,
     };
@@ -251,6 +272,17 @@ mod tests {
         assert!(Options::parse(&args(&["flatpak", "--ref"])).is_err());
         assert!(Options::parse(&args(&["flatpak", "--force"])).is_err());
         assert!(Options::parse(&args(&["flatpak", "--ref", "a", "b"])).is_err());
+    }
+
+    #[test]
+    fn a_plain_timestamp_with_a_trailing_newline_is_accepted() {
+        assert_eq!(parse_commit_time("abc", "1763900000\n"), Ok(1_763_900_000));
+    }
+
+    #[test]
+    fn text_with_a_signature_line_before_the_timestamp_is_refused() {
+        let output = "gpg: Good signature from \"mmc\"\n1763900000\n";
+        assert!(parse_commit_time("abc", output).is_err());
     }
 
     #[test]
