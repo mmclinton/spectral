@@ -58,7 +58,7 @@ pub fn run(build: &Build, report: &mut Report) -> Result<(), String> {
             // The commit's own time rather than the dev shell's 1980 default:
             // Flatpak refuses an update whose commit is older than the one
             // installed.
-            .env("SOURCE_DATE_EPOCH", &build.commit_time),
+            .env("SOURCE_DATE_EPOCH", build.commit_time.to_string()),
     )?;
     report.pass("build");
 
