@@ -55,9 +55,9 @@ pub fn run(build: &Build, report: &mut Report) -> Result<(), String> {
             .arg(format!("--repo={}", repo.display()))
             .arg(&builddir)
             .arg(&manifest)
-            // The commit's own time rather than the dev shell's 1980 default:
-            // Flatpak refuses an update whose commit is older than the one
-            // installed.
+            // The git commit's time, not the dev shell's fixed 1980: Flatpak refuses
+            // an update whose commit is older than the installed one, so a single
+            // build dated later would block every 1980-dated build after it.
             .env("SOURCE_DATE_EPOCH", build.commit_time.to_string()),
     )?;
     report.pass("build");

@@ -161,6 +161,7 @@ pub fn run(options: &Options) -> Result<(), String> {
             Command::new("git")
                 .arg("-C")
                 .arg(&root)
+                // log.showSignature would print the signature check ahead of the timestamp.
                 .args(["show", "--no-patch", "--no-show-signature", "--format=%ct"])
                 .arg(&commit),
         )?,
